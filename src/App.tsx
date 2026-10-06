@@ -55,26 +55,49 @@ function Notice({ title, children }: { title: string; children: ReactNode }) {
 
 function SignIn() {
   const [email, setEmail] = useState('')
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'verifying' | 'error'>('idle')
   const [error, setError] = useState('')
+  const [code, setCode] = useState('')
   async function submit(e: FormEvent) {
     e.preventDefault()
     setStatus('sending')
     const { error } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { emailRedirectTo: window.location.origin } })
+    setError('')
     if (error) {
       setError(error.message.includes('rate') ? 'Too many sign-in emails were sent recently. Wait a few minutes and try again.' : error.message)
       setStatus('error')
     } else setStatus('sent')
   }
-  if (status === 'sent') return <Notice title="Check your email">We sent a sign-in link to {email}. Open it on this device. It can take a minute to arrive.</Notice>
+  async function verify(e: FormEvent) {
+    e.preventDefault()
+    setStatus('verifying')
+    const { error } = await supabase.auth.verifyOtp({ email: email.trim().toLowerCase(), token: code.trim(), type: 'email' })
+    if (error) {
+      setError('That code didn’t work. Check the newest email and try again, or send a new one.')
+      setStatus('sent')
+    }
+  }
+  if (status === 'sent' || status === 'verifying')
+    return (
+      <form className="card stack" onSubmit={verify}>
+        <h2 style={{ margin: 0 }}>Check your email</h2>
+        <p className="muted">We sent a 6-digit code to {email}. Type it here. This keeps you signed in when Rock Solid is saved to your home screen.</p>
+        <label className="field"><span>Code</span>
+          <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} style={{ fontSize: 24, letterSpacing: '.3em', maxWidth: 200 }} />
+        </label>
+        <button className="btn primary lg" style={{ alignSelf: 'flex-start' }} disabled={status === 'verifying' || code.length < 6}>{status === 'verifying' ? 'Checking…' : 'Sign in'}</button>
+        {error && <p className="error">{error}</p>}
+        <p className="note">No code? <button type="button" className="link" onClick={() => { setStatus('idle'); setCode(''); setError('') }}>Send a new one</button></p>
+      </form>
+    )
   return (
     <form className="card stack" onSubmit={submit}>
       <h2 style={{ margin: 0 }}>Sign in</h2>
-      <p className="muted">Enter your work email and we'll send you a sign-in link. No password needed.</p>
+      <p className="muted">Enter your work email and we'll send you a 6-digit sign-in code. No password needed.</p>
       <label className="field"><span>Email</span>
         <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </label>
-      <button className="btn primary lg" style={{ alignSelf: 'flex-start' }} disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send sign-in link'}</button>
+      <button className="btn primary lg" style={{ alignSelf: 'flex-start' }} disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send my code'}</button>
       {status === 'error' && <p className="error">{error}</p>}
     </form>
   )
