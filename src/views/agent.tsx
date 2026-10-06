@@ -121,6 +121,8 @@ function NextTen({ ctx }: { ctx: Ctx }) {
   const byId = new Map(data.contacts.map((c) => [c.id, c]))
   const rows = b.ids.map((id) => byId.get(id)).filter(Boolean) as Contact[]
   const done = rows.filter((c) => b.touchedThisWeek.has(c.id)).length
+  // Position in the list decides ties, so each day's list mixes calls, texts and cards.
+  const sug = (c: Contact) => suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
   const g = goalState(ctx)
 
   // Celebrate once per goal per day/week, only right after the agent logs something.
@@ -180,7 +182,7 @@ function NextTen({ ctx }: { ctx: Ctx }) {
     const txt = days
       .map((d, i) => ({ d, i, people: buckets[i] }))
       .filter((x) => x.people.length)
-      .map((x) => `${x.d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} ${slots[x.i]}\n` + x.people.map((c) => `  - ${KIND_LABEL[suggestKind(c, data.touches)]} ${fullName(c)}${c.phone ? ` (${c.phone})` : ''}`).join('\n'))
+      .map((x) => `${x.d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} ${slots[x.i]}\n` + x.people.map((c) => `  - ${KIND_LABEL[sug(c)]} ${fullName(c)}${c.phone ? ` (${c.phone})` : ''}`).join('\n'))
       .join('\n\n')
     if (!txt) return toast('Nothing left to plan this round.')
     navigator.clipboard?.writeText(txt).then(() => toast('Week plan copied. Paste it into your calendar.'), () => toast("Copy isn't available here."))
@@ -231,7 +233,7 @@ function NextTen({ ctx }: { ctx: Ctx }) {
               <div style={{ minWidth: 0 }}>
                 <div className="nm">{fullName(c)}</div>
                 <div className="meta">
-                  {isDone ? <span className="chip">{last ? KIND_LABEL[last.kind] : 'Touched'} ✓</span> : <span className="chip sug">Suggested: {KIND_LABEL[suggestKind(c, data.touches)]}</span>}
+                  {isDone ? <span className="chip">{last ? KIND_LABEL[last.kind] : 'Touched'} ✓</span> : <span className="chip sug">Suggested: {KIND_LABEL[sug(c)]}</span>}
                   {c.tier === 'U' && !isDone && <span className="chip">Needs a tier</span>}
                   <span>{c.last_touch_on ? `Last touch ${fmt(c.last_touch_on)}` : 'No touches yet'}</span>
                 </div>
@@ -270,7 +272,7 @@ function NextTen({ ctx }: { ctx: Ctx }) {
                   <div className="dn">{d.toLocaleDateString('en-US', { weekday: 'short' })} {fmt(d)}</div>
                   <div className="slot">{past ? 'Done' : buckets[i].length ? `${slots[i]} · ${buckets[i].length}` : 'Open'}</div>
                   {buckets[i].length > 0 && (
-                    <ul>{buckets[i].map((c) => <li key={c.id}>{KIND_LABEL[suggestKind(c, data.touches)]} {c.first_name} {c.last_name.slice(0, 1)}.</li>)}</ul>
+                    <ul>{buckets[i].map((c) => <li key={c.id}>{KIND_LABEL[sug(c)]} {c.first_name} {c.last_name.slice(0, 1)}.</li>)}</ul>
                   )}
                 </div>
               )
@@ -279,7 +281,7 @@ function NextTen({ ctx }: { ctx: Ctx }) {
         </>
       )}
 
-      {logFor && <LogSheet c={logFor} suggested={suggestKind(logFor, data.touches)} onClose={() => setLogFor(null)} onLog={(k, n) => { setLogFor(null); log(logFor, k, n) }} />}
+      {logFor && <LogSheet c={logFor} suggested={sug(logFor)} onClose={() => setLogFor(null)} onLog={(k, n) => { setLogFor(null); log(logFor, k, n) }} />}
       {editFor && <EditSheet ctx={ctx} c={editFor} onClose={() => setEditFor(null)} />}
       {reach && (
         <div className="reach" role="status">
@@ -317,6 +319,7 @@ function LogSheet({ c, suggested, onClose, onLog }: { c: Contact; suggested: Tou
           <button key={k} className={`btn lg ${k === suggested ? 'primary' : ''}`} onClick={() => onLog(k, note)}>{KIND_LABEL[k]}</button>
         ))}
       </div>
+      <p className="note" style={{ marginBottom: 8 }}>The highlighted one is just a suggestion. Whatever you log counts toward their 36 touches.</p>
       <textarea aria-label="Note" placeholder="Quick note (optional): kids, job change, thinking about selling…" value={note} onChange={(e) => setNote(e.target.value)} />
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}><button className="btn ghost" onClick={onClose}>Cancel</button></div>
     </Sheet>

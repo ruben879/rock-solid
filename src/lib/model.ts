@@ -133,13 +133,28 @@ export function duePool(contacts: Contact[], p: Profile | null, touchedThisWeek:
     )
 }
 
-/** Suggest the touch type this person has had least of in the last 12 months, relative to the touch mix. */
-export function suggestKind(c: Contact, touches: Touch[]): 'call' | 'text' | 'card' {
+/** Repeating mix so each day's list blends calls and texts with a card or two (roughly the 6 / 6 / 2 personal-touch split). */
+const MIX: Array<'call' | 'text' | 'card'> = ['call', 'text', 'card', 'text', 'call', 'text', 'call']
+
+/**
+ * Suggest the touch type this person is shortest on over the last 12 months, relative to the 6 calls / 6 texts / 2 cards mix.
+ * When several types are equally short (for example, someone with no touches yet), the list position decides,
+ * so a day's list comes out mixed instead of all calls. Any logged touch counts toward the 36 regardless of the suggestion.
+ */
+export function suggestKind(c: Contact, touches: Touch[], slot = 0): 'call' | 'text' | 'card' {
   const since = ymd(addDays(today(), -365))
   const n = { call: 0, text: 0, card: 0 }
   for (const t of touches) if (t.contact_id === c.id && t.occurred_on >= since && t.kind in n) n[t.kind as 'call']++
   const want = { call: 6, text: 6, card: 2 }
-  return (Object.keys(n) as Array<keyof typeof n>).sort((a, b) => n[a] / want[a] - n[b] / want[b])[0]
+  const ratio = (k: keyof typeof n) => n[k] / want[k]
+  const best = Math.min(ratio('call'), ratio('text'), ratio('card'))
+  const tied = (['call', 'text', 'card'] as const).filter((k) => ratio(k) - best < 1e-9)
+  if (tied.length === 1) return tied[0]
+  for (let i = 0; i < MIX.length; i++) {
+    const k = MIX[(slot + i) % MIX.length]
+    if (tied.includes(k)) return k
+  }
+  return tied[0]
 }
 
 // ---------- Rolling 12-month thermometer ----------
