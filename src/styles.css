@@ -1,0 +1,35 @@
+:root {
+  --bg: #f3f5f9; --surface: #ffffff; --ink: #14203a; --muted: #5b6782; --line: #dde3ee;
+  --navy: #13284f; --navy-2: #1f3d72; --gold: #c9a24a; --bad: #c2423a;
+  --display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1424; --surface: #152039; --ink: #e7ecf6; --muted: #97a3bd; --line: #26345a;
+    --navy: #0a1630; --navy-2: #1b305c; --gold: #d8b45e; --bad: #ec7a70;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.45 var(--body); }
+.wrap { max-width: 860px; margin: 0 auto; padding-inline: 16px; }
+main.wrap { padding-block: 20px 48px; }
+.band { background: var(--navy); color: #fff; padding-block: calc(18px + env(safe-area-inset-top, 0px)) 16px; }
+.band small { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #aebbd6; }
+.band h1 { font-family: var(--display); font-size: 30px; margin: 2px 0 0; }
+h2 { font-family: var(--display); font-size: 24px; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.muted { color: var(--muted); margin: 0; }
+p { margin: 0; }
+label { font-size: 13px; font-weight: 600; color: var(--muted); }
+input { font: 16px var(--body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.btn { font: 600 15px var(--body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 10px 14px; cursor: pointer; align-self: flex-start; }
+.btn.primary { background: var(--navy-2); border-color: var(--navy-2); color: #fff; }
+.btn:disabled { opacity: .6; }
+.link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.error { color: var(--bad); }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
