@@ -81,9 +81,9 @@ function SignIn() {
     return (
       <form className="card stack" onSubmit={verify}>
         <h2 style={{ margin: 0 }}>Check your email</h2>
-        <p className="muted">We sent a 6-digit code to {email}. Type it here. This keeps you signed in when Rock Solid is saved to your home screen.</p>
+        <p className="muted">We sent a sign-in code to {email}. Type it here. This keeps you signed in when Rock Solid is saved to your home screen.</p>
         <label className="field"><span>Code</span>
-          <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} style={{ fontSize: 24, letterSpacing: '.3em', maxWidth: 200 }} />
+          <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} style={{ fontSize: 24, letterSpacing: '.3em', maxWidth: 200 }} />
         </label>
         <button className="btn primary lg" style={{ alignSelf: 'flex-start' }} disabled={status === 'verifying' || code.length < 6}>{status === 'verifying' ? 'Checking…' : 'Sign in'}</button>
         {error && <p className="error">{error}</p>}
@@ -93,7 +93,7 @@ function SignIn() {
   return (
     <form className="card stack" onSubmit={submit}>
       <h2 style={{ margin: 0 }}>Sign in</h2>
-      <p className="muted">Enter your work email and we'll send you a 6-digit sign-in code. No password needed.</p>
+      <p className="muted">Enter your work email and we'll send you a sign-in code. No password needed.</p>
       <label className="field"><span>Email</span>
         <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       </label>
