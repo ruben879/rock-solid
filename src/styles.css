@@ -273,3 +273,9 @@ tr:last-child td { border-bottom: 0; }
 .signin { margin-top: 10vh; }
 .signin h2 { font-size: 30px; }
 .code { font-size: 28px; letter-spacing: .25em; max-width: 260px; text-align: center; }
+
+/* Signal bars: bar count and color both carry the status */
+.signal { display: inline-flex; align-items: flex-end; gap: 2.5px; height: 19px; flex: none; }
+.signal i { width: 5px; border-radius: 1.5px; background: var(--line); }
+.signal i.on { background: var(--heat); }
+.person .sig { display: flex; align-items: center; gap: 4px; flex: none; }

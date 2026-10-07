@@ -162,3 +162,15 @@ export const store = {
     }
   },
 }
+
+// ---------- Signal bars ----------
+const SIGNAL_WORD = ['Not reached yet', 'Gone cold', 'Getting cold', 'Cooling off', 'Warm', 'Strong']
+export function Signal({ bars }: { bars: number }) {
+  const h = bars >= 4 ? 'hot' : bars >= 2 ? 'warm' : bars === 1 ? 'cold' : 'new'
+  return (
+    <span className={`signal h-${h}`} role="img" aria-label={`Signal ${bars} of 5: ${SIGNAL_WORD[bars]}`} title={SIGNAL_WORD[bars]}>
+      {[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= bars ? 'on' : ''} style={{ height: `${4 + i * 3}px` }} />)}
+    </span>
+  )
+}
+export { SIGNAL_WORD }

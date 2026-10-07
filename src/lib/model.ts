@@ -208,6 +208,18 @@ export function heat(c: Contact, byContact: Map<string, string[]>, goal: number,
   return 'hot'
 }
 
+/**
+ * Signal strength, 0 to 5, like phone bars: how recently they've heard from you compared with their tier.
+ * 5 = touched in the first half of their window, 1 = more than two windows with nothing, 0 = never touched.
+ */
+export function signal(c: Contact, byContact: Map<string, string[]>, days: Record<Tier, number> = DEFAULT_TIER_DAYS): number {
+  const lastSeen = (byContact.get(c.id) ?? []).reduce((m, d) => (d > m ? d : m), c.last_touch_on ?? '')
+  if (!lastSeen) return 0
+  const every = days[c.tier] || DEFAULT_TIER_DAYS[c.tier]
+  const r = daysBetween(parse(lastSeen), today()) / every
+  return r <= 0.5 ? 5 : r <= 1 ? 4 : r <= 1.5 ? 3 : r <= 2 ? 2 : 1
+}
+
 // ---------- Goals ----------
 export function countBetween(touches: Touch[], cards: Card[], from: string, to: string) {
   const t = touches.filter((x) => !x.is_group && x.occurred_on >= from && x.occurred_on <= to).length

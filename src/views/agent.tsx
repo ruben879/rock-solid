@@ -3,9 +3,9 @@ import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
-import { Celebrate, HeatTag, Sheet, store, useToast } from '../ui'
+import { Celebrate, HeatTag, SIGNAL_WORD, Sheet, Signal, store, useToast } from '../ui'
 import { ICard, ICheck, IDoor, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
@@ -117,7 +117,7 @@ function greeting() {
 }
 
 /** One short, plain line about why this person is on the list. */
-function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string } | undefined) {
+function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string; is_group?: boolean } | undefined) {
   if (c.birthday) {
     const b = parse(c.birthday)
     const next = new Date(today().getFullYear(), b.getMonth(), b.getDate(), 12)
@@ -125,7 +125,7 @@ function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string } | un
     if (d >= 0 && d <= 10) return d === 0 ? 'Birthday is today!' : `Birthday ${fmt(next)}`
   }
   if (!last && !c.last_touch_on) return 'First touch'
-  if (last) return `Last time: ${KIND_LABEL[last.kind].toLowerCase()} on ${fmt(last.occurred_on)}`
+  if (last) return `Last time: ${last.is_group ? 'group ' : ''}${KIND_LABEL[last.kind].toLowerCase()} on ${fmt(last.occurred_on)}`
   return `Last touch ${fmt(c.last_touch_on as string)}`
 }
 
@@ -149,7 +149,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const done = doneRows.length
   // Position in the list decides ties, so each day's list mixes calls, texts and cards.
   const sug = (c: Contact) => suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
-  const lastOf = (c: Contact) => data.touches.filter((t) => t.contact_id === c.id && !t.is_group).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)).at(-1)
+  const byContact = useMemo(() => touchCounts(data.touches), [data.touches])
+  const lastOf = (c: Contact) => data.touches.filter((t) => t.contact_id === c.id).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)).at(-1)
   const g = goalState(ctx)
 
   // Which goals are met right now: all caught up, weekly, daily, Card a Day.
@@ -257,9 +258,12 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                 <div className="head">
                   <div style={{ minWidth: 0 }}>
                     <h3>{fullName(c)}</h3>
-                    <p className="why">{whyLine(c, lastOf(c))}</p>
+                    <p className="why">{signal(c, byContact, agent.tier_days) ? `${SIGNAL_WORD[signal(c, byContact, agent.tier_days)]} · ` : ''}{whyLine(c, lastOf(c))}</p>
                   </div>
-                  {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
+                  <div className="sig">
+                    <Signal bars={signal(c, byContact, agent.tier_days)} />
+                    {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
+                  </div>
                 </div>
                 {readOnly ? (
                   <p className={`kind k-${k}`} style={{ marginTop: 8 }}>{KIND_ICON[k]} {KIND_LABEL[k]} suggested</p>
