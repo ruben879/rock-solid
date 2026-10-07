@@ -138,7 +138,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
-  const pendingCheck = useRef(false)
+  const pendingCheck = useRef<boolean[] | null>(null)
 
   const byId = new Map(data.contacts.map((c) => [c.id, c]))
   const rows = b.ids.map((id) => byId.get(id)).filter(Boolean) as Contact[]
@@ -150,31 +150,36 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const lastOf = (c: Contact) => data.touches.filter((t) => t.contact_id === c.id && !t.is_group).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)).at(-1)
   const g = goalState(ctx)
 
-  // Celebrate once per goal per day/week, only right after the agent logs something.
+  // Which goals are met right now: all caught up, weekly, daily, Card a Day.
+  const flags = () => [rows.length > 0 && done === rows.length && b.waiting === 0, g.week >= agent.weekly_goal, g.today >= agent.daily_goal, g.card]
+  const snapshot = () => { pendingCheck.current = flags() }
+
+  // Celebrate only a goal that THIS log just completed, once per day/week.
   useEffect(() => {
-    if (!pendingCheck.current || readOnly) return
-    pendingCheck.current = false
+    const before = pendingCheck.current
+    if (!before || readOnly) return
+    pendingCheck.current = null
+    const now = flags()
     const dk = ymd(today())
     const wk = ymd(weekStart())
     const seen = store.get<Record<string, boolean>>(`rs-cele-${agent.id}`, {})
-    const caught = rows.length > 0 && done === rows.length && b.waiting === 0
-    const list: [boolean, string, string, string, string][] = [
-      [caught, `caught-${wk}`, 'Congratulations', "You're all caught up!", "Everyone due this week has been touched. That's a rock solid week."],
-      [g.week >= agent.weekly_goal, `week-${wk}`, 'Weekly goal', 'You hit your weekly goal!', `${g.week} touches this week. Every one is a vote for the business you're building.`],
-      [g.today >= agent.daily_goal, `day-${dk}`, 'Daily goal', 'You hit your daily goal!', `${g.today} touches today. Same time tomorrow?`],
-      [g.card, `card-${dk}`, 'Card a Day', 'Card a Day: done!', "Today's card is written and logged."],
+    const list: [string, string, string, string][] = [
+      [`caught-${wk}`, 'Congratulations', "You're all caught up!", "Everyone due this week has been touched. That's a rock solid week."],
+      [`week-${wk}`, 'Weekly goal', 'You hit your weekly goal!', `${g.week} touches this week. Every one is a vote for the business you're building.`],
+      [`day-${dk}`, 'Daily goal', 'You hit your daily goal!', `${g.today} touches today. Same time tomorrow?`],
+      [`card-${dk}`, 'Card a Day', 'Card a Day: done!', "Today's card is written and logged."],
     ]
-    const hit = list.find(([ok, k]) => ok && !seen[k])
-    if (!hit) return
-    for (const [ok, k] of list) if (ok) seen[k] = true
+    const hit = list.find(([k], i) => now[i] && !before[i] && !seen[k])
+    list.forEach(([k], i) => { if (now[i]) seen[k] = true })
     store.set(`rs-cele-${agent.id}`, seen)
-    setCele({ eyebrow: hit[2], title: hit[3], sub: hit[4] })
+    if (hit) setCele({ eyebrow: hit[1], title: hit[2], sub: hit[3] })
   })
 
   async function log(c: Contact, kind: TouchKind, note: string) {
     try {
+      const before = flags()
       await api.logTouch(ctx.me, c.id, kind, note)
-      pendingCheck.current = true
+      pendingCheck.current = before
       await ctx.reload()
       toast(`Nice! ${c.first_name} is done. ${fmt(addDays(today(), tierDays(agent, c.tier)))} is their next turn.`)
     } catch (e) {
@@ -309,7 +314,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       {editFor && <EditSheet ctx={ctx} c={editFor} onClose={() => setEditFor(null)} />}
       {cardFor && (
         <Sheet label={`Card for ${cardFor.first_name}`} onClose={() => setCardFor(null)}>
-          <CardSteps ctx={ctx} preset={fullName(cardFor)} onLogged={() => { setCardFor(null); pendingCheck.current = true }} />
+          <CardSteps ctx={ctx} preset={fullName(cardFor)} onBefore={snapshot} onLogged={() => setCardFor(null)} />
         </Sheet>
       )}
       {reach && (
@@ -457,7 +462,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
 const RELS = ['Friend', 'Family', 'Client', 'Agent/Colleague', 'Vendor', 'Other']
 const OCCASIONS = ['Thank You', 'Birthday', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
 
-function CardSteps({ ctx, preset, onLogged }: { ctx: Ctx; preset?: string; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
+function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: string; onBefore?: () => void; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
   const { data, agent } = ctx
   const toast = useToast()
   const start = preset ? 1 : 0
@@ -477,6 +482,7 @@ function CardSteps({ ctx, preset, onLogged }: { ctx: Ctx; preset?: string; onLog
     setBusy(true)
     try {
       const hadCardToday = data.cards.some((c) => c.sent_on === ymd(today()) && c.counts_for_challenge)
+      onBefore?.()
       const r = await api.logCard(ctx.me, data.cards, data.contacts, { name, relationship: rel, occasion: occ, note })
       await ctx.reload()
       toast(r.repeat ? `Card logged for ${who}. It counts as a touch, not toward Card a Day.` : `Card logged for ${who}!`)
