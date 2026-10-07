@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import * as api from '../lib/data'
-import { addDays, daysBetween, fmt, monthName, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
+import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Contact, Heat, Profile, Tier, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, nextDue, score, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
-import { Celebrate, HeatTag, Sheet, Therm, store, useToast } from '../ui'
+import { Celebrate, HeatTag, Sheet, store, useToast } from '../ui'
+import { ICard, ICheck, IDoor, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -19,17 +20,17 @@ interface Ctx {
   goal: number
 }
 
-export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: Brokerage | null; tab: AgentTab; readOnly: boolean; onProfileChange?: () => void }) {
+export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: Brokerage | null; tab: AgentTab; readOnly: boolean; onProfileChange?: () => void; onGo?: (t: AgentTab) => void }) {
   const { data, error, reload } = useAgentData1(props.agent.id)
-  if (error) return <p className="error">Couldn't load data: {error}</p>
-  if (!data) return <p className="muted">Loading…</p>
+  if (error) return <p className="error" style={{ marginTop: 24 }}>Couldn't load your list: {error}. Pull down to refresh.</p>
+  if (!data) return <p className="muted" style={{ marginTop: 24 }}>Loading…</p>
   const ctx: Ctx = { ...props, data, reload, goal: props.brokerage?.settings?.touch_goal ?? 36 }
   return (
     <>
-      {props.tab === 'week' && <NextTen ctx={ctx} />}
+      {props.tab === 'week' && <Today ctx={ctx} onGo={props.onGo} />}
       {props.tab === 'cards' && <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />}
-      {props.tab === 'activity' && <Monthly ctx={ctx} onProfileChange={props.onProfileChange} />}
-      {props.tab === 'db' && <Database ctx={ctx} onProfileChange={props.onProfileChange} />}
+      {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
+      {props.tab === 'db' && <People ctx={ctx} onProfileChange={props.onProfileChange} />}
     </>
   )
 }
@@ -39,8 +40,10 @@ function useAgentData1(id: string) {
   return api.useAgentData(ids)
 }
 
+const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor /> }
+
 // ======================================================================
-// Your Next 10
+// Today: the next 10
 // ======================================================================
 const BATCH = 10
 
@@ -107,22 +110,44 @@ function goalState(ctx: Ctx) {
   }
 }
 
-function NextTen({ ctx }: { ctx: Ctx }) {
+function greeting() {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
+
+/** One short, plain line about why this person is on the list. */
+function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string } | undefined) {
+  if (c.birthday) {
+    const b = parse(c.birthday)
+    const next = new Date(today().getFullYear(), b.getMonth(), b.getDate(), 12)
+    const d = daysBetween(today(), next)
+    if (d >= 0 && d <= 10) return d === 0 ? 'Birthday is today!' : `Birthday ${fmt(next)}`
+  }
+  if (!last && !c.last_touch_on) return 'First touch'
+  if (last) return `Last time: ${KIND_LABEL[last.kind].toLowerCase()} on ${fmt(last.occurred_on)}`
+  return `Last touch ${fmt(c.last_touch_on as string)}`
+}
+
+function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const { data, agent, readOnly } = ctx
   const toast = useToast()
   const b = useBatch(ctx)
-  const byContact = useMemo(() => touchCounts(data.touches), [data.touches])
   const [logFor, setLogFor] = useState<Contact | null>(null)
+  const [moreFor, setMoreFor] = useState<Contact | null>(null)
   const [editFor, setEditFor] = useState<Contact | null>(null)
+  const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
   const pendingCheck = useRef(false)
 
   const byId = new Map(data.contacts.map((c) => [c.id, c]))
   const rows = b.ids.map((id) => byId.get(id)).filter(Boolean) as Contact[]
-  const done = rows.filter((c) => b.touchedThisWeek.has(c.id)).length
+  const todo = rows.filter((c) => !b.touchedThisWeek.has(c.id))
+  const doneRows = rows.filter((c) => b.touchedThisWeek.has(c.id))
+  const done = doneRows.length
   // Position in the list decides ties, so each day's list mixes calls, texts and cards.
   const sug = (c: Contact) => suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
+  const lastOf = (c: Contact) => data.touches.filter((t) => t.contact_id === c.id && !t.is_group).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)).at(-1)
   const g = goalState(ctx)
 
   // Celebrate once per goal per day/week, only right after the agent logs something.
@@ -151,10 +176,9 @@ function NextTen({ ctx }: { ctx: Ctx }) {
       await api.logTouch(ctx.me, c.id, kind, note)
       pendingCheck.current = true
       await ctx.reload()
-      const nd = addDays(today(), tierDays(agent, c.tier))
-      toast(`${KIND_LABEL[kind]} logged for ${c.first_name}. Next up ${fmt(nd)}.`)
+      toast(`Nice! ${c.first_name} is done. ${fmt(addDays(today(), tierDays(agent, c.tier)))} is their next turn.`)
     } catch (e) {
-      toast(`Couldn't save: ${(e as Error).message}`)
+      toast(`That didn't save: ${(e as Error).message}`)
     }
   }
 
@@ -165,131 +189,136 @@ function NextTen({ ctx }: { ctx: Ctx }) {
       await ctx.reload()
       toast(`${c.first_name} moved to next week.${nx ? ` ${nx.first_name} took their spot.` : ''}`)
     } catch (e) {
-      toast(`Couldn't save: ${(e as Error).message}`)
+      toast(`That didn't save: ${(e as Error).message}`)
     }
   }
 
-  // Calendar blocks for what's left this round
-  const remaining = rows.filter((c) => !b.touchedThisWeek.has(c.id))
-  const days = [0, 1, 2, 3, 4].map((i) => addDays(weekStart(), i))
-  const t0 = today()
-  const open = days.filter((d) => ymd(d) >= ymd(t0))
-  const buckets: Contact[][] = days.map(() => [])
-  if (open.length) remaining.forEach((c, i) => buckets[days.findIndex((d) => ymd(d) === ymd(open[i % open.length]))].push(c))
-  const slots = ['9:00–9:30 AM', '9:00–9:30 AM', '8:30–9:00 AM', '9:00–9:30 AM', '8:30–9:00 AM']
-
-  function copyPlan() {
-    const txt = days
-      .map((d, i) => ({ d, i, people: buckets[i] }))
-      .filter((x) => x.people.length)
-      .map((x) => `${x.d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} ${slots[x.i]}\n` + x.people.map((c) => `  - ${KIND_LABEL[sug(c)]} ${fullName(c)}${c.phone ? ` (${c.phone})` : ''}`).join('\n'))
-      .join('\n\n')
-    if (!txt) return toast('Nothing left to plan this round.')
-    navigator.clipboard?.writeText(txt).then(() => toast('Week plan copied. Paste it into your calendar.'), () => toast("Copy isn't available here."))
+  function copyList() {
+    const txt = todo.map((c) => `${KIND_LABEL[sug(c)]} ${fullName(c)}${c.phone ? ` ${c.phone}` : ''}`).join('\n')
+    navigator.clipboard?.writeText(`Rock Solid: my next ${todo.length}\n${txt}`).then(
+      () => toast('Copied. Paste it into a calendar block.'),
+      () => toast("Copying isn't available here."),
+    )
   }
 
-  const p = rows.length ? Math.round((done / rows.length) * 100) : 100
+  const first = (agent.full_name || agent.email).split(' ')[0]
+  const caughtUp = rows.length === 0 || (todo.length === 0 && b.waiting === 0)
   return (
     <section>
-      <h2>Your next 10</h2>
-      <p className="sub">Work these 10 and the next 10 load on their own. Anyone you don't get to just waits their turn, so the list never piles up.</p>
-      <div className="progress">
-        {rows.length ? (
-          <>
-            <b>{done} of {rows.length}</b>
-            <div className="track"><div className={`fill ${p === 100 ? 'hit' : ''}`} style={{ width: `${p}%` }} /></div>
-            <span className="note">Round {b.round} this week</span>
-          </>
-        ) : (
-          <>
-            <b>All caught up</b>
-            <span className="note">{data.contacts.length ? 'Nobody else is due this week.' : 'Add or import contacts on the Database tab to get started.'}</span>
-          </>
-        )}
-      </div>
-      <div className="goals">
-        <GoalTile label="Today" n={g.today} goal={agent.daily_goal} hit="Daily goal hit ✓" />
-        <GoalTile label="This week" n={g.week} goal={agent.weekly_goal} hit="Weekly goal hit ✓" />
-        <GoalTile label="Card a Day" n={g.card ? 1 : 0} goal={1} hit="Card written ✓" />
-      </div>
+      <p className="date">{today().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+      <h2 className="hello">{readOnly ? `${first}'s list` : `${greeting()}, ${first}`}</h2>
+
+      {rows.length > 0 && (
+        <>
+          <div className="stones" role="img" aria-label={`${done} of ${rows.length} done`}>
+            {rows.map((c, i) => <span key={c.id} className={`stone ${i < done ? 'on' : ''}`} />)}
+          </div>
+          <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round} this week)` : ''}</p>
+        </>
+      )}
+
       {b.justCleared && (
-        <div className="banner" style={{ marginTop: 10 }}>
-          <p><b>You cleared 10.</b> Your next 10 are loaded below. Keep the streak going or come back tomorrow.</p>
-          <button className="btn ghost" onClick={() => b.setJustCleared(false)}>Got it</button>
+        <div className="banner" style={{ marginTop: 16 }}>
+          <p><b>You finished 10!</b> Here are your next 10. Keep going or come back tomorrow.</p>
+          <button className="btn" onClick={() => b.setJustCleared(false)}>OK</button>
         </div>
       )}
-      {!b.justCleared && rows.length > 0 && done === rows.length && b.waiting === 0 && (
-        <div className="banner" style={{ marginTop: 10 }}><p><b>You're caught up for the week.</b> Everyone else is scheduled for a later week.</p></div>
+
+      {caughtUp ? (
+        <div className="card empty" style={{ marginTop: 20 }}>
+          <h3 style={{ color: 'var(--ink)', marginBottom: 6 }}>{data.contacts.length ? "You're all caught up" : 'Your list is empty'}</h3>
+          <p>{data.contacts.length ? 'Nobody else is due this week. Enjoy it.' : 'Add the people you know and they will show up here, 10 at a time.'}</p>
+          {!data.contacts.length && !readOnly && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => onGo?.('db')}>Add people</button>}
+        </div>
+      ) : (
+        <div className="people">
+          {todo.map((c) => {
+            const k = sug(c)
+            const name = c.first_name || fullName(c)
+            return (
+              <article key={c.id} className="person">
+                <div className="head">
+                  <div style={{ minWidth: 0 }}>
+                    <h3>{fullName(c)}</h3>
+                    <p className="why">{whyLine(c, lastOf(c))}</p>
+                  </div>
+                  {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
+                </div>
+                {readOnly ? (
+                  <p className={`kind k-${k}`} style={{ marginTop: 8 }}>{KIND_ICON[k]} {KIND_LABEL[k]} suggested</p>
+                ) : k === 'card' ? (
+                  <button className="go k-card" onClick={() => setCardFor(c)}><ICard /> Write {name} a card</button>
+                ) : c.phone ? (
+                  <a className={`go k-${k}`} href={`${k === 'call' ? 'tel' : 'sms'}:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: k })}>
+                    {KIND_ICON[k]} {k === 'call' ? 'Call' : 'Text'} {name}
+                  </a>
+                ) : (
+                  <button className="go k-other" onClick={() => setLogFor(c)}><ICheck /> Mark {name} done</button>
+                )}
+                {!readOnly && <button className="else" onClick={() => setLogFor(c)}>Did something else? Log it</button>}
+              </article>
+            )
+          })}
+        </div>
       )}
 
-      <div className="grp">On deck</div>
-      <div className="list">
-        {rows.map((c) => {
-          const isDone = b.touchedThisWeek.has(c.id)
-          const last = [...data.touches].reverse().find((t) => t.contact_id === c.id)
-          return (
-            <div key={c.id} className={`row ${isDone ? 'done' : ''}`}>
-              <div className={`tier t${c.tier}`} title={c.tier === 'U' ? 'No tier yet' : `Tier ${c.tier}`}>{c.tier === 'U' ? '?' : c.tier}</div>
-              <div style={{ minWidth: 0 }}>
-                <div className="nm">{fullName(c)}</div>
-                <div className="meta">
-                  {isDone ? <span className="chip">{last ? KIND_LABEL[last.kind] : 'Touched'} ✓</span> : <span className="chip sug">Suggested: {KIND_LABEL[sug(c)]}</span>}
-                  {c.tier === 'U' && !isDone && <span className="chip">Needs a tier</span>}
-                  <span>{c.last_touch_on ? `Last touch ${fmt(c.last_touch_on)}` : 'No touches yet'}</span>
-                </div>
-                <div style={{ marginTop: 4 }}><Therm c={c} byContact={byContact} goal={ctx.goal} sm /></div>
-              </div>
-              {!isDone && !readOnly && (
-                <div className="acts">
-                  {c.phone && (
-                    <>
-                      <a className="btn" href={`tel:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: 'call' })}>Call</a>
-                      <a className="btn" href={`sms:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: 'text' })}>Text</a>
-                    </>
-                  )}
-                  <button className="btn primary" onClick={() => setLogFor(c)}>Log</button>
-                  <button className="btn ghost" onClick={() => setEditFor(c)}>Edit</button>
-                  <button className="btn ghost" onClick={() => skip(c)}>Next week</button>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {remaining.length > 0 && (
-        <>
-          <div className="grp">
-            <span>Suggested calendar blocks</span>
-            <button className="btn" onClick={copyPlan}>Copy week plan</button>
-          </div>
-          <div className="plan">
-            {days.map((d, i) => {
-              const isToday = ymd(d) === ymd(t0)
-              const past = ymd(d) < ymd(t0)
+      {doneRows.length > 0 && (
+        <details className="donelist">
+          <summary>Done this week ({doneRows.length})</summary>
+          <div className="card" style={{ padding: '4px 16px' }}>
+            {doneRows.map((c) => {
+              const l = lastOf(c)
               return (
-                <div key={i} className={`day ${isToday ? 'today' : ''}`}>
-                  <div className="dn">{d.toLocaleDateString('en-US', { weekday: 'short' })} {fmt(d)}</div>
-                  <div className="slot">{past ? 'Done' : buckets[i].length ? `${slots[i]} · ${buckets[i].length}` : 'Open'}</div>
-                  {buckets[i].length > 0 && (
-                    <ul>{buckets[i].map((c) => <li key={c.id}>{KIND_LABEL[sug(c)]} {c.first_name} {c.last_name.slice(0, 1)}.</li>)}</ul>
-                  )}
+                <div key={c.id} className="donerow">
+                  <span className="tick"><ICheck size={16} /></span>
+                  <span style={{ flex: 1 }}>{fullName(c)}</span>
+                  {l && <span className="note">{KIND_LABEL[l.kind]}</span>}
                 </div>
               )
             })}
           </div>
-        </>
+        </details>
       )}
 
-      {logFor && <LogSheet c={logFor} suggested={sug(logFor)} onClose={() => setLogFor(null)} onLog={(k, n) => { setLogFor(null); log(logFor, k, n) }} />}
+      <div className="todaybar">
+        <div className={g.today >= agent.daily_goal ? 'hit' : ''}><b>{g.today} of {agent.daily_goal}</b><span>today</span></div>
+        <div className={g.week >= agent.weekly_goal ? 'hit' : ''}><b>{g.week} of {agent.weekly_goal}</b><span>this week</span></div>
+        <div className={g.card ? 'hit' : ''} role={readOnly ? undefined : 'button'} style={{ cursor: readOnly ? undefined : 'pointer' }} onClick={() => !readOnly && onGo?.('cards')}>
+          <b>{g.card ? 'Done' : 'Not yet'}</b><span>today's card</span>
+        </div>
+      </div>
+      {!readOnly && todo.length > 0 && (
+        <p className="note" style={{ textAlign: 'center', marginTop: 18 }}>
+          <button className="link" onClick={copyList}>Copy my list</button> to paste into a calendar block.
+        </p>
+      )}
+
+      {logFor && <LogSheet c={logFor} suggested={sug(logFor)} goal={ctx.goal} onClose={() => setLogFor(null)} onLog={(k, n) => { const c = logFor; setLogFor(null); log(c, k, n) }} />}
+      {moreFor && (
+        <Sheet label={`More for ${moreFor.first_name}`} onClose={() => setMoreFor(null)}>
+          <h3>{fullName(moreFor)}</h3>
+          {moreFor.phone && <p className="note">{moreFor.phone}</p>}
+          <div className="menu" style={{ marginTop: 8 }}>
+            <button onClick={() => { const c = moreFor; setMoreFor(null); setLogFor(c) }}>Log something else</button>
+            <button onClick={() => { const c = moreFor; setMoreFor(null); setEditFor(c) }}>See or edit details</button>
+            <button onClick={() => { const c = moreFor; setMoreFor(null); skip(c) }}>Move to next week</button>
+            <button onClick={() => setMoreFor(null)} style={{ color: 'var(--muted)' }}>Cancel</button>
+          </div>
+        </Sheet>
+      )}
       {editFor && <EditSheet ctx={ctx} c={editFor} onClose={() => setEditFor(null)} />}
+      {cardFor && (
+        <Sheet label={`Card for ${cardFor.first_name}`} onClose={() => setCardFor(null)}>
+          <CardSteps ctx={ctx} preset={fullName(cardFor)} onLogged={() => { setCardFor(null); pendingCheck.current = true }} />
+        </Sheet>
+      )}
       {reach && (
         <div className="reach" role="status">
-          <span>{reach.kind === 'call' ? 'Called' : 'Texted'} {reach.c.first_name}? <span style={{ opacity: 0.75 }}>{reach.c.phone}</span></span>
-          <span style={{ display: 'flex', gap: 6 }}>
-            <button className="btn gold" onClick={() => { const r = reach; setReach(null); log(r.c, r.kind, '') }}>Log {reach.kind}</button>
-            <button className="btn" onClick={() => setReach(null)}>Not yet</button>
-          </span>
+          <p>Did you {reach.kind} {reach.c.first_name}?</p>
+          <div>
+            <button className="btn gold lg" onClick={() => { const r = reach; setReach(null); log(r.c, r.kind, '') }}>Yes, mark done</button>
+            <button className="btn lg" onClick={() => setReach(null)}>Not yet</button>
+          </div>
         </div>
       )}
       {cele && <Celebrate {...cele} onClose={() => setCele(null)} />}
@@ -297,37 +326,27 @@ function NextTen({ ctx }: { ctx: Ctx }) {
   )
 }
 
-function GoalTile({ label, n, goal, hit }: { label: string; n: number; goal: number; hit: string }) {
-  const ok = n >= goal
-  const p = Math.min(100, Math.round((n / Math.max(1, goal)) * 100))
-  return (
-    <div className={`goal ${ok ? 'hit' : ''}`}>
-      <div className="top"><span>{ok ? hit : label}</span><b>{n} / {goal}</b></div>
-      <div className="track"><div className={`fill ${ok ? 'hit' : ''}`} style={{ width: `${p}%` }} /></div>
-    </div>
-  )
-}
-
-function LogSheet({ c, suggested, onClose, onLog }: { c: Contact; suggested: TouchKind; onClose: () => void; onLog: (k: TouchKind, note: string) => void }) {
+function LogSheet({ c, suggested, goal, onClose, onLog }: { c: Contact; suggested: TouchKind; goal: number; onClose: () => void; onLog: (k: TouchKind, note: string) => void }) {
   const [note, setNote] = useState('')
   return (
     <Sheet label="Log a touch" onClose={onClose}>
-      <h3>{fullName(c)}</h3>
-      <div className="note">{c.phone ?? 'No phone'} · {c.tier === 'U' ? 'No tier yet' : `Tier ${c.tier} · ${TIER_NAMES[c.tier]}`}</div>
+      <h3>What did you do for {c.first_name || fullName(c)}?</h3>
+      <p className="note">Anything you pick counts toward their {goal} touches this year.</p>
       <div className="opts">
-        {(['call', 'text', 'card', 'popby'] as TouchKind[]).map((k) => (
-          <button key={k} className={`btn lg ${k === suggested ? 'primary' : ''}`} onClick={() => onLog(k, note)}>{KIND_LABEL[k]}</button>
+        {([suggested, ...(['call', 'text', 'card', 'popby'] as TouchKind[]).filter((x) => x !== suggested)]).map((k) => (
+          <button key={k} className={`opt k-${k}`} onClick={() => onLog(k, note)}>
+            {KIND_ICON[k]}{KIND_LABEL[k]}
+          </button>
         ))}
       </div>
-      <p className="note" style={{ marginBottom: 8 }}>The highlighted one is just a suggestion. Whatever you log counts toward their 36 touches.</p>
-      <textarea aria-label="Note" placeholder="Quick note (optional): kids, job change, thinking about selling…" value={note} onChange={(e) => setNote(e.target.value)} />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}><button className="btn ghost" onClick={onClose}>Cancel</button></div>
+      <textarea aria-label="Note" placeholder="Want to remember anything? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <button className="btn ghost block" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
     </Sheet>
   )
 }
 
 // ======================================================================
-// Edit / add contact
+// Edit / add a person
 // ======================================================================
 function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: () => void }) {
   const toast = useToast()
@@ -339,10 +358,12 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
   const [confirmDel, setConfirmDel] = useState(false)
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
+  const byContact = useMemo(() => touchCounts(ctx.data.touches), [ctx.data.touches])
+  const ro = ctx.readOnly
 
   async function submit(e: FormEvent) {
     e.preventDefault()
-    if (!f.first_name.trim()) return
+    if (!f.first_name.trim() || ro) return
     setBusy(true)
     try {
       const input: api.ContactInput = {
@@ -352,10 +373,10 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
       }
       await api.saveContact(ctx.me, input, c?.id)
       await ctx.reload()
-      toast(c ? 'Saved.' : `${f.first_name} added. They're due now.`)
+      toast(c ? 'Saved.' : `${f.first_name} added. They'll show up on Today soon.`)
       onClose()
     } catch (err) {
-      toast(`Couldn't save: ${(err as Error).message}`)
+      toast(`That didn't save: ${(err as Error).message}`)
       setBusy(false)
     }
   }
@@ -371,61 +392,149 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
     }
   }
   return (
-    <Sheet label={c ? 'Edit contact' : 'Add contact'} onClose={onClose}>
-      <form onSubmit={submit}>
-        <h3 style={{ marginBottom: 10 }}>{c ? 'Edit contact' : 'Add contact'}</h3>
-        <div className="ed">
-          <label className="field"><span>First name</span><input required value={f.first_name} onChange={set('first_name')} /></label>
-          <label className="field"><span>Last name</span><input value={f.last_name} onChange={set('last_name')} /></label>
-          <label className="field"><span>Phone</span><input inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
-          <label className="field"><span>Tier</span>
-            <select value={f.tier} onChange={set('tier')}>
-              {(['U', 'A', 'B', 'C', 'D'] as Tier[]).map((t) => <option key={t} value={t}>{t === 'U' ? 'No tier · monthly' : `${t} · ${TIER_NAMES[t]}`}</option>)}
-            </select>
-          </label>
-          <label className="field full"><span>Email</span><input type="email" value={f.email} onChange={set('email')} /></label>
-          <label className="field full"><span>Address</span><input value={f.address} onChange={set('address')} /></label>
-          <label className="field"><span>City</span><input value={f.city} onChange={set('city')} /></label>
-          <label className="field"><span>Zip</span><input value={f.zip} onChange={set('zip')} /></label>
-          <label className="field"><span>Birthday</span><input type="date" value={f.birthday} onChange={set('birthday')} /></label>
-          <label className="field"><span>Home anniversary</span><input type="date" value={f.home_anniversary} onChange={set('home_anniversary')} /></label>
-          <label className="field full"><span>Notes</span><textarea value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
-        </div>
-        {confirmDel && (
-          <div className="warn" style={{ marginTop: 10 }}>
-            Remove {c?.first_name} from your database? <button type="button" className="btn" onClick={del}>Remove</button> <button type="button" className="btn ghost" onClick={() => setConfirmDel(false)}>Keep</button>
+    <Sheet label={c ? 'Person details' : 'Add a person'} onClose={onClose}>
+      <form onSubmit={submit} className="stack">
+        <h3>{c ? fullName(c) : 'Add a person'}</h3>
+        {c && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <Meter c={c} byContact={byContact} goal={ctx.goal} />
+            <span className="note">touches in the last 12 months</span>
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-          {c ? <button type="button" className="btn ghost" onClick={() => setConfirmDel(true)}>Remove contact</button> : <span />}
-          <span style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-            <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
-          </span>
+        <div className="ed">
+          <label className="field"><span>First name</span><input required disabled={ro} value={f.first_name} onChange={set('first_name')} /></label>
+          <label className="field"><span>Last name</span><input disabled={ro} value={f.last_name} onChange={set('last_name')} /></label>
+          <label className="field full"><span>Phone</span><input inputMode="tel" disabled={ro} value={f.phone} onChange={set('phone')} /></label>
         </div>
+        <div className="field">
+          <span>How close are you? {f.tier === 'U' ? 'Not sure yet: they come up monthly.' : `${TIER_NAMES[f.tier]}: every ${tierDays(ctx.agent, f.tier)} days.`}</span>
+          <div className="tiersel" role="group" aria-label="Tier">
+            {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
+              <button type="button" key={t} disabled={ro} aria-pressed={f.tier === t} onClick={() => setF({ ...f, tier: t })}>{t === 'U' ? '?' : t}</button>
+            ))}
+          </div>
+        </div>
+        <label className="field"><span>Notes</span><textarea disabled={ro} value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
+        <details className="more" style={{ marginTop: 0 }}>
+          <summary>Email, address and dates</summary>
+          <div className="ed">
+            <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} /></label>
+            <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} /></label>
+            <label className="field"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} /></label>
+            <label className="field"><span>Zip</span><input disabled={ro} value={f.zip} onChange={set('zip')} /></label>
+            <label className="field"><span>Birthday</span><input type="date" disabled={ro} value={f.birthday} onChange={set('birthday')} /></label>
+            <label className="field"><span>Home anniversary</span><input type="date" disabled={ro} value={f.home_anniversary} onChange={set('home_anniversary')} /></label>
+          </div>
+        </details>
+        {confirmDel && (
+          <div className="warn">
+            Remove {c?.first_name} from your people for good?
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button type="button" className="btn" onClick={del}>Yes, remove</button>
+              <button type="button" className="btn ghost" onClick={() => setConfirmDel(false)}>Keep</button>
+            </div>
+          </div>
+        )}
+        {ro ? (
+          <button type="button" className="btn block" onClick={onClose}>Close</button>
+        ) : (
+          <>
+            <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : c ? 'Save' : 'Add person'}</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              {c ? <button type="button" className="btn ghost" onClick={() => setConfirmDel(true)}>Remove</button> : <span />}
+              <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            </div>
+          </>
+        )}
       </form>
     </Sheet>
   )
 }
 
 // ======================================================================
-// Card a Day
+// Card a Day: one question at a time, like the Shortcut
 // ======================================================================
 const RELS = ['Friend', 'Family', 'Client', 'Agent/Colleague', 'Vendor', 'Other']
 const OCCASIONS = ['Thank You', 'Birthday', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
 
-function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
-  const { data, agent, readOnly } = ctx
+function CardSteps({ ctx, preset, onLogged }: { ctx: Ctx; preset?: string; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
+  const { data, agent } = ctx
   const toast = useToast()
-  const [name, setName] = useState('')
+  const start = preset ? 1 : 0
+  const [step, setStep] = useState(start)
+  const [name, setName] = useState(preset ?? '')
   const [rel, setRel] = useState('')
   const [occ, setOcc] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
-  const [cele, setCele] = useState(false)
   const dup = name.trim() ? cardWithin12Months(data.cards, name) : undefined
+  const q = name.trim().toLowerCase()
+  const matches = q ? data.contacts.filter((c) => fullName(c).toLowerCase().includes(q) && fullName(c).toLowerCase() !== q).slice(0, 5) : []
+  const who = name.trim().split(' ')[0] || 'them'
+  const total = 4 - start
+
+  async function submit() {
+    setBusy(true)
+    try {
+      const hadCardToday = data.cards.some((c) => c.sent_on === ymd(today()) && c.counts_for_challenge)
+      const r = await api.logCard(ctx.me, data.cards, data.contacts, { name, relationship: rel, occasion: occ, note })
+      await ctx.reload()
+      toast(r.repeat ? `Card logged for ${who}. It counts as a touch, not toward Card a Day.` : `Card logged for ${who}!`)
+      setName(preset ?? ''); setRel(''); setOcc(''); setNote(''); setStep(start)
+      onLogged?.({ counts: !r.repeat, firstToday: !r.repeat && !hadCardToday })
+    } catch (err) {
+      toast(`That didn't save: ${(err as Error).message}`)
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div>
+      <div className="steps" aria-hidden>{Array.from({ length: total }, (_, i) => <span key={i} className={i <= step - start ? 'on' : ''} />)}</div>
+      {step === 0 && (
+        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) setStep(1) }}>
+          <p className="q">Who did you write a card to?</p>
+          <input aria-label="Name" autoComplete="off" placeholder="Start typing a name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: '100%' }} />
+          {matches.length > 0 && (
+            <div className="sugs">{matches.map((c) => <button type="button" key={c.id} onClick={() => { setName(fullName(c)); setStep(1) }}>{fullName(c)}</button>)}</div>
+          )}
+          <button className="btn primary lg block" style={{ marginTop: 14 }} disabled={!name.trim()}>Next</button>
+        </form>
+      )}
+      {step === 1 && (
+        <>
+          <p className="q">Who is {who} to you?</p>
+          <div className="big-opts">{RELS.map((r) => <button key={r} aria-pressed={rel === r} onClick={() => { setRel(r); setStep(2) }}>{r}</button>)}</div>
+        </>
+      )}
+      {step === 2 && (
+        <>
+          <p className="q">What kind of card?</p>
+          <div className="big-opts">{OCCASIONS.map((r) => <button key={r} aria-pressed={occ === r} onClick={() => { setOcc(r); setStep(3) }}>{r}</button>)}</div>
+        </>
+      )}
+      {step === 3 && (
+        <div className="stack">
+          <p className="q" style={{ margin: 0 }}>Anything to remember?</p>
+          <p className="note" style={{ marginTop: -8 }}>{occ} card to {name.trim()} ({rel.toLowerCase()})</p>
+          <textarea aria-label="Note" placeholder="Optional" value={note} onChange={(e) => setNote(e.target.value)} />
+          {dup && agent.card_rule && (
+            <div className="warn">You wrote {who} a card on {fmt(dup.sent_on)}. This one still counts as a touch, just not toward Card a Day until {fmt(addDays(parse(dup.sent_on), 365))}.</div>
+          )}
+          <button className="btn gold lg block" disabled={busy} onClick={submit}>{busy ? 'Saving…' : 'Log my card'}</button>
+        </div>
+      )}
+      {step > start && <button className="back" onClick={() => setStep(step - 1)}>Back</button>}
+    </div>
+  )
+}
+
+function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
+  const { data, agent, readOnly } = ctx
+  const [cele, setCele] = useState(false)
   const counting = data.cards.filter((c) => c.counts_for_challenge)
   const days = new Set(counting.map((c) => c.sent_on))
+  const doneToday = days.has(ymd(today()))
   let streak = 0
   for (let d = today(); ; d = addDays(d, -1)) {
     if (days.has(ymd(d))) streak++
@@ -436,30 +545,15 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   const monthDays = [...days].filter((d) => d >= ms).length
   const yearCount = counting.filter((c) => c.sent_on.startsWith(String(today().getFullYear()))).length
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) return toast('Add who you wrote to.')
-    if (!rel || !occ) return toast(!rel ? 'Pick who they are to you.' : 'Pick which card.')
-    setBusy(true)
-    try {
-      const hadCardToday = data.cards.some((c) => c.sent_on === ymd(today()) && c.counts_for_challenge)
-      const r = await api.logCard(ctx.me, data.cards, data.contacts, { name, relationship: rel, occasion: occ, note })
-      await ctx.reload()
-      setName(''); setRel(''); setOcc(''); setNote('')
-      toast(`Card logged ✓${r.repeat ? ' Counted as a touch only, since it repeats within 12 months.' : ''}${r.match ? ` ${r.match.first_name} checked off in your database too.` : ''}`)
-      const key = `rs-cele-${agent.id}`
-      const seen = store.get<Record<string, boolean>>(key, {})
-      if (!r.repeat && !hadCardToday && !seen[`card-${ymd(today())}`]) {
-        seen[`card-${ymd(today())}`] = true
-        store.set(key, seen)
-        setCele(true)
-      }
-    } catch (err) {
-      toast(`Couldn't save: ${(err as Error).message}`)
+  function logged(r: { firstToday: boolean }) {
+    const key = `rs-cele-${agent.id}`
+    const seen = store.get<Record<string, boolean>>(key, {})
+    if (r.firstToday && !seen[`card-${ymd(today())}`]) {
+      seen[`card-${ymd(today())}`] = true
+      store.set(key, seen)
+      setCele(true)
     }
-    setBusy(false)
   }
-
   async function toggleRule(v: boolean) {
     await api.updateMyProfile(ctx.me, { card_rule: v })
     onProfileChange?.()
@@ -470,73 +564,58 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   return (
     <section>
-      <h2>Card a Day</h2>
-      <p className="sub">One handwritten card a day. Log it here and it counts toward your monthly cards and the drawing.</p>
-      <div className="cad">
-        {!readOnly ? (
-          <form className="card stack" onSubmit={submit}>
-            <label className="field"><span>Who did you write a card to today?</span>
-              <input list="cad-people" autoComplete="off" placeholder="Start typing a name" value={name} onChange={(e) => setName(e.target.value)} />
-              <datalist id="cad-people">{data.contacts.map((c) => <option key={c.id} value={fullName(c)} />)}</datalist>
-            </label>
-            {dup && agent.card_rule && (
-              <div className="warn">Already wrote {name.trim()} a card on {fmt(dup.sent_on)}. It will still log as a touch, but won't count toward Card a Day until {fmt(addDays(parse(dup.sent_on), 365))}.</div>
-            )}
-            <div className="field"><span>Who are they to you?</span>
-              <div className="chips">{RELS.map((r) => <button type="button" key={r} aria-pressed={rel === r} onClick={() => setRel(r)}>{r}</button>)}</div>
-            </div>
-            <div className="field"><span>Which card?</span>
-              <div className="chips">{OCCASIONS.map((r) => <button type="button" key={r} aria-pressed={occ === r} onClick={() => setOcc(r)}>{r}</button>)}</div>
-            </div>
-            <label className="field"><span>Note (optional)</span><textarea placeholder="Leave blank to skip" value={note} onChange={(e) => setNote(e.target.value)} /></label>
-            <label className="note" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type="checkbox" checked={agent.card_rule} onChange={(e) => toggleRule(e.target.checked)} /> Only count each person once every 12 months
-            </label>
-            <button className="btn gold lg" disabled={busy} style={{ alignSelf: 'flex-start' }}>{busy ? 'Saving…' : 'Log card'}</button>
-          </form>
-        ) : (
-          <div className="card note">Cards are logged by the agent. Their history is on the right.</div>
-        )}
-        <div className="stack" style={{ minWidth: 0 }}>
-          <div className="stats">
-            <div className="stat"><div className="n">{streak}</div><div className="l">Day streak</div></div>
-            <div className="stat"><div className="n">{monthDays}/{today().getDate()}</div><div className="l">Days this month</div></div>
-            <div className="stat"><div className="n">{yearCount}</div><div className="l">Cards this year</div></div>
-          </div>
-          <div className="card">
-            <h3 style={{ marginBottom: 8 }}>{today().toLocaleDateString('en-US', { month: 'long' })} cards</h3>
-            <div className="cal">
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((x, i) => <div key={i} className="h">{x}</div>)}
-              {Array.from({ length: pad }, (_, i) => <div key={`p${i}`} />)}
-              {Array.from({ length: dim }, (_, i) => {
-                const d = new Date(first.getFullYear(), first.getMonth(), i + 1, 12)
-                const k = ymd(d)
-                const who = counting.filter((c) => c.sent_on === k).map((c) => c.recipient_name).join(', ')
-                return <div key={k} title={who} className={`d ${days.has(k) ? 'on' : ''} ${k === ymd(today()) ? 'today' : ''} ${d > today() ? 'fut' : ''}`}>{i + 1}</div>
-              })}
-            </div>
-          </div>
-          <div className="card">
-            <h3 style={{ marginBottom: 6 }}>Recent cards</h3>
-            <div className="stack" style={{ gap: 6, fontSize: 14 }}>
-              {[...data.cards].reverse().slice(0, 8).map((c) => (
-                <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, borderBottom: '1px solid var(--line)', paddingBottom: 6 }}>
-                  <span><b>{c.recipient_name}</b> <span className="note">· {c.occasion} · {c.relationship}{c.counts_for_challenge ? '' : ' · touch only'}</span></span>
-                  <span className="note">{fmt(c.sent_on)}</span>
-                </div>
-              ))}
-              {data.cards.length === 0 && <span className="note">No cards yet.</span>}
-            </div>
-          </div>
-        </div>
+      <h2 style={{ marginTop: 14 }}>Card a Day</h2>
+      <div className="streak" style={{ margin: '10px 0 4px' }}>
+        <b>{streak}</b><span>day streak</span>
       </div>
+      <p className="muted" style={{ marginBottom: 18 }}>{doneToday ? "Today's card is done. Nice work." : 'One handwritten card today keeps it going.'}</p>
+
+      {!readOnly && (
+        <div className="card">
+          <CardSteps ctx={ctx} onLogged={logged} />
+        </div>
+      )}
+
+      <div className="grp">{today().toLocaleDateString('en-US', { month: 'long' })}: {monthDays} of {today().getDate()} days</div>
+      <div className="card">
+        <div className="cal">
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((x, i) => <div key={i} className="h">{x}</div>)}
+          {Array.from({ length: pad }, (_, i) => <div key={`p${i}`} />)}
+          {Array.from({ length: dim }, (_, i) => {
+            const d = new Date(first.getFullYear(), first.getMonth(), i + 1, 12)
+            const k = ymd(d)
+            const who = counting.filter((c) => c.sent_on === k).map((c) => c.recipient_name).join(', ')
+            return <div key={k} title={who} className={`d ${days.has(k) ? 'on' : ''} ${k === ymd(today()) ? 'today' : ''} ${d > today() ? 'fut' : ''}`}>{i + 1}</div>
+          })}
+        </div>
+        <p className="note" style={{ marginTop: 12, textAlign: 'center' }}>{yearCount} cards so far this year</p>
+      </div>
+
+      <details className="more">
+        <summary>Recent cards and settings</summary>
+        <div className="card" style={{ padding: '4px 16px' }}>
+          {[...data.cards].reverse().slice(0, 10).map((c) => (
+            <div key={c.id} className="donerow">
+              <span style={{ flex: 1 }}><b style={{ fontWeight: 500 }}>{c.recipient_name}</b><br /><span className="note">{c.occasion}{c.counts_for_challenge ? '' : ' (touch only)'}</span></span>
+              <span className="note">{fmt(c.sent_on)}</span>
+            </div>
+          ))}
+          {data.cards.length === 0 && <p className="note" style={{ padding: '12px 0' }}>No cards yet.</p>}
+        </div>
+        {!readOnly && (
+          <label style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14, fontSize: 15 }}>
+            <input type="checkbox" style={{ width: 22, height: 22 }} checked={agent.card_rule} onChange={(e) => toggleRule(e.target.checked)} />
+            Only count each person once every 12 months
+          </label>
+        )}
+      </details>
       {cele && <Celebrate eyebrow="Card a Day" title="Card a Day: done!" sub="Today's card is written and logged." onClose={() => setCele(false)} />}
     </section>
   )
 }
 
 // ======================================================================
-// Monthly activity + my plan + goals
+// Progress
 // ======================================================================
 const TALLIES = [
   { k: 'giveaway', l: 'Monthly giveaway' },
@@ -546,59 +625,74 @@ const TALLIES = [
   { k: 'social', l: 'Social posts' },
 ]
 
-function Monthly({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
+function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
   const { data, agent, readOnly, brokerage } = ctx
   const toast = useToast()
   const ms = ymd(monthStart())
   const month = data.touches.filter((t) => !t.is_group && t.occurred_on >= ms)
   const goals = { call: 21, text: 21, card: 7, ...(brokerage?.settings?.monthly_goals ?? {}) }
   const count = (k: TouchKind) => month.filter((t) => t.kind === k).length
+  const g = goalState(ctx)
 
   async function bump(k: string, d: number) {
     try {
       await api.bumpTally(ctx.me, data.tallies, k, d)
       await ctx.reload()
     } catch (e) {
-      toast(`Couldn't save: ${(e as Error).message}`)
+      toast(`That didn't save: ${(e as Error).message}`)
     }
   }
   return (
     <section>
-      <h2>{monthName()}</h2>
-      <p className="sub">Every touch logged on Your Next 10 and Card a Day counts here automatically. Tap + and − for everything else.</p>
-      <div className="grp">Rock Solid · database touches</div>
-      <div className="card bars">
+      <h2 style={{ marginTop: 14 }}>{today().toLocaleDateString('en-US', { month: 'long' })}</h2>
+      <p className="sub">Everything you log on Today and Cards adds up here on its own.</p>
+      <div className="card bigbars">
         {(['call', 'text', 'card'] as const).map((k) => {
           const n = count(k)
           const goal = goals[k] ?? 1
           const p = Math.min(100, Math.round((n / goal) * 100))
           return (
-            <div key={k} className="bar">
-              <div className="top"><span>{KIND_LABEL[k]}s</span><b>{n} / {goal} · {p}%</b></div>
-              <div className="track"><div className={`fill ${p >= 100 ? 'hit' : ''}`} style={{ width: `${p}%` }} /></div>
+            <div key={k} className={`bigbar k-${k}`}>
+              <div className="row1"><span className={`kind k-${k}`}>{KIND_ICON[k]} {KIND_LABEL[k]}s</span><b>{n} of {goal}</b></div>
+              <div className="track"><div className="fill" style={{ width: `${p}%` }} /></div>
             </div>
           )
         })}
-        <div className="note">Pop-bys this month: {count('popby')}</div>
+        <p className="note">Pop-bys this month: {count('popby')}</p>
       </div>
-      <div className="grp">Monthly push</div>
-      <div className="tally">
-        {TALLIES.map((t) => {
-          const v = data.tallies.find((x) => x.kind === t.k)?.count ?? 0
-          return (
-            <div key={t.k} className="tl">
-              <div style={{ fontWeight: 600 }}>{t.l}</div>
-              <div className="c">
-                {!readOnly && <button className="btn sq" aria-label={`Subtract one ${t.l}`} onClick={() => bump(t.k, -1)}>−</button>}
-                <span className="v">{v}</span>
-                {!readOnly && <button className="btn sq" aria-label={`Add one ${t.l}`} onClick={() => bump(t.k, 1)}>+</button>}
+      <div className="stats" style={{ marginTop: 12, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+        <div className="stat"><div className="n">{g.today} of {agent.daily_goal}</div><div className="l">today</div></div>
+        <div className="stat"><div className="n">{g.week} of {agent.weekly_goal}</div><div className="l">this week</div></div>
+      </div>
+
+      <details className="more">
+        <summary>Other things this month</summary>
+        <div className="card tally" style={{ padding: '4px 16px' }}>
+          {TALLIES.map((t) => {
+            const v = data.tallies.find((x) => x.kind === t.k)?.count ?? 0
+            return (
+              <div key={t.k} className="tl">
+                <span>{t.l}</span>
+                <div className="c">
+                  {!readOnly && <button className="btn sq" aria-label={`Subtract one ${t.l}`} onClick={() => bump(t.k, -1)}>−</button>}
+                  <span className="v">{v}</span>
+                  {!readOnly && <button className="btn sq" aria-label={`Add one ${t.l}`} onClick={() => bump(t.k, 1)}>+</button>}
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
-      <MyPlan ctx={ctx} onProfileChange={onProfileChange} />
-      {!readOnly && <MyGoals agent={agent} me={ctx.me} onProfileChange={onProfileChange} />}
+            )
+          })}
+        </div>
+      </details>
+      {!readOnly && (
+        <details className="more" style={{ marginTop: 0 }}>
+          <summary>My daily and weekly goals</summary>
+          <MyGoals agent={agent} me={ctx.me} onProfileChange={onProfileChange} />
+        </details>
+      )}
+      <details className="more" style={{ marginTop: 0 }}>
+        <summary>My plan for the year</summary>
+        <MyPlan ctx={ctx} onProfileChange={onProfileChange} />
+      </details>
     </section>
   )
 }
@@ -611,15 +705,10 @@ function MyGoals({ agent, me, onProfileChange }: { agent: Profile; me: Profile; 
     onProfileChange?.()
   }
   return (
-    <>
-      <div className="grp">My goals</div>
-      <div className="card toolbar" style={{ margin: 0 }}>
-        <label className="note" htmlFor="gDay">Daily goal (touches)</label>
-        <input id="gDay" type="number" min={1} style={{ width: 80 }} value={day} onChange={(e) => setDay(+e.target.value)} onBlur={() => save({ daily_goal: Math.max(1, day || 1) })} />
-        <label className="note" htmlFor="gWeek">Weekly goal (touches)</label>
-        <input id="gWeek" type="number" min={1} style={{ width: 80 }} value={week} onChange={(e) => setWeek(+e.target.value)} onBlur={() => save({ weekly_goal: Math.max(1, week || 1) })} />
-      </div>
-    </>
+    <div className="card ed">
+      <label className="field"><span>Touches a day</span><input type="number" min={1} value={day} onChange={(e) => setDay(+e.target.value)} onBlur={() => save({ daily_goal: Math.max(1, day || 1) })} /></label>
+      <label className="field"><span>Touches a week</span><input type="number" min={1} value={week} onChange={(e) => setWeek(+e.target.value)} onBlur={() => save({ weekly_goal: Math.max(1, week || 1) })} /></label>
+    </div>
   )
 }
 
@@ -645,67 +734,62 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
     </label>
   )
   return (
-    <>
-      <div className="grp">My {today().getFullYear()} plan</div>
-      <div className="card stack">
-        <div className="ed" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
-          {num('income', 'Take-home goal ($)', 1000)}
-          {num('cap', 'Cap / splits ($)', 500)}
-          {num('price', 'Avg sale price ($)', 5000)}
-          {num('rate', 'Commission rate (%)', 0.1)}
-          {num('conversion', 'Database conversion (%)', 1)}
-        </div>
-        <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
-          <div className="stat"><div className="n">{money(gci)}</div><div className="l">GCI needed</div></div>
-          <div className="stat"><div className="n">{money(perDeal)}</div><div className="l">Per transaction</div></div>
-          <div className="stat"><div className="n">{deals}</div><div className="l">Transactions</div></div>
-          <div className="stat"><div className="n">{dbNeeded}</div><div className="l">Contacts needed</div></div>
-        </div>
-        <p className="note">
-          You have {have} contacts {have >= dbNeeded ? `, enough for this plan at ${p.conversion}% conversion.` : `. Add ${dbNeeded - have} more to support this plan.`} At 36 touches each, that's about {Math.round((dbNeeded * 36) / 52)} touches a week.
-        </p>
+    <div className="card stack">
+      <div className="ed">
+        {num('income', 'Take-home goal ($)', 1000)}
+        {num('cap', 'Cap and splits ($)', 500)}
+        {num('price', 'Average sale price ($)', 5000)}
+        {num('rate', 'Commission rate (%)', 0.1)}
+        <label className="field full"><span>Of your people, how many buy or sell or refer each year? (%)</span>
+          <input type="number" step={1} disabled={readOnly} value={p.conversion} onChange={(e) => setP({ ...p, conversion: +e.target.value })} onBlur={save} />
+        </label>
       </div>
-    </>
+      <div className="stats" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+        <div className="stat"><div className="n">{money(gci)}</div><div className="l">You need to earn</div></div>
+        <div className="stat"><div className="n">{deals}</div><div className="l">Closings</div></div>
+        <div className="stat"><div className="n">{dbNeeded}</div><div className="l">People you need</div></div>
+        <div className="stat"><div className="n">{have}</div><div className="l">People you have</div></div>
+      </div>
+      <p className="note">
+        {have >= dbNeeded ? 'You have enough people for this plan. ' : `Add ${dbNeeded - have} more people to support this plan. `}
+        At 36 touches each, that's about {Math.round((dbNeeded * 36) / 52)} touches a week.
+      </p>
+    </div>
   )
 }
 
 // ======================================================================
-// Database
+// People
 // ======================================================================
-function Database({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
+function Meter({ c, byContact, goal }: { c: Contact; byContact: Map<string, string[]>; goal: number }) {
+  const n = score(c, byContact)
+  const h = heat(c, byContact, goal)
+  return (
+    <span className={`meter h-${h}`} title={`${n} of ${goal} touches. ${HEAT_NAME[h]}.`}>
+      <HeatTag h={h} />
+      <span className="mt"><i style={{ width: `${Math.min(100, (n / goal) * 100)}%` }} /></span>
+      {n}/{goal}
+    </span>
+  )
+}
+
+function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
   const { data, agent, readOnly } = ctx
-  const toast = useToast()
   const byContact = useMemo(() => touchCounts(data.touches), [data.touches])
   const [q, setQ] = useState('')
-  const [tf, setTf] = useState<Tier | ''>('')
   const [hf, setHf] = useState<Heat | ''>('')
-  const [sort, setSort] = useState<'cold' | 'hot' | 'next' | 'name'>('cold')
   const [edit, setEdit] = useState<Contact | null | 'new'>(null)
   const [group, setGroup] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [shown, setShown] = useState(60)
 
   const heats = new Map(data.contacts.map((c) => [c.id, heat(c, byContact, ctx.goal)]))
   const counts: Record<Heat, number> = { hot: 0, warm: 0, cold: 0, new: 0 }
   for (const h of heats.values()) counts[h]++
-  const sorter = {
-    cold: (a: Contact, b: Contact) => score(a, byContact) - score(b, byContact),
-    hot: (a: Contact, b: Contact) => score(b, byContact) - score(a, byContact),
-    next: (a: Contact, b: Contact) => nextDue(a, agent).getTime() - nextDue(b, agent).getTime(),
-    name: (a: Contact, b: Contact) => fullName(a).localeCompare(fullName(b)),
-  }[sort]
   const list = data.contacts
-    .filter((c) => (!tf || c.tier === tf) && (!hf || heats.get(c.id) === hf) && fullName(c).toLowerCase().includes(q.toLowerCase()))
-    .sort(sorter)
+    .filter((c) => (!hf || heats.get(c.id) === hf) && fullName(c).toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => (hf ? score(a, byContact) - score(b, byContact) : 0) || fullName(a).localeCompare(fullName(b)))
 
-  async function setTier(c: Contact, tier: Tier) {
-    try {
-      await api.saveContact(ctx.me, { first_name: c.first_name, tier }, c.id)
-      await ctx.reload()
-      toast(`${c.first_name} is now ${tier === 'U' ? 'untagged (monthly)' : `Tier ${tier}`}.`)
-    } catch (e) {
-      toast(`Couldn't save: ${(e as Error).message}`)
-    }
-  }
   async function setDays(t: Tier, v: number) {
     await api.updateMyProfile(ctx.me, { tier_days: { ...agent.tier_days, [t]: Math.max(1, v || 1) } })
     onProfileChange?.()
@@ -713,82 +797,69 @@ function Database({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
 
   return (
     <section>
-      <h2>Database</h2>
-      <p className="sub">Tier sets how often someone comes up, and the thermometer shows whether each relationship is on pace over the last 12 months. Anyone without a tier comes up monthly until you tag them.</p>
-      <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', marginBottom: 12 }}>
-        {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
-          <div key={t} className="stat">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className={`tier t${t}`} style={{ width: 22, height: 22, fontSize: 12 }}>{t === 'U' ? '?' : t}</span>
-              <b style={{ fontFamily: 'var(--display)', fontSize: 16 }}>{TIER_NAMES[t]}</b>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 14 }}>
+        <h2 style={{ margin: 0 }}>People</h2>
+        {!readOnly && <button className="btn primary" onClick={() => setEdit('new')}><IPlus size={18} /> Add</button>}
+      </div>
+      <p className="sub" style={{ marginTop: 4 }}>{data.contacts.length} people. Tap anyone to see or change their details.</p>
+
+      <div className="search"><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="chips" style={{ margin: '12px 0' }}>
+        <button aria-pressed={!hf} onClick={() => setHf('')}>Everyone</button>
+        {(['cold', 'warm', 'hot', ...(counts.new ? ['new'] : [])] as Heat[]).map((h) => (
+          <button key={h} aria-pressed={hf === h} onClick={() => setHf(hf === h ? '' : h)}>{HEAT_NAME[h]} ({counts[h]})</button>
+        ))}
+      </div>
+
+      {data.contacts.length === 0 ? (
+        <div className="card empty">
+          <p>No one here yet. Add people one at a time, or bring in a spreadsheet under More tools.</p>
+        </div>
+      ) : list.length === 0 ? (
+        <div className="card empty"><p>No one matches that.</p></div>
+      ) : (
+        <div className="plist">
+          {list.slice(0, shown).map((c) => (
+            <button key={c.id} className="prow" onClick={() => setEdit(c)}>
+              <span className="nm">
+                <b>{fullName(c)}</b>
+                <small>{c.tier === 'U' ? 'No tier yet' : `Tier ${c.tier}`}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
+              </span>
+              <Meter c={c} byContact={byContact} goal={ctx.goal} />
+            </button>
+          ))}
+        </div>
+      )}
+      {list.length > shown && <button className="btn block" style={{ marginTop: 12 }} onClick={() => setShown(shown + 100)}>Show more ({list.length - shown})</button>}
+      <p className="note" style={{ marginTop: 12 }}>The bar shows touches in the last 12 months out of {ctx.goal}. Red means they need you soon.</p>
+
+      {!readOnly && (
+        <details className="more">
+          <summary>More tools</summary>
+          <div className="stack">
+            <div className="card stack">
+              <h3>Sent something to everyone?</h3>
+              <p className="note">Credit an email blast, mailed newsletter or client event to many people at once.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => setGroup(true)}>Log a group touch</button>
             </div>
-            <div className="note" style={{ marginTop: 4 }}>
-              {data.contacts.filter((c) => c.tier === t).length} contacts · every{' '}
-              {readOnly ? tierDays(agent, t) : (
-                <input type="number" min={1} aria-label={`Days between touches for tier ${t}`} defaultValue={tierDays(agent, t)} style={{ width: 54, padding: '2px 6px' }} onBlur={(e) => setDays(t, +e.target.value)} />
-              )}{' '}days
+            <div className="card stack">
+              <h3>Bring in a spreadsheet</h3>
+              <p className="note">A CSV file, like a BoldTrail export. People already here are skipped.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => setImporting(true)}>Import CSV</button>
+            </div>
+            <div className="card stack">
+              <h3>How often each tier comes up</h3>
+              {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
+                <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
+                  <span>{t === 'U' ? 'No tier yet' : `${t}: ${TIER_NAMES[t]}`} <span className="note">({data.contacts.filter((c) => c.tier === t).length})</span></span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    every <input type="number" min={1} aria-label={`Days between touches for tier ${t}`} defaultValue={tierDays(agent, t)} style={{ width: 64 }} onBlur={(e) => setDays(t, +e.target.value)} /> days
+                  </span>
+                </label>
+              ))}
             </div>
           </div>
-        ))}
-      </div>
-      <div className="heatbar">
-        {(['hot', 'warm', 'cold', ...(counts.new ? ['new'] : [])] as Heat[]).map((h) => (
-          <button key={h} className={`therm h-${h}`} aria-pressed={hf === h} onClick={() => setHf(hf === h ? '' : h)}>
-            <HeatTag h={h} label /> <span className="note">{counts[h]}</span>
-          </button>
-        ))}
-        <span className="note">Bulb = touches in the last 12 months, out of {ctx.goal}.</span>
-      </div>
-      <div className="toolbar">
-        <select aria-label="Sort contacts" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-          <option value="cold">Most urgent first</option>
-          <option value="hot">On pace first</option>
-          <option value="next">Next up</option>
-          <option value="name">Name</option>
-        </select>
-        <input type="search" placeholder="Search name" aria-label="Search contacts" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select aria-label="Filter by tier" value={tf} onChange={(e) => setTf(e.target.value as Tier | '')}>
-          <option value="">All tiers</option>
-          {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => <option key={t} value={t}>{t === 'U' ? 'No tier' : t}</option>)}
-        </select>
-        {!readOnly && (
-          <>
-            <button className="btn primary" onClick={() => setEdit('new')}>Add contact</button>
-            <button className="btn" onClick={() => setImporting(true)}>Import CSV</button>
-            <button className="btn" onClick={() => setGroup(true)}>Log a group touch</button>
-          </>
-        )}
-      </div>
-      {data.contacts.length === 0 ? (
-        <div className="card empty">No contacts yet. Add one or import a CSV to get started.</div>
-      ) : (
-        <div className="tblwrap">
-          <table>
-            <thead><tr><th>Name</th><th>Phone</th><th>Tier</th><th>Last touch</th><th>Next up</th><th>Last 12 months</th><th /></tr></thead>
-            <tbody>
-              {list.map((c) => {
-                const nd = nextDue(c, agent)
-                return (
-                  <tr key={c.id}>
-                    <td>{fullName(c)}</td>
-                    <td>{c.phone ?? ''}</td>
-                    <td>
-                      {readOnly ? (c.tier === 'U' ? 'None' : c.tier) : (
-                        <select aria-label={`Tier for ${c.first_name}`} value={c.tier} onChange={(e) => setTier(c, e.target.value as Tier)}>
-                          {(['U', 'A', 'B', 'C', 'D'] as Tier[]).map((t) => <option key={t} value={t}>{t === 'U' ? 'None' : t}</option>)}
-                        </select>
-                      )}
-                    </td>
-                    <td>{c.last_touch_on ? fmt(c.last_touch_on) : '—'}</td>
-                    <td>{nd <= addDays(weekStart(), 6) ? 'This week' : fmt(nd)}</td>
-                    <td><Therm c={c} byContact={byContact} goal={ctx.goal} /></td>
-                    <td>{!readOnly && <button className="btn ghost" onClick={() => setEdit(c)}>Edit</button>}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        </details>
       )}
       {edit && <EditSheet ctx={ctx} c={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
       {group && <GroupSheet ctx={ctx} onClose={() => setGroup(false)} />}

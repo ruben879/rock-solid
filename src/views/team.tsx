@@ -220,7 +220,7 @@ export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profil
       ctx.beginPath(); ctx.moveTo(R, R); ctx.arc(R, R, R - 8, a0, a0 + sweep); ctx.closePath(); ctx.fillStyle = cols[i % cols.length]; ctx.fill()
       ctx.strokeStyle = cs.getPropertyValue('--surface'); ctx.lineWidth = 3; ctx.stroke()
       if (sweep > 0.18) {
-        ctx.save(); ctx.translate(R, R); ctx.rotate(a0 + sweep / 2); ctx.fillStyle = '#fff'; ctx.font = '600 24px Barlow, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'
+        ctx.save(); ctx.translate(R, R); ctx.rotate(a0 + sweep / 2); ctx.fillStyle = '#fff'; ctx.font = '500 24px Lexend, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'
         ctx.fillText(name(e.agent_id).split(' ')[0], R - 28, 0); ctx.restore()
       }
       a0 += sweep

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import type { Session } from '@supabase/supabase-js'
 import { configured, supabase } from './supabase'
 import * as api from './lib/data'
-import { addDays, fmt, weekStart } from './lib/dates'
 import type { Brokerage, Profile } from './lib/model'
-import { ToastProvider, store } from './ui'
+import { Sheet, ToastProvider, store } from './ui'
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
+import { ICard, IChart, IHome, IPeople, ITeam } from './icons'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -27,26 +27,24 @@ export default function App() {
   return <ToastProvider>{session && configured ? <Signed session={session} /> : <Shell>{body}</Shell>}</ToastProvider>
 }
 
-function Shell({ children, header }: { children: ReactNode; header?: ReactNode }) {
+function Mark() {
+  return <div className="mark"><img src="/icon.svg" alt="" />Rock Solid</div>
+}
+
+function Shell({ children, right, wide }: { children: ReactNode; right?: ReactNode; wide?: boolean }) {
   return (
     <>
-      <header className="band">
-        <div className="wrap">
-          {header ?? (
-            <div className="brand" style={{ paddingBottom: 16 }}>
-              <div><small>Clear Rock Realty</small><h1>Rock Solid</h1></div>
-            </div>
-          )}
-        </div>
+      <header className="appbar">
+        <div className={`wrap ${wide ? 'wide' : ''} topbar`}><Mark />{right}</div>
       </header>
-      <main className="wrap">{children}</main>
+      <main className={`wrap ${wide ? 'wide' : ''}`}>{children}</main>
     </>
   )
 }
 
 function Notice({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="card stack">
+    <section className="card stack" style={{ marginTop: 24 }}>
       <h2 style={{ margin: 0 }}>{title}</h2>
       <p>{children}</p>
     </section>
@@ -79,38 +77,40 @@ function SignIn() {
   }
   if (status === 'sent' || status === 'verifying')
     return (
-      <form className="card stack" onSubmit={verify}>
+      <form className="signin stack" onSubmit={verify}>
         <h2 style={{ margin: 0 }}>Check your email</h2>
-        <p className="muted">We sent a sign-in code to {email}. Type it here. This keeps you signed in when Rock Solid is saved to your home screen.</p>
-        <label className="field"><span>Code</span>
-          <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} style={{ fontSize: 24, letterSpacing: '.3em', maxWidth: 200 }} />
-        </label>
-        <button className="btn primary lg" style={{ alignSelf: 'flex-start' }} disabled={status === 'verifying' || code.length < 6}>{status === 'verifying' ? 'Checking…' : 'Sign in'}</button>
+        <p className="muted">We sent a code to {email}. Type it below and you'll stay signed in.</p>
+        <input className="code" aria-label="Code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={10} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+        <button className="btn primary lg block" disabled={status === 'verifying' || code.length < 6}>{status === 'verifying' ? 'Checking…' : 'Sign in'}</button>
         {error && <p className="error">{error}</p>}
         <p className="note">No code? <button type="button" className="link" onClick={() => { setStatus('idle'); setCode(''); setError('') }}>Send a new one</button></p>
       </form>
     )
   return (
-    <form className="card stack" onSubmit={submit}>
-      <h2 style={{ margin: 0 }}>Sign in</h2>
-      <p className="muted">Enter your work email and we'll send you a sign-in code. No password needed.</p>
-      <label className="field"><span>Email</span>
-        <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-      </label>
-      <button className="btn primary lg" style={{ alignSelf: 'flex-start' }} disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send my code'}</button>
+    <form className="signin stack" onSubmit={submit}>
+      <h2 style={{ margin: 0 }}>Welcome to Rock Solid</h2>
+      <p className="muted">Enter your work email and we'll send you a code. No password needed.</p>
+      <input type="email" aria-label="Email" placeholder="you@clearrockrealty.com" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <button className="btn primary lg block" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send my code'}</button>
       {status === 'error' && <p className="error">{error}</p>}
     </form>
   )
 }
 
-type Tab = AgentTab | 'agents' | 'team' | 'draw'
+type Tab = AgentTab | 'team'
+type TeamView = 'agents' | 'invite' | 'draw'
 
 function Signed({ session }: { session: Session }) {
   const [me, setMe] = useState<Profile | null | undefined>(undefined)
   const [brokerage, setBrokerage] = useState<Brokerage | null>(null)
   const [team, setTeam] = useState<Profile[]>([])
-  const [tab, setTab] = useState<Tab>(() => store.get<Tab>('rs-tab', 'week'))
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = store.get<string>('rs-tab', 'week')
+    return (['week', 'cards', 'activity', 'db', 'team'].includes(t) ? t : 'week') as Tab
+  })
+  const [teamView, setTeamView] = useState<TeamView>('agents')
   const [viewing, setViewing] = useState<Profile | null>(null)
+  const [menu, setMenu] = useState(false)
 
   const loadProfile = useCallback(async () => {
     const r = await api.loadMe(session.user.id)
@@ -122,7 +122,7 @@ function Signed({ session }: { session: Session }) {
 
   const signOut = () => supabase.auth.signOut()
 
-  if (me === undefined) return <Shell><p className="muted">Loading your profile…</p></Shell>
+  if (me === undefined) return <Shell><p className="muted" style={{ marginTop: 24 }}>Loading…</p></Shell>
   if (me === null)
     return (
       <Shell>
@@ -132,46 +132,63 @@ function Signed({ session }: { session: Session }) {
       </Shell>
     )
 
-  const agentTabs: [Tab, string][] = [['week', 'Your Next 10'], ['cards', 'Card a Day'], ['activity', 'Monthly'], ['db', 'Database']]
-  const extra: [Tab, string][] = me.role === 'broker' ? [['agents', 'All Agents'], ['team', 'Team'], ['draw', 'Drawing']] : me.role === 'coach' ? [['agents', 'My Agents']] : []
-  const tabs = viewing ? agentTabs : [...agentTabs, ...extra]
+  const leads = me.role !== 'agent'
+  const tabs: [Tab, string, ReactNode][] = [
+    ['week', 'Today', <IHome key="h" />],
+    ['cards', 'Cards', <ICard key="c" />],
+    ['db', 'People', <IPeople key="p" />],
+    ['activity', 'Progress', <IChart key="a" />],
+    ...(leads && !viewing ? [['team', me.role === 'broker' ? 'Team' : 'My agents', <ITeam key="t" />] as [Tab, string, ReactNode]] : []),
+  ]
   const current = tabs.some(([k]) => k === tab) ? tab : 'week'
-  const go = (t: Tab) => { setTab(t); store.set('rs-tab', t) }
+  const go = (t: Tab) => { setTab(t); store.set('rs-tab', t); window.scrollTo({ top: 0 }) }
   const subject = viewing ?? me
-  const firstName = (me.full_name || me.email).split(' ')[0]
-
-  const header = (
-    <>
-      <div className="brand">
-        <div><small>{brokerage?.name ?? 'Clear Rock Realty'}</small><h1>Rock Solid</h1></div>
-        <div className="who">
-          {viewing ? <>Viewing <b>{viewing.full_name || viewing.email}</b></> : <>Hi, <b>{firstName}</b> · {me.role}</>}
-          <br />
-          Week of {fmt(weekStart())} – {fmt(addDays(weekStart(), 6))} · <button onClick={signOut}>Sign out</button>
-        </div>
-      </div>
-      <nav className="tabs" role="tablist">
-        {tabs.map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={current === k} onClick={() => go(k)}>{l}</button>
-        ))}
-      </nav>
-    </>
-  )
+  const initial = (me.full_name || me.email).trim()[0]?.toUpperCase() ?? '?'
 
   return (
-    <Shell header={header}>
-      {viewing && (
-        <div className="banner" style={{ marginBottom: 6 }}>
-          <p><b>Viewing {viewing.full_name || viewing.email}'s tracker.</b> <span className="note">Read-only. Only the agent can log touches.</span></p>
-          <button className="btn" onClick={() => { setViewing(null); go('agents') }}>Back to agents</button>
+    <>
+      <Shell wide={current === 'team'} right={<button className="me" aria-label="Account" onClick={() => setMenu(true)}>{initial}</button>}>
+        {viewing && (
+          <div className="viewing">
+            <span>Looking at <b>{viewing.full_name || viewing.email}</b></span>
+            <button className="btn" onClick={() => { setViewing(null); go('team') }}>Done</button>
+          </div>
+        )}
+        {current !== 'team' && (
+          <AgentWorkspace key={subject.id} me={me} agent={subject} brokerage={brokerage} tab={current as AgentTab} readOnly={!!viewing} onProfileChange={loadProfile} onGo={(t) => go(t)} />
+        )}
+        {current === 'team' && (
+          <>
+            {me.role === 'broker' && (
+              <div className="seg" role="group" aria-label="Team views">
+                {([['agents', 'Agents'], ['invite', 'Invite'], ['draw', 'Drawing']] as [TeamView, string][]).map(([k, l]) => (
+                  <button key={k} aria-pressed={teamView === k} onClick={() => setTeamView(k)}>{l}</button>
+                ))}
+              </div>
+            )}
+            {(me.role !== 'broker' || teamView === 'agents') && <AgentsOverview me={me} team={team} brokerage={brokerage} onOpen={(p) => { setViewing(p); go('week') }} />}
+            {me.role === 'broker' && teamView === 'invite' && <TeamAdmin me={me} team={team} onChange={loadProfile} />}
+            {me.role === 'broker' && teamView === 'draw' && <DrawingView me={me} team={team} brokerage={brokerage} />}
+          </>
+        )}
+      </Shell>
+      <nav className="bottom" aria-label="Main">
+        <div className="wrap">
+          {tabs.map(([k, l, icon]) => (
+            <button key={k} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)}>{icon}{l}</button>
+          ))}
         </div>
+      </nav>
+      {menu && (
+        <Sheet label="Account" onClose={() => setMenu(false)}>
+          <h3>{me.full_name || me.email}</h3>
+          <p className="note">{me.email} · {me.role === 'broker' ? 'Broker' : me.role === 'coach' ? 'Coach' : 'Agent'} · {brokerage?.name ?? 'Clear Rock Realty'}</p>
+          <div className="menu" style={{ marginTop: 12 }}>
+            <button onClick={signOut}>Sign out</button>
+            <button onClick={() => setMenu(false)}>Close</button>
+          </div>
+        </Sheet>
       )}
-      {(['week', 'cards', 'activity', 'db'] as Tab[]).includes(current) && (
-        <AgentWorkspace key={subject.id} me={me} agent={subject} brokerage={brokerage} tab={current as AgentTab} readOnly={!!viewing} onProfileChange={loadProfile} />
-      )}
-      {current === 'agents' && <AgentsOverview me={me} team={team} brokerage={brokerage} onOpen={(p) => { setViewing(p); go('week') }} />}
-      {current === 'team' && <TeamAdmin me={me} team={team} onChange={loadProfile} />}
-      {current === 'draw' && <DrawingView me={me} team={team} brokerage={brokerage} />}
-    </Shell>
+    </>
   )
 }
