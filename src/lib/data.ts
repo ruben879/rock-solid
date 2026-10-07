@@ -102,8 +102,8 @@ export async function updateTouch(id: string, fields: { kind?: TouchKind; note?:
   check(await supabase.from('touches').update(fields).eq('id', id))
 }
 
-export async function groupTouch(me: Profile, contacts: Contact[], kind: TouchKind) {
-  const rows = contacts.map((c) => ({ agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, kind, is_group: true, note: 'Group touch', occurred_on: ymd(today()) }))
+export async function groupTouch(me: Profile, contacts: Contact[], kind: TouchKind, note = 'Group touch') {
+  const rows = contacts.map((c) => ({ agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, kind, is_group: true, note, occurred_on: ymd(today()) }))
   for (let i = 0; i < rows.length; i += 500) check(await supabase.from('touches').insert(rows.slice(i, i + 500)))
 }
 
@@ -159,6 +159,10 @@ export async function bumpTally(me: Profile, tallies: Tally[], kind: string, del
   )
 }
 
+export async function setTally(me: Profile, kind: string, count: number) {
+  check(await supabase.from('tallies').upsert({ agent_id: me.id, brokerage_id: me.brokerage_id, month: ymd(monthStart()), kind, count: Math.max(0, count) }, { onConflict: 'agent_id,month,kind' }))
+}
+
 export async function updateMyProfile(me: Profile, fields: Partial<Pick<Profile, 'daily_goal' | 'weekly_goal' | 'card_rule' | 'tier_days' | 'plan' | 'full_name'>>) {
   check(await supabase.from('profiles').update(fields).eq('id', me.id))
 }
@@ -200,10 +204,17 @@ export async function setRole(agentId: string, role: 'agent' | 'coach' | 'broker
   check(await supabase.from('profiles').update({ role }).eq('id', agentId))
 }
 
+/** Drawing entries: one per individual touch logged this month, plus one per extra (social post, giveaway, newsletter, etc.). */
 export async function loadDrawingEntries(month: string) {
-  const { data, error } = await supabase.from('drawing_entries').select('agent_id, entries').eq('month', month)
+  const [{ data, error }, extras] = await Promise.all([
+    supabase.from('drawing_entries').select('agent_id, entries').eq('month', month),
+    fetchAll<Tally>((a, b) => supabase.from('tallies').select('agent_id, month, kind, count').eq('month', month).range(a, b)),
+  ])
   if (error) throw new Error(error.message)
-  return (data ?? []) as { agent_id: string; entries: number }[]
+  const by = new Map<string, number>()
+  for (const r of (data ?? []) as { agent_id: string; entries: number }[]) by.set(r.agent_id, (by.get(r.agent_id) ?? 0) + Number(r.entries))
+  for (const t of extras) by.set(t.agent_id, (by.get(t.agent_id) ?? 0) + t.count)
+  return [...by].map(([agent_id, entries]) => ({ agent_id, entries }))
 }
 
 export interface Drawing {

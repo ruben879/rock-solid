@@ -275,7 +275,7 @@ export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profil
   return (
     <section>
       <h2>{monthName()} drawing</h2>
-      <p className="sub">Every individual interaction logged this month is one entry. No minimum. Spin for each prize in order; once someone wins, they're out of the later spins.</p>
+      <p className="sub">Every individual touch logged this month is one entry, and so is every extra (social post, giveaway, newsletter and so on). No minimum. Spin for each prize in order; once someone wins, they're out of the later spins.</p>
       <div className="draw">
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
           <canvas ref={canvas} width={560} height={560} style={{ width: '100%', maxWidth: 340, aspectRatio: '1', height: 'auto' }} aria-label="Prize wheel" />

@@ -321,6 +321,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </p>
       )}
 
+      <Extras ctx={ctx} />
+
       {logFor && <LogSheet c={logFor} suggested={sug(logFor)} goal={ctx.goal} onClose={() => setLogFor(null)} onLog={(k, n) => { const c = logFor; setLogFor(null); log(c, k, n) }} />}
       {moreFor && (
         <Sheet label={`More for ${moreFor.first_name}`} onClose={() => setMoreFor(null)}>
@@ -706,13 +708,96 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
 // ======================================================================
 // Progress
 // ======================================================================
-const TALLIES = [
-  { k: 'giveaway', l: 'Monthly giveaway' },
-  { k: 'video', l: 'Squeeze / video' },
-  { k: 'email', l: 'Monthly email' },
-  { k: 'openhouse', l: 'Open houses' },
-  { k: 'social', l: 'Social posts' },
+/** Monthly lead-gen extras. "reach" ones can also credit a touch to people in the database. */
+const EXTRAS: { k: string; l: string; reach?: TouchKind }[] = [
+  { k: 'social', l: 'Social post' },
+  { k: 'video', l: 'Video' },
+  { k: 'openhouse', l: 'Open house' },
+  { k: 'giveaway', l: 'Monthly giveaway', reach: 'event' },
+  { k: 'email', l: 'Email newsletter', reach: 'email' },
+  { k: 'newsletter', l: 'Mailed newsletter', reach: 'newsletter' },
+  { k: 'event', l: 'Client event', reach: 'event' },
 ]
+
+function Extras({ ctx }: { ctx: Ctx }) {
+  const { data, readOnly } = ctx
+  const toast = useToast()
+  const [open, setOpen] = useState<(typeof EXTRAS)[number] | null>(null)
+  const val = (k: string) => data.tallies.find((x) => x.kind === k)?.count ?? 0
+  async function plusOne(k: string, l: string) {
+    try {
+      await api.bumpTally(ctx.me, data.tallies, k, 1)
+      await ctx.reload()
+      toast(`${l} added.`, { label: 'Undo', run: async () => { await api.setTally(ctx.me, k, val(k)); await ctx.reload() } })
+    } catch (e) {
+      toast(`That didn't save: ${(e as Error).message}`)
+    }
+  }
+  return (
+    <>
+      <div className="grp" style={{ marginTop: 28 }}>This month <span className="note" style={{ fontWeight: 400 }}>Each one is a drawing entry</span></div>
+      <div className="extras">
+        {EXTRAS.map((x) => {
+          const n = val(x.k)
+          return (
+            <div key={x.k} className={`extra ${n ? 'did' : ''}`}>
+              <button className="ex-body" disabled={readOnly} onClick={() => setOpen(x)} aria-label={`${x.l}: ${n} this month. Tap to change.`}>
+                <b>{n}</b><span>{x.l}</span>
+              </button>
+              {!readOnly && (
+                <button className="ex-plus" aria-label={`Add ${x.l}`} onClick={() => (x.reach ? setOpen(x) : plusOne(x.k, x.l))}><IPlus size={20} /></button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {open && <ExtraSheet ctx={ctx} x={open} current={val(open.k)} onClose={() => setOpen(null)} />}
+    </>
+  )
+}
+
+function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)[number]; current: number; onClose: () => void }) {
+  const toast = useToast()
+  const [total, setTotal] = useState(current)
+  const [tiers, setTiers] = useState<Tier[]>(['A', 'B', 'C', 'D', 'U'])
+  const [busy, setBusy] = useState(false)
+  const who = ctx.data.contacts.filter((c) => tiers.includes(c.tier))
+  const all = tiers.length === 5
+  const toggle = (t: Tier) => setTiers(tiers.includes(t) ? tiers.filter((y) => y !== t) : [...tiers, t])
+  async function run(fn: () => Promise<void>, msg: string) {
+    setBusy(true)
+    try { await fn(); await ctx.reload(); toast(msg); onClose() } catch (e) { toast(`That didn't save: ${(e as Error).message}`); setBusy(false) }
+  }
+  return (
+    <Sheet label={x.l} onClose={onClose}>
+      <h3>{x.l}</h3>
+      <p className="note">{current} so far this month.</p>
+      {x.reach && (
+        <div className="stack" style={{ marginTop: 16 }}>
+          <div className="field"><span>Who got it? Each person gets credit toward their {ctx.goal}.</span>
+            <div className="chips">
+              <button aria-pressed={all} onClick={() => setTiers(all ? [] : ['A', 'B', 'C', 'D', 'U'])}>Everyone</button>
+              {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
+                <button key={t} aria-pressed={!all && tiers.includes(t)} onClick={() => (all ? setTiers([t]) : toggle(t))}>{t === 'U' ? 'No tier' : `${t}s`}</button>
+              ))}
+            </div>
+          </div>
+          <button className="btn gold lg block" disabled={busy || !who.length} onClick={() => run(async () => { await api.groupTouch(ctx.me, who, x.reach as TouchKind, x.l); await api.setTally(ctx.me, x.k, current + 1) }, `${x.l} logged for ${who.length} people.`)}>
+            {who.length ? `Log it for ${who.length} people` : 'Pick who got it'}
+          </button>
+        </div>
+      )}
+      <div className="field" style={{ marginTop: 20 }}>
+        <span>{x.reach ? 'Or just set the count for this month' : 'How many this month?'}</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <NumInput label={`${x.l} this month`} value={total} onChange={setTotal} style={{ flex: 1 }} />
+          <button className="btn primary" disabled={busy || total === current} onClick={() => run(() => api.setTally(ctx.me, x.k, total), 'Saved.')}>Save</button>
+        </div>
+      </div>
+      <button className="btn ghost block" style={{ marginTop: 10 }} onClick={onClose}>Cancel</button>
+    </Sheet>
+  )
+}
 
 function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
   const { data, agent, readOnly, brokerage } = ctx
@@ -723,14 +808,6 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   const count = (k: TouchKind) => month.filter((t) => t.kind === k).length
   const g = goalState(ctx)
 
-  async function bump(k: string, d: number) {
-    try {
-      await api.bumpTally(ctx.me, data.tallies, k, d)
-      await ctx.reload()
-    } catch (e) {
-      toast(`That didn't save: ${(e as Error).message}`)
-    }
-  }
   return (
     <section>
       <h2 style={{ marginTop: 14 }}>{today().toLocaleDateString('en-US', { month: 'long' })}</h2>
@@ -754,24 +831,12 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
         <div className="stat"><div className="n">{g.week} of {agent.weekly_goal}</div><div className="l">this week</div></div>
       </div>
 
-      <details className="more">
-        <summary>Other things this month</summary>
-        <div className="card tally" style={{ padding: '4px 16px' }}>
-          {TALLIES.map((t) => {
-            const v = data.tallies.find((x) => x.kind === t.k)?.count ?? 0
-            return (
-              <div key={t.k} className="tl">
-                <span>{t.l}</span>
-                <div className="c">
-                  {!readOnly && <button className="btn sq" aria-label={`Subtract one ${t.l}`} onClick={() => bump(t.k, -1)}>−</button>}
-                  <span className="v">{v}</span>
-                  {!readOnly && <button className="btn sq" aria-label={`Add one ${t.l}`} onClick={() => bump(t.k, 1)}>+</button>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </details>
+      <div className="card tally" style={{ padding: '4px 16px', marginTop: 12 }}>
+        {EXTRAS.map((t) => (
+          <div key={t.k} className="tl"><span>{t.l}</span><span className="v">{data.tallies.find((x) => x.kind === t.k)?.count ?? 0}</span></div>
+        ))}
+      </div>
+      <p className="note" style={{ marginTop: 8 }}>Add these from the bottom of Today. Each one is also an entry in the monthly drawing.</p>
       {!readOnly && (
         <details className="more" style={{ marginTop: 0 }}>
           <summary>My daily and weekly goals</summary>
@@ -960,11 +1025,6 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         <details className="more">
           <summary>More tools</summary>
           <div className="stack">
-            <div className="card stack">
-              <h3>Sent something to everyone?</h3>
-              <p className="note">Credit an email blast, mailed newsletter or client event to many people at once.</p>
-              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => setGroup(true)}>Log a group touch</button>
-            </div>
             <div className="card stack">
               <h3>Bring in a spreadsheet</h3>
               <p className="note">A CSV file, like a BoldTrail export. People already here are skipped.</p>
