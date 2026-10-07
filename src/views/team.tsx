@@ -40,7 +40,7 @@ export function AgentsOverview({ me, team, brokerage, onOpen }: { me: Profile; t
       ) : (
         <div className="agentcards">
           {visible.map((p) => {
-            const s = agentSummary(data, p.id, goal)
+            const s = agentSummary(data, p.id, goal, p.tier_days)
             const pct = Math.round((s.monthTouches / monthly) * 100)
             const cls = pct >= 75 ? 'ok' : pct >= 45 ? 'mid' : 'low'
             const coach = team.find((c) => c.id === p.coach_id)

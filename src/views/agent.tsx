@@ -481,7 +481,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
         <h3>{c ? fullName(c) : 'Add a person'}</h3>
         {c && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <Meter c={c} byContact={byContact} goal={ctx.goal} />
+            <Meter c={c} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
             <span className="note">touches in the last 12 months</span>
           </div>
         )}
@@ -880,9 +880,9 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
 // ======================================================================
 // People
 // ======================================================================
-function Meter({ c, byContact, goal }: { c: Contact; byContact: Map<string, string[]>; goal: number }) {
+function Meter({ c, byContact, goal, agent }: { c: Contact; byContact: Map<string, string[]>; goal: number; agent: Profile }) {
   const n = score(c, byContact)
-  const h = heat(c, byContact, goal)
+  const h = heat(c, byContact, goal, agent.tier_days)
   return (
     <span className={`meter h-${h}`} title={`${n} of ${goal} touches. ${HEAT_NAME[h]}.`}>
       <HeatTag h={h} />
@@ -902,7 +902,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [importing, setImporting] = useState(false)
   const [shown, setShown] = useState(60)
 
-  const heats = new Map(data.contacts.map((c) => [c.id, heat(c, byContact, ctx.goal)]))
+  const heats = new Map(data.contacts.map((c) => [c.id, heat(c, byContact, ctx.goal, agent.tier_days)]))
   const counts: Record<Heat, number> = { hot: 0, warm: 0, cold: 0, new: 0 }
   for (const h of heats.values()) counts[h]++
   const list = data.contacts
@@ -944,13 +944,13 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
                 <b>{fullName(c)}</b>
                 <small>{c.tier === 'U' ? 'No tier yet' : `Tier ${c.tier}`}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
               </span>
-              <Meter c={c} byContact={byContact} goal={ctx.goal} />
+              <Meter c={c} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
             </button>
           ))}
         </div>
       )}
       {list.length > shown && <button className="btn block" style={{ marginTop: 12 }} onClick={() => setShown(shown + 100)}>Show more ({list.length - shown})</button>}
-      <p className="note" style={{ marginTop: 12 }}>The bar shows touches in the last 12 months out of {ctx.goal}. Red means they need you soon.</p>
+      <p className="note" style={{ marginTop: 12 }}>The bar shows touches in the last 12 months out of {ctx.goal}. Red means it's been a long time since you reached out.</p>
 
       {!readOnly && (
         <details className="more">
@@ -1127,14 +1127,14 @@ function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
 }
 
 // Re-exported helpers for coach and broker views
-export function agentSummary(d: api.AgentData, agentId: string, goal: number) {
+export function agentSummary(d: api.AgentData, agentId: string, goal: number, tierDaysMap?: Profile['tier_days']) {
   const ms = ymd(monthStart())
   const mine = d.touches.filter((t) => t.agent_id === agentId)
   const month = mine.filter((t) => !t.is_group && t.occurred_on >= ms)
   const contacts = d.contacts.filter((c) => c.agent_id === agentId)
   const byContact = touchCounts(mine)
   const h = { hot: 0, warm: 0, cold: 0, new: 0 }
-  for (const c of contacts) h[heat(c, byContact, goal)]++
+  for (const c of contacts) h[heat(c, byContact, goal, tierDaysMap)]++
   const n = contacts.length || 1
   const lastLog = mine.filter((t) => !t.is_group).map((t) => t.occurred_on).sort().at(-1)
   return {

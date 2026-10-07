@@ -187,11 +187,25 @@ export function target(c: Contact, goal: number) {
   return (goal * Math.max(30, windowDays(c))) / 365
 }
 
-export function heat(c: Contact, byContact: Map<string, string[]>, goal: number): Heat {
+/**
+ * Status is about timing, not the yearly total:
+ *  - On pace: touched recently enough for their tier.
+ *  - Behind: due now, or past due by less than one more cycle.
+ *    Also anyone with 6+ months of history who is under half their 36-touch pace.
+ *  - Urgent: more than two full cycles since the last touch.
+ *  - New: added in the last 30 days and not touched yet.
+ */
+export function heat(c: Contact, byContact: Map<string, string[]>, goal: number, days: Record<Tier, number> = DEFAULT_TIER_DAYS): Heat {
   const n = score(c, byContact)
-  if (daysBetween(parse(c.added_on), today()) < 30 && n === 0) return 'new'
-  const r = n / target(c, goal)
-  return r >= 0.9 ? 'hot' : r >= 0.55 ? 'warm' : 'cold'
+  const age = daysBetween(parse(c.added_on), today())
+  if (age < 30 && n === 0) return 'new'
+  const every = days[c.tier] || DEFAULT_TIER_DAYS[c.tier]
+  const lastSeen = (byContact.get(c.id) ?? []).reduce((m, d) => (d > m ? d : m), c.last_touch_on ?? '')
+  const since = daysBetween(parse(lastSeen || c.added_on), today())
+  if (since > every * 2) return 'cold'
+  if (since > every) return 'warm'
+  if (age >= 182 && n / target(c, goal) < 0.5) return 'warm'
+  return 'hot'
 }
 
 // ---------- Goals ----------
