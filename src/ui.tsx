@@ -4,16 +4,19 @@ import { HEAT_ICON, HEAT_NAME, heat, score, target, windowDays } from './lib/mod
 import { fmt } from './lib/dates'
 
 // ---------- Toasts ----------
-const ToastCtx = createContext<(msg: string) => void>(() => {})
+type ToastAction = { label: string; run: () => void }
+const ToastCtx = createContext<(msg: string, action?: ToastAction) => void>(() => {})
 export const useToast = () => useContext(ToastCtx)
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [msg, setMsg] = useState('')
+  const [action, setAction] = useState<ToastAction | null>(null)
   const timer = useRef<number | undefined>(undefined)
-  const show = useCallback((m: string) => {
+  const show = useCallback((m: string, a?: ToastAction) => {
     setMsg(m)
+    setAction(a ?? null)
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setMsg(''), 2600)
+    timer.current = window.setTimeout(() => { setMsg(''); setAction(null) }, a ? 6000 : 2600)
   }, [])
   return (
     <ToastCtx.Provider value={show}>
@@ -21,6 +24,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {msg && (
         <div className="toast" role="status">
           {msg}
+          {action && (
+            <button className="toast-act" onClick={() => { const a = action; setMsg(''); setAction(null); a.run() }}>{action.label}</button>
+          )}
         </div>
       )}
     </ToastCtx.Provider>

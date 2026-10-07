@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
-import type { Brokerage, Contact, Heat, Profile, Tier, TouchKind } from '../lib/model'
+import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
@@ -40,6 +40,7 @@ function useAgentData1(id: string) {
   return api.useAgentData(ids)
 }
 
+const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by' }
 const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor /> }
 
 // ======================================================================
@@ -134,6 +135,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const b = useBatch(ctx)
   const [logFor, setLogFor] = useState<Contact | null>(null)
   const [moreFor, setMoreFor] = useState<Contact | null>(null)
+  const [doneFor, setDoneFor] = useState<Contact | null>(null)
   const [editFor, setEditFor] = useState<Contact | null>(null)
   const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
@@ -178,12 +180,22 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   async function log(c: Contact, kind: TouchKind, note: string) {
     try {
       const before = flags()
-      await api.logTouch(ctx.me, c.id, kind, note)
+      const t = await api.logTouch(ctx.me, c.id, kind, note)
       pendingCheck.current = before
       await ctx.reload()
-      toast(`Nice! ${c.first_name} is done. ${fmt(addDays(today(), tierDays(agent, c.tier)))} is their next turn.`)
+      toast(`${KIND_LABEL[kind]} logged for ${c.first_name}.`, { label: 'Undo', run: () => undo(t) })
     } catch (e) {
       toast(`That didn't save: ${(e as Error).message}`)
+    }
+  }
+
+  async function undo(t: Touch) {
+    try {
+      await api.deleteTouch(t, data.touches, data.cards)
+      await ctx.reload()
+      toast('Undone.')
+    } catch (e) {
+      toast(`Couldn't undo: ${(e as Error).message}`)
     }
   }
 
@@ -260,7 +272,14 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                 ) : (
                   <button className="go k-other" onClick={() => setLogFor(c)}><ICheck /> Mark {name} done</button>
                 )}
-                {!readOnly && <button className="else" onClick={() => setLogFor(c)}>Did something else? Log it</button>}
+                {!readOnly && (
+                  <div className="alts">
+                    {c.phone && k !== 'call' && <a className="alt k-call" href={`tel:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: 'call' })}><IPhone size={18} /> Call</a>}
+                    {c.phone && k !== 'text' && <a className="alt k-text" href={`sms:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: 'text' })}><IText size={18} /> Text</a>}
+                    {k !== 'card' && <button className="alt k-card" onClick={() => setCardFor(c)}><ICard size={18} /> Card</button>}
+                    <button className="alt" onClick={() => setLogFor(c)}><ICheck size={18} /> Already did it</button>
+                  </div>
+                )}
               </article>
             )
           })}
@@ -269,16 +288,16 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
 
       {doneRows.length > 0 && (
         <details className="donelist">
-          <summary>Done this week ({doneRows.length})</summary>
+          <summary>Done this week ({doneRows.length}). Tap one to change or undo it.</summary>
           <div className="card" style={{ padding: '4px 16px' }}>
             {doneRows.map((c) => {
               const l = lastOf(c)
               return (
-                <div key={c.id} className="donerow">
+                <button key={c.id} className="donerow" disabled={readOnly} onClick={() => setDoneFor(c)}>
                   <span className="tick"><ICheck size={16} /></span>
                   <span style={{ flex: 1 }}>{fullName(c)}</span>
                   {l && <span className="note">{KIND_LABEL[l.kind]}</span>}
-                </div>
+                </button>
               )
             })}
           </div>
@@ -304,7 +323,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           <h3>{fullName(moreFor)}</h3>
           {moreFor.phone && <p className="note">{moreFor.phone}</p>}
           <div className="menu" style={{ marginTop: 8 }}>
-            <button onClick={() => { const c = moreFor; setMoreFor(null); setLogFor(c) }}>Log something else</button>
+            <button onClick={() => { const c = moreFor; setMoreFor(null); setLogFor(c) }}>Record something I already did</button>
             <button onClick={() => { const c = moreFor; setMoreFor(null); setEditFor(c) }}>See or edit details</button>
             <button onClick={() => { const c = moreFor; setMoreFor(null); skip(c) }}>Move to next week</button>
             <button onClick={() => setMoreFor(null)} style={{ color: 'var(--muted)' }}>Cancel</button>
@@ -312,6 +331,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </Sheet>
       )}
       {editFor && <EditSheet ctx={ctx} c={editFor} onClose={() => setEditFor(null)} />}
+      {doneFor && <DoneSheet ctx={ctx} c={doneFor} onClose={() => setDoneFor(null)} onEdit={() => { const c = doneFor; setDoneFor(null); setEditFor(c) }} />}
       {cardFor && (
         <Sheet label={`Card for ${cardFor.first_name}`} onClose={() => setCardFor(null)}>
           <CardSteps ctx={ctx} preset={fullName(cardFor)} onBefore={snapshot} onLogged={() => setCardFor(null)} />
@@ -331,16 +351,75 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   )
 }
 
+/** Change or undo what was logged for someone this week. */
+function DoneSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
+  const toast = useToast()
+  const ws = ymd(weekStart())
+  const mine = ctx.data.touches.filter((t) => t.contact_id === c.id && !t.is_group && t.occurred_on >= ws).sort((a, b) => b.occurred_on.localeCompare(a.occurred_on))
+  const [edits, setEdits] = useState<Record<string, { kind: TouchKind; note: string }>>(() =>
+    Object.fromEntries(mine.map((t) => [t.id, { kind: t.kind, note: t.note ?? '' }])),
+  )
+  const [busy, setBusy] = useState(false)
+  async function run(fn: () => Promise<void>, msg: string) {
+    setBusy(true)
+    try {
+      await fn()
+      await ctx.reload()
+      toast(msg)
+      onClose()
+    } catch (e) {
+      toast(`That didn't save: ${(e as Error).message}`)
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet label={`What you logged for ${c.first_name}`} onClose={onClose}>
+      <h3>{fullName(c)}</h3>
+      <p className="note">What you logged this week. Change it, or undo it to put {c.first_name} back on your list.</p>
+      {mine.map((t) => {
+        const e = edits[t.id]
+        const isCad = t.kind === 'card' && t.note?.startsWith('Card a Day: ')
+        return (
+          <div key={t.id} className="stack" style={{ borderTop: '1px solid var(--line)', paddingTop: 14, marginTop: 14 }}>
+            <span className="note">{fmt(t.occurred_on)}</span>
+            {isCad ? (
+              <p className={`kind k-card`}><ICard /> Card a Day card</p>
+            ) : (
+              <div className="chips">
+                {(['call', 'text', 'card', 'popby'] as TouchKind[]).map((k) => (
+                  <button key={k} aria-pressed={e.kind === k} onClick={() => setEdits({ ...edits, [t.id]: { ...e, kind: k } })}>{KIND_LABEL[k]}</button>
+                ))}
+              </div>
+            )}
+            {!isCad && <textarea aria-label="Note" placeholder="Note (optional)" value={e.note} onChange={(ev) => setEdits({ ...edits, [t.id]: { ...e, note: ev.target.value } })} />}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!isCad && (
+                <button className="btn primary" style={{ flex: 1 }} disabled={busy || (e.kind === t.kind && e.note === (t.note ?? ''))} onClick={() => run(() => api.updateTouch(t.id, { kind: e.kind, note: e.note || null }), 'Saved.')}>Save change</button>
+              )}
+              <button className="btn" style={{ flex: 1 }} disabled={busy} onClick={() => run(() => api.deleteTouch(t, ctx.data.touches, ctx.data.cards), `Undone. ${c.first_name} is back on your list.`)}>Undo this</button>
+            </div>
+          </div>
+        )
+      })}
+      {mine.length === 0 && <p className="note" style={{ marginTop: 12 }}>Nothing logged for {c.first_name} this week.</p>}
+      <div className="menu" style={{ marginTop: 14 }}>
+        <button onClick={onEdit}>See or edit {c.first_name}'s details</button>
+        <button onClick={onClose} style={{ color: 'var(--muted)' }}>Close</button>
+      </div>
+    </Sheet>
+  )
+}
+
 function LogSheet({ c, suggested, goal, onClose, onLog }: { c: Contact; suggested: TouchKind; goal: number; onClose: () => void; onLog: (k: TouchKind, note: string) => void }) {
   const [note, setNote] = useState('')
   return (
     <Sheet label="Log a touch" onClose={onClose}>
-      <h3>What did you do for {c.first_name || fullName(c)}?</h3>
-      <p className="note">Anything you pick counts toward their {goal} touches this year.</p>
+      <h3>What did you already do for {c.first_name || fullName(c)}?</h3>
+      <p className="note">This just records it. Anything you pick counts toward their {goal} touches this year.</p>
       <div className="opts">
         {([suggested, ...(['call', 'text', 'card', 'popby'] as TouchKind[]).filter((x) => x !== suggested)]).map((k) => (
           <button key={k} className={`opt k-${k}`} onClick={() => onLog(k, note)}>
-            {KIND_ICON[k]}{KIND_LABEL[k]}
+            {KIND_ICON[k]}{DID_LABEL[k] ?? KIND_LABEL[k]}
           </button>
         ))}
       </div>

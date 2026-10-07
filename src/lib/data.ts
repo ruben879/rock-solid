@@ -79,7 +79,27 @@ function check<T>(r: { data: T; error: { message: string } | null }) {
 }
 
 export async function logTouch(me: Profile, contactId: string | null, kind: TouchKind, note?: string) {
-  check(await supabase.from('touches').insert({ agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: contactId, kind, note: note || null, occurred_on: ymd(today()) }))
+  return check(
+    await supabase.from('touches').insert({ agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: contactId, kind, note: note || null, occurred_on: ymd(today()) }).select('id, agent_id, contact_id, kind, is_group, note, occurred_on').single(),
+  ) as Touch
+}
+
+/** Undo a logged touch. Also removes its Card a Day entry and resets the contact's last touch date. */
+export async function deleteTouch(t: Touch, all: Touch[], cards: Card[]) {
+  check(await supabase.from('touches').delete().eq('id', t.id))
+  if (t.kind === 'card' && t.note?.startsWith('Card a Day: ')) {
+    const name = t.note.slice('Card a Day: '.length)
+    const card = cards.find((c) => c.sent_on === t.occurred_on && c.recipient_name === name)
+    if (card) check(await supabase.from('cards').delete().eq('id', card.id))
+  }
+  if (t.contact_id) {
+    const rest = all.filter((x) => x.contact_id === t.contact_id && x.id !== t.id).map((x) => x.occurred_on).sort().at(-1) ?? null
+    check(await supabase.from('contacts').update({ last_touch_on: rest }).eq('id', t.contact_id))
+  }
+}
+
+export async function updateTouch(id: string, fields: { kind?: TouchKind; note?: string | null }) {
+  check(await supabase.from('touches').update(fields).eq('id', id))
 }
 
 export async function groupTouch(me: Profile, contacts: Contact[], kind: TouchKind) {
