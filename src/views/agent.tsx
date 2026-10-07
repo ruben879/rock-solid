@@ -5,7 +5,7 @@ import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '
 import {
   HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
-import { Celebrate, HeatTag, SIGNAL_WORD, Sheet, Signal, store, useToast } from '../ui'
+import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
 import { ICard, ICheck, IDoor, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
@@ -258,10 +258,10 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                 <div className="head">
                   <div style={{ minWidth: 0 }}>
                     <h3>{fullName(c)}</h3>
-                    <p className="why">{signal(c, byContact, agent.tier_days) ? `${SIGNAL_WORD[signal(c, byContact, agent.tier_days)]} · ` : ''}{whyLine(c, lastOf(c))}</p>
+                    <p className="why">{whyLine(c, lastOf(c))}</p>
                   </div>
                   <div className="sig">
-                    <Signal bars={signal(c, byContact, agent.tier_days)} />
+                    <Signal bars={signal(c, byContact, agent.tier_days)} plain />
                     {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
                   </div>
                 </div>

@@ -278,4 +278,5 @@ tr:last-child td { border-bottom: 0; }
 .signal { display: inline-flex; align-items: flex-end; gap: 2.5px; height: 19px; flex: none; }
 .signal i { width: 5px; border-radius: 1.5px; background: var(--line); }
 .signal i.on { background: var(--heat); }
+.signal.plain i.on { background: var(--navy); }
 .person .sig { display: flex; align-items: center; gap: 4px; flex: none; }
