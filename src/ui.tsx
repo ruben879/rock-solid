@@ -174,3 +174,50 @@ export function Signal({ bars, plain }: { bars: number; plain?: boolean }) {
   )
 }
 export { SIGNAL_WORD }
+
+// ---------- Pull down to refresh ----------
+/** Pull down from the top of the page to reload the app (gets the latest data and the latest version). */
+export function PullToRefresh() {
+  const [pull, setPull] = useState(0)
+  const [going, setGoing] = useState(false)
+  useEffect(() => {
+    let startY: number | null = null
+    let dist = 0
+    const blocked = (t: EventTarget | null) => t instanceof Element && !!t.closest('.sheet, .cele, .reach, input, textarea, select')
+    const down = (e: TouchEvent) => {
+      startY = window.scrollY <= 0 && !blocked(e.target) ? e.touches[0].clientY : null
+      dist = 0
+    }
+    const move = (e: TouchEvent) => {
+      if (startY === null) return
+      dist = Math.max(0, e.touches[0].clientY - startY)
+      if (window.scrollY > 0) { startY = null; dist = 0 }
+      setPull(Math.min(dist, 120))
+    }
+    const up = () => {
+      if (startY !== null && dist > 90) {
+        setGoing(true)
+        setTimeout(() => window.location.reload(), 150)
+      } else setPull(0)
+      startY = null
+      dist = 0
+    }
+    window.addEventListener('touchstart', down, { passive: true })
+    window.addEventListener('touchmove', move, { passive: true })
+    window.addEventListener('touchend', up)
+    return () => {
+      window.removeEventListener('touchstart', down)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+    }
+  }, [])
+  if (!going && pull < 20) return null
+  const ready = pull > 90 || going
+  return (
+    <div className={`ptr ${going ? 'go' : ''}`} style={{ opacity: Math.min(1, pull / 90), transform: `translateY(${going ? 30 : pull / 3}px)` }} aria-hidden>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ transform: going ? undefined : `rotate(${ready ? 180 : pull * 2}deg)` }}>
+        <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" />
+      </svg>
+    </div>
+  )
+}

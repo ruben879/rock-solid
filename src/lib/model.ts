@@ -45,6 +45,7 @@ export interface Contact {
   notes: string | null
   birthday: string | null
   home_anniversary: string | null
+  wedding_anniversary?: string | null
   prior_touches: number
   added_on: string
   last_touch_on: string | null
@@ -83,15 +84,15 @@ export interface Tally {
 }
 
 export const TIER_NAMES: Record<Tier, string> = {
-  A: 'Almost Movers',
-  B: 'Warm Advocates',
-  C: 'Past Clients',
-  D: 'Sphere & Watch',
-  U: 'No tier yet',
+  A: 'VIP',
+  B: 'Advocates',
+  C: 'Advocates',
+  D: 'Advocates',
+  U: 'Needs a tag',
 }
-/** The tiers agents pick from. D and U only exist for older data and behave like C and B. */
-export const TIERS: Tier[] = ['A', 'B', 'C']
-export const DEFAULT_TIER_DAYS: Record<Tier, number> = { A: 14, B: 30, C: 60, D: 60, U: 30 }
+/** The tiers agents pick from (plus ? for not tagged yet). C and D only exist in older data and behave like B. */
+export const TIERS: Tier[] = ['A', 'B']
+export const DEFAULT_TIER_DAYS: Record<Tier, number> = { A: 14, B: 30, C: 30, D: 30, U: 30 }
 
 export const KIND_LABEL: Record<TouchKind, string> = {
   call: 'Call',

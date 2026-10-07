@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { configured, supabase } from './supabase'
 import * as api from './lib/data'
 import type { Brokerage, Profile } from './lib/model'
-import { Sheet, ToastProvider, store } from './ui'
+import { PullToRefresh, Sheet, ToastProvider, store } from './ui'
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { ICard, IChart, IHome, IPeople, ITeam } from './icons'
@@ -172,6 +172,7 @@ function Signed({ session }: { session: Session }) {
           </>
         )}
       </Shell>
+      <PullToRefresh />
       <nav className="bottom" aria-label="Main">
         <div className="wrap">
           {tabs.map(([k, l, icon]) => (

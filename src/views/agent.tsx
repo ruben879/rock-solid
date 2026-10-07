@@ -42,8 +42,8 @@ function useAgentData1(id: string) {
 }
 
 /** Older tiers that now behave like the three we use. */
-const LEGACY: Partial<Record<Tier, Tier>> = { C: 'D' }
-const withLegacy = (ts: Tier[]) => [...new Set(ts.flatMap((t) => (LEGACY[t] ? [t, LEGACY[t] as Tier] : [t])))]
+const LEGACY: Partial<Record<Tier, Tier[]>> = { B: ['C', 'D'] }
+const withLegacy = (ts: Tier[]) => [...new Set(ts.flatMap((t) => [t, ...(LEGACY[t] ?? [])]))]
 const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by', facetoface: 'We met face to face' }
 const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor />, facetoface: <IFace /> }
 
@@ -263,7 +263,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
               <article key={c.id} className="person">
                 <div className="head">
                   <div style={{ minWidth: 0 }}>
-                    <h3>{fullName(c)}</h3>
+                    <h3>{fullName(c)} <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} title={TIER_NAMES[c.tier]}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span></h3>
                     <p className="why">{whyLine(c, lastOf(c))}</p>
                   </div>
                   <div className="sig">
@@ -499,7 +499,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
   const [f, setF] = useState({
     first_name: c?.first_name ?? '', last_name: c?.last_name ?? '', phone: c?.phone ?? '', email: c?.email ?? '',
     address: c?.address ?? '', city: c?.city ?? '', state: c?.state ?? 'TX', zip: c?.zip ?? '',
-    tier: (c?.tier === 'D' ? 'C' : c?.tier ?? 'U') as Tier, birthday: c?.birthday ?? '', home_anniversary: c?.home_anniversary ?? '', notes: c?.notes ?? '',
+    tier: (c?.tier === 'C' || c?.tier === 'D' ? 'B' : c?.tier ?? 'U') as Tier, birthday: c?.birthday ?? '', home_anniversary: c?.home_anniversary ?? '', wedding_anniversary: c?.wedding_anniversary ?? '', notes: c?.notes ?? '',
   })
   const [confirmDel, setConfirmDel] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -517,6 +517,9 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
         phone: f.phone || null, email: f.email || null, address: f.address || null, city: f.city || null, state: f.state || null, zip: f.zip || null,
         birthday: f.birthday || null, home_anniversary: f.home_anniversary || null, notes: f.notes || null,
       }
+      // Only send the wedding date when there is one (or there was one), so saving works before that column exists.
+      if (f.wedding_anniversary || c?.wedding_anniversary) input.wedding_anniversary = f.wedding_anniversary || null
+      else delete input.wedding_anniversary
       await api.saveContact(ctx.me, input, c?.id)
       await ctx.reload()
       toast(c ? 'Saved.' : `${f.first_name} added. They'll show up on Today soon.`)
@@ -553,7 +556,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
           <label className="field full"><span>Phone</span><input inputMode="tel" disabled={ro} value={f.phone} onChange={set('phone')} /></label>
         </div>
         <div className="field">
-          <span>How close are you? {f.tier === 'U' ? `Not tagged yet. Pick A, B or C. Until then they come up every ${tierDays(ctx.agent, 'U')} days.` : `${TIER_NAMES[f.tier]}: every ${tierDays(ctx.agent, f.tier)} days.`}</span>
+          <span>How close are you? {f.tier === 'U' ? `Not tagged yet. Pick A or B. Until then they come up every ${tierDays(ctx.agent, 'U')} days.` : `${TIER_NAMES[f.tier]}: every ${tierDays(ctx.agent, f.tier)} days.`}</span>
           <div className="tiersel" role="group" aria-label="Tier">
             {TIERS.map((t) => (
               <button type="button" key={t} disabled={ro} aria-pressed={f.tier === t} onClick={() => setF({ ...f, tier: t })}>{t}</button>
@@ -562,14 +565,15 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
         </div>
         <label className="field"><span>Notes</span><textarea disabled={ro} value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
         <details className="more" style={{ marginTop: 0 }}>
-          <summary>Email, address and dates</summary>
+          <summary>Email, address and special dates</summary>
           <div className="ed">
             <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} /></label>
             <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} /></label>
             <label className="field"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} /></label>
             <label className="field"><span>Zip</span><input disabled={ro} value={f.zip} onChange={set('zip')} /></label>
-            <label className="field"><span>Birthday</span><input type="date" disabled={ro} value={f.birthday} onChange={set('birthday')} /></label>
-            <label className="field"><span>Home anniversary</span><input type="date" disabled={ro} value={f.home_anniversary} onChange={set('home_anniversary')} /></label>
+            <DateField label="Birthday" ro={ro} value={f.birthday} onChange={(v) => setF({ ...f, birthday: v })} />
+            <DateField label="Home anniversary" ro={ro} value={f.home_anniversary} onChange={(v) => setF({ ...f, home_anniversary: v })} />
+            <DateField label="Wedding anniversary" ro={ro} value={f.wedding_anniversary} onChange={(v) => setF({ ...f, wedding_anniversary: v })} />
           </div>
         </details>
         {confirmDel && (
@@ -594,6 +598,17 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
         )}
       </form>
     </Sheet>
+  )
+}
+
+function DateField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
+  return (
+    <label className="field full"><span>{label}</span>
+      <span style={{ display: 'flex', gap: 8 }}>
+        <input type="date" disabled={ro} value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }} />
+        {value && !ro && <button type="button" className="btn" onClick={() => onChange('')}>Clear</button>}
+      </span>
+    </label>
   )
 }
 
@@ -833,7 +848,7 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
             <div className="chips">
               <button aria-pressed={all} onClick={() => setTiers(all ? [] : ['A', 'B', 'C', 'D', 'U'])}>Everyone</button>
               {[...TIERS, 'U' as Tier].map((t) => (
-                <button key={t} aria-pressed={!all && tiers.includes(t)} onClick={() => setTiers(all ? withLegacy([t]) : tiers.includes(t) ? tiers.filter((y) => y !== t && y !== LEGACY[t]) : withLegacy([...tiers, t]))}>{t === 'U' ? 'Not tagged' : `${t}s`}</button>
+                <button key={t} aria-pressed={!all && tiers.includes(t)} onClick={() => setTiers(all ? withLegacy([t]) : tiers.includes(t) ? tiers.filter((y) => y !== t && !(LEGACY[t] ?? []).includes(y)) : withLegacy([...tiers, t]))}>{t === 'U' ? 'Not tagged' : `${t}s`}</button>
               ))}
             </div>
           </div>
@@ -1068,7 +1083,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
             <button key={c.id} className="prow" onClick={() => setEdit(c)}>
               <span className="nm">
                 <b>{fullName(c)}</b>
-                <small>{c.tier === 'U' ? 'Needs a tag (?)' : c.tier === 'D' ? 'C' : c.tier}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
+                <small>{c.tier === 'U' ? 'Needs a tag (?)' : c.tier === 'A' ? 'A' : 'B'}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
               </span>
               <Meter c={c} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
             </button>
@@ -1083,6 +1098,11 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
           <summary>More tools</summary>
           <div className="stack">
             <div className="card stack">
+              <h3>Download my people</h3>
+              <p className="note">A CSV file of everyone here, with their tier, touches this year and last touch. Opens in Excel, Google Sheets or Numbers.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => exportCsv(data.contacts, byContact, agent)}>Download CSV</button>
+            </div>
+            <div className="card stack">
               <h3>Bring in a spreadsheet</h3>
               <p className="note">A CSV file, like a BoldTrail export. People already here are skipped.</p>
               <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => setImporting(true)}>Import CSV</button>
@@ -1091,7 +1111,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
               <h3>How often each tier comes up</h3>
               {[...TIERS, 'U' as Tier].map((t) => (
                 <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-                  <span>{t === 'U' ? '?: Not tagged yet' : `${t}: ${TIER_NAMES[t]}`} <span className="note">({data.contacts.filter((c) => c.tier === t || c.tier === LEGACY[t]).length})</span></span>
+                  <span>{t === 'U' ? '?: Needs a tag' : `${t}: ${TIER_NAMES[t]}`} <span className="note">({data.contacts.filter((c) => c.tier === t || (LEGACY[t] ?? []).includes(c.tier)).length})</span></span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     every <TierDays value={tierDays(agent, t)} label={`Days between touches for tier ${t}`} onCommit={(n) => setDays(t, n)} /> days
                   </span>
@@ -1155,6 +1175,22 @@ function GroupSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   )
 }
 
+function exportCsv(contacts: Contact[], byContact: Map<string, string[]>, agent: Profile) {
+  const q = (v: unknown) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
+  const head = ['First Name', 'Last Name', 'Phone', 'Email', 'Address', 'City', 'State', 'Zip', 'Tier', 'Birthday', 'Home Anniversary', 'Wedding Anniversary', 'Notes', 'Touches (12 months)', 'Last Touch']
+  const rows = [...contacts].sort((a, b) => fullName(a).localeCompare(fullName(b))).map((c) => [
+    c.first_name, c.last_name, c.phone, c.email, c.address, c.city, c.state, c.zip,
+    c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B', c.birthday, c.home_anniversary, c.wedding_anniversary, c.notes, score(c, byContact), c.last_touch_on,
+  ])
+  const csv = [head, ...rows].map((r) => r.map(q).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${(agent.full_name || 'my').replace(/\s+/g, '-')}-people-${ymd(today())}.csv`
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+}
+
 function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const toast = useToast()
   const [plan, setPlan] = useState<ReturnType<typeof planImport> | null>(null)
@@ -1186,7 +1222,7 @@ function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   return (
     <Sheet label="Import contacts" onClose={onClose}>
       <h3>Bring in a spreadsheet</h3>
-      <p className="note" style={{ margin: '4px 0 12px' }}>A CSV file, like a BoldTrail export. It reads names, phone, email, address, birthday, closing date and tier. Anyone already here gets their info updated instead of added twice.</p>
+      <p className="note" style={{ margin: '4px 0 12px' }}>A CSV file, like a BoldTrail export. It reads names, phone, email, address, birthday, closing date, wedding anniversary and tier. Anyone already here gets their info updated instead of added twice.</p>
       <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
       {plan && (
         <div className="card stack" style={{ marginTop: 14, background: 'var(--bg)', boxShadow: 'none' }}>

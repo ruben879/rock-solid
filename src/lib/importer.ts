@@ -3,7 +3,7 @@ import type { Contact, Tier } from './model'
 export type ImportRow = {
   first_name: string; last_name: string; phone: string | null; email: string | null
   address: string | null; city: string | null; state: string | null; zip: string | null
-  tier: Tier | null; birthday: string | null; home_anniversary: string | null
+  tier: Tier | null; birthday: string | null; home_anniversary: string | null; wedding_anniversary?: string
 }
 
 export function parseCsv(text: string): string[][] {
@@ -76,7 +76,8 @@ export function readContacts(text: string): ImportRow[] {
     tier: cols('tier', 'tag', 'category', 'group'),
     tags: cols('hashtags', 'tags'),
     birthday: cols('birthday', 'birth date', 'date of birth'),
-    anniv: cols('home anniversary', 'last closing date', 'closing date', 'anniversary'),
+    anniv: cols('home anniversary', 'last closing date', 'closing date', 'purchase date'),
+    wedding: cols('wedding anniversary', 'anniversary', 'anniversary date', 'wedding date'),
   }
   const out: ImportRow[] = []
   for (const r of all.slice(1)) {
@@ -92,7 +93,7 @@ export function readContacts(text: string): ImportRow[] {
     const tierRaw = get(C.tier).toUpperCase().trim()
     const tagTier = get(C.tags).toUpperCase().split(/[\s,;]+/).find((t) => ['A', 'B', 'C', 'D'].includes(t))
     const raw = ['A', 'B', 'C', 'D'].includes(tierRaw) ? tierRaw : tagTier ?? null
-    const tier = (raw === 'D' ? 'C' : raw) as Tier | null
+    const tier = (raw === 'C' || raw === 'D' ? 'B' : raw) as Tier | null
     const phone = get(C.phone)
     out.push({
       first_name: first, last_name: last,
@@ -100,12 +101,13 @@ export function readContacts(text: string): ImportRow[] {
       email: get(C.email).toLowerCase() || null,
       address: get(C.address) || null, city: get(C.city) || null, state: get(C.state) || null, zip: get(C.zip) || null,
       tier, birthday: toDate(get(C.birthday)), home_anniversary: toDate(get(C.anniv)),
+      ...(toDate(get(C.wedding)) ? { wedding_anniversary: toDate(get(C.wedding)) as string } : {}),
     })
   }
   return out
 }
 
-const FIELDS = ['first_name', 'last_name', 'phone', 'email', 'address', 'city', 'state', 'zip', 'birthday', 'home_anniversary'] as const
+const FIELDS = ['first_name', 'last_name', 'phone', 'email', 'address', 'city', 'state', 'zip', 'birthday', 'home_anniversary', 'wedding_anniversary'] as const
 
 /** Split rows into new people and updates to people already in the database (matched by email, then phone, then full name). */
 export function planImport(rows: ImportRow[], existing: Contact[]) {
