@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
@@ -791,10 +791,40 @@ function MyGoals({ agent, me, onProfileChange }: { agent: Profile; me: Profile; 
   }
   return (
     <div className="card ed">
-      <label className="field"><span>Touches a day</span><input type="number" min={1} value={day} onChange={(e) => setDay(+e.target.value)} onBlur={() => save({ daily_goal: Math.max(1, day || 1) })} /></label>
-      <label className="field"><span>Touches a week</span><input type="number" min={1} value={week} onChange={(e) => setWeek(+e.target.value)} onBlur={() => save({ weekly_goal: Math.max(1, week || 1) })} /></label>
+      <label className="field"><span>Touches a day</span><NumInput value={day} onChange={setDay} onCommit={(n) => save({ daily_goal: Math.max(1, n || 1) })} /></label>
+      <label className="field"><span>Touches a week</span><NumInput value={week} onChange={setWeek} onCommit={(n) => save({ weekly_goal: Math.max(1, n || 1) })} /></label>
     </div>
   )
+}
+
+/** A number box that behaves on phones: no stuck leading zero, selects all on tap, commas for dollars. */
+function NumInput({ value, onChange, onCommit, money, decimals, disabled, label, style }: {
+  value: number; onChange: (n: number) => void; onCommit?: (n: number) => void; money?: boolean; decimals?: boolean; disabled?: boolean; label?: string; style?: CSSProperties
+}) {
+  const show = (n: number) => (money ? n.toLocaleString('en-US') : String(n))
+  const [text, setText] = useState(show(value))
+  const [focused, setFocused] = useState(false)
+  useEffect(() => { if (!focused) setText(show(value)) }, [value, focused]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <input
+      inputMode={decimals ? 'decimal' : 'numeric'} aria-label={label} disabled={disabled} style={style}
+      value={money && focused ? text.replace(/,/g, '') : text}
+      onFocus={(e) => { setFocused(true); const el = e.target; setTimeout(() => el.select(), 0) }}
+      onChange={(e) => {
+        let v = e.target.value.replace(decimals ? /[^0-9.]/g : /[^0-9]/g, '')
+        if (decimals) v = v.replace(/(\..*)\./g, '$1')
+        v = v.replace(/^0+(?=\d)/, '')
+        setText(v)
+        onChange(Number(v) || 0)
+      }}
+      onBlur={() => { setFocused(false); setText(show(value)); onCommit?.(value) }}
+    />
+  )
+}
+
+function TierDays({ value, label, onCommit }: { value: number; label: string; onCommit: (n: number) => void }) {
+  const [v, setV] = useState(value)
+  return <NumInput value={v} label={label} style={{ width: 64 }} onChange={setV} onCommit={(n) => onCommit(Math.max(1, n || 1))} />
 }
 
 const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -808,25 +838,29 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const deals = perDeal > 0 ? Math.ceil(gci / perDeal) : 0
   const dbNeeded = p.conversion > 0 ? Math.ceil(deals / (p.conversion / 100)) : 0
   const have = data.contacts.length
-  async function save() {
-    await api.updateMyProfile(ctx.me, { plan: p })
+  async function save(next: typeof p) {
+    await api.updateMyProfile(ctx.me, { plan: next })
     onProfileChange?.()
   }
-  const num = (k: keyof typeof p, label: string, step = 1) => (
+  const num = (k: keyof typeof p, label: string, kind: 'money' | 'decimal') => {
+    const money = kind === 'money'
+    const decimals = kind === 'decimal'
+    return (
     <label className="field">
       <span>{label}</span>
-      <input type="number" step={step} disabled={readOnly} value={p[k]} onChange={(e) => setP({ ...p, [k]: +e.target.value })} onBlur={save} />
+      <NumInput disabled={readOnly} value={p[k]} money={money} decimals={decimals} onChange={(n) => setP({ ...p, [k]: n })} onCommit={(n) => save({ ...p, [k]: n })} />
     </label>
-  )
+    )
+  }
   return (
     <div className="card stack">
       <div className="ed">
-        {num('income', 'Take-home goal ($)', 1000)}
-        {num('cap', 'Cap and splits ($)', 500)}
-        {num('price', 'Average sale price ($)', 5000)}
-        {num('rate', 'Commission rate (%)', 0.1)}
+        {num('income', 'Take-home goal ($)', 'money')}
+        {num('cap', 'Cap and splits ($)', 'money')}
+        {num('price', 'Average sale price ($)', 'money')}
+        {num('rate', 'Commission rate (%)', 'decimal')}
         <label className="field full"><span>Of your people, how many buy or sell or refer each year? (%)</span>
-          <input type="number" step={1} disabled={readOnly} value={p.conversion} onChange={(e) => setP({ ...p, conversion: +e.target.value })} onBlur={save} />
+          <NumInput disabled={readOnly} value={p.conversion} decimals onChange={(n) => setP({ ...p, conversion: n })} onCommit={(n) => save({ ...p, conversion: n })} />
         </label>
       </div>
       <div className="stats" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
@@ -938,7 +972,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
                 <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
                   <span>{t === 'U' ? 'No tier yet' : `${t}: ${TIER_NAMES[t]}`} <span className="note">({data.contacts.filter((c) => c.tier === t).length})</span></span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    every <input type="number" min={1} aria-label={`Days between touches for tier ${t}`} defaultValue={tierDays(agent, t)} style={{ width: 64 }} onBlur={(e) => setDays(t, +e.target.value)} /> days
+                    every <TierDays value={tierDays(agent, t)} label={`Days between touches for tier ${t}`} onCommit={(n) => setDays(t, n)} /> days
                   </span>
                 </label>
               ))}
