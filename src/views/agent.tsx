@@ -713,10 +713,10 @@ const EXTRAS: { k: string; l: string; reach?: TouchKind }[] = [
   { k: 'social', l: 'Social post' },
   { k: 'video', l: 'Video' },
   { k: 'openhouse', l: 'Open house' },
-  { k: 'giveaway', l: 'Monthly giveaway', reach: 'event' },
+  { k: 'giveaway', l: 'Monthly giveaway' },
   { k: 'email', l: 'Email newsletter', reach: 'email' },
   { k: 'newsletter', l: 'Mailed newsletter', reach: 'newsletter' },
-  { k: 'event', l: 'Client event', reach: 'event' },
+  { k: 'event', l: 'Client event' },
 ]
 
 function Extras({ ctx }: { ctx: Ctx }) {
