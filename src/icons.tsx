@@ -38,3 +38,6 @@ export const IPlus = ({ size }: P) => (
 export const ISearch = ({ size }: P) => (
   <svg {...base(size)}><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></svg>
 )
+export const IFace = ({ size }: P) => (
+  <svg {...base(size)}><circle cx="8" cy="8" r="3" /><circle cx="16" cy="8" r="3" /><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0" /></svg>
+)

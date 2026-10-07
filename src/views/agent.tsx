@@ -6,7 +6,7 @@ import {
   HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
-import { ICard, ICheck, IDoor, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
+import { ICard, ICheck, IDoor, IFace, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -40,8 +40,8 @@ function useAgentData1(id: string) {
   return api.useAgentData(ids)
 }
 
-const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by' }
-const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor /> }
+const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by', facetoface: 'We met face to face' }
+const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor />, facetoface: <IFace /> }
 
 // ======================================================================
 // Today: the next 10
@@ -390,7 +390,7 @@ function DoneSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose:
               <p className={`kind k-card`}><ICard /> Card a Day card</p>
             ) : (
               <div className="chips">
-                {(['call', 'text', 'card', 'popby'] as TouchKind[]).map((k) => (
+                {(['call', 'text', 'card', 'popby', 'facetoface'] as TouchKind[]).map((k) => (
                   <button key={k} aria-pressed={e.kind === k} onClick={() => setEdits({ ...edits, [t.id]: { ...e, kind: k } })}>{KIND_LABEL[k]}</button>
                 ))}
               </div>
@@ -421,7 +421,7 @@ function LogSheet({ c, suggested, goal, onClose, onLog }: { c: Contact; suggeste
       <h3>What did you already do for {c.first_name || fullName(c)}?</h3>
       <p className="note">This just records it. Anything you pick counts toward their {goal} touches this year.</p>
       <div className="opts">
-        {([suggested, ...(['call', 'text', 'card', 'popby'] as TouchKind[]).filter((x) => x !== suggested)]).map((k) => (
+        {([suggested, ...(['call', 'text', 'card', 'popby', 'facetoface'] as TouchKind[]).filter((x) => x !== suggested)]).map((k) => (
           <button key={k} className={`opt k-${k}`} onClick={() => onLog(k, note)}>
             {KIND_ICON[k]}{DID_LABEL[k] ?? KIND_LABEL[k]}
           </button>
@@ -747,7 +747,7 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
             </div>
           )
         })}
-        <p className="note">Pop-bys this month: {count('popby')}</p>
+        <p className="note">Pop-bys this month: {count('popby')} · Face to face: {count('facetoface')}</p>
       </div>
       <div className="stats" style={{ marginTop: 12, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
         <div className="stat"><div className="n">{g.today} of {agent.daily_goal}</div><div className="l">today</div></div>

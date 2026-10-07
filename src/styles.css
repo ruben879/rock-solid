@@ -143,6 +143,7 @@ button.donerow:last-child { border-bottom: 0; }
 
 /* Log choices */
 .opts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 16px 0; }
+.opts .opt:nth-child(5):last-child { grid-column: 1 / -1; flex-direction: row; justify-content: center; gap: 10px; }
 .opt { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; border-radius: 16px; padding: 16px 8px; font: 600 16px var(--font); cursor: pointer; background: var(--bg); color: var(--ink); }
 .opt.k-call { background: var(--call-soft); color: var(--call); }
 .opt.k-text { background: var(--text-soft); color: var(--text); }

@@ -2,7 +2,7 @@ import { addDays, daysBetween, parse, today, weekStart, ymd } from './dates'
 
 export type Role = 'agent' | 'coach' | 'broker'
 export type Tier = 'A' | 'B' | 'C' | 'D' | 'U'
-export type TouchKind = 'call' | 'text' | 'card' | 'popby' | 'email' | 'newsletter' | 'event'
+export type TouchKind = 'call' | 'text' | 'card' | 'popby' | 'facetoface' | 'email' | 'newsletter' | 'event'
 
 export interface Brokerage {
   id: string
@@ -96,6 +96,7 @@ export const KIND_LABEL: Record<TouchKind, string> = {
   text: 'Text',
   card: 'Card',
   popby: 'Pop-by',
+  facetoface: 'Face to face',
   email: 'Email',
   newsletter: 'Newsletter',
   event: 'Event',
