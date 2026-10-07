@@ -1068,7 +1068,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
             <button key={c.id} className="prow" onClick={() => setEdit(c)}>
               <span className="nm">
                 <b>{fullName(c)}</b>
-                <small>{c.tier === 'U' ? 'Needs a tag (?)' : c.tier === 'D' ? 'Tier C' : `Tier ${c.tier}`}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
+                <small>{c.tier === 'U' ? 'Needs a tag (?)' : c.tier === 'D' ? 'C' : c.tier}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
               </span>
               <Meter c={c} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
             </button>
