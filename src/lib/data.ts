@@ -192,6 +192,12 @@ export async function addInvite(me: Profile, inv: Invite) {
   )
 }
 
+/** Email an invited person their sign-in code and link. Doesn't touch the sender's own sign-in. */
+export async function sendInviteEmail(email: string) {
+  const { error } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { emailRedirectTo: window.location.origin } })
+  if (error) throw new Error(error.message.toLowerCase().includes('rate') ? 'Too many emails just went out. Wait a minute and try again.' : error.message)
+}
+
 export async function removeInvite(email: string) {
   check(await supabase.from('invites').delete().eq('email', email))
 }

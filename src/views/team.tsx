@@ -75,6 +75,9 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
   const toast = useToast()
   const [invites, setInvites] = useState<api.Invite[]>([])
   const [f, setF] = useState<api.Invite>({ email: '', full_name: '', role: 'agent', coach_email: '' })
+  const [emailNow, setEmailNow] = useState(true)
+  const [sending, setSending] = useState<string | null>(null)
+  const [sent, setSent] = useState<Set<string>>(new Set())
   const loadInv = useCallback(() => api.loadInvites().then(setInvites).catch((e) => toast(e.message)), [toast])
   useEffect(() => { loadInv() }, [loadInv])
   const coaches = team.filter((p) => p.role !== 'agent')
@@ -85,12 +88,37 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
     e.preventDefault()
     try {
       await api.addInvite(me, { ...f, coach_email: f.coach_email || null, full_name: f.full_name || null })
-      toast(`${f.full_name || f.email} can now sign in.`)
+      if (emailNow) {
+        try {
+          await api.sendInviteEmail(f.email)
+          setSent((x) => new Set(x).add(f.email.trim().toLowerCase()))
+          toast(`${f.full_name || f.email} is invited and their email is on the way.`)
+        } catch (err) {
+          toast(`Invited, but the email didn't send: ${(err as Error).message}`)
+        }
+      } else toast(`${f.full_name || f.email} can now sign in.`)
       setF({ email: '', full_name: '', role: 'agent', coach_email: f.coach_email })
       loadInv()
     } catch (err) {
       toast(`Couldn't add: ${(err as Error).message}`)
     }
+  }
+  async function email(list: api.Invite[]) {
+    let ok = 0
+    for (const i of list) {
+      setSending(i.email)
+      try {
+        await api.sendInviteEmail(i.email)
+        ok++
+        setSent((x) => new Set(x).add(i.email))
+      } catch (err) {
+        toast(`Couldn't email ${i.full_name || i.email}: ${(err as Error).message}`)
+        break
+      }
+      if (list.length > 1) await new Promise((r) => setTimeout(r, 1500))
+    }
+    setSending(null)
+    if (ok) toast(ok === 1 ? `Invite emailed to ${list[0].full_name || list[0].email}.` : `Invites emailed to ${ok} people.`)
   }
   async function act(fn: () => Promise<void>, msg: string) {
     try {
@@ -123,6 +151,9 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
             {invites.filter((i) => i.role !== 'agent' && !signedIn.has(i.email)).map((i) => <option key={i.email} value={i.email}>{i.full_name || i.email} (not signed in yet)</option>)}
           </select>
         </label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 15 }}>
+          <input type="checkbox" style={{ width: 20, height: 20 }} checked={emailNow} onChange={(e) => setEmailNow(e.target.checked)} /> Email them now
+        </label>
         <button className="btn primary lg">Add invite</button>
       </form>
 
@@ -152,7 +183,10 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
         </table>
       </div>
 
-      <div className="grp">Invited, not signed in yet ({pending.length})</div>
+      <div className="grp">
+        <span>Invited, not signed in yet ({pending.length})</span>
+        {pending.length > 1 && <button className="btn" disabled={!!sending} onClick={() => email(pending)}>Email all {pending.length}</button>}
+      </div>
       {pending.length === 0 ? (
         <div className="card note">Everyone you've invited has signed in.</div>
       ) : (
@@ -164,14 +198,17 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
                 <tr key={i.email}>
                   <td>{i.full_name}</td><td>{i.email}</td><td>{i.role}</td>
                   <td>{i.coach_email ?? ''}</td>
-                  <td><button className="btn ghost" onClick={() => act(() => api.removeInvite(i.email), 'Invite removed.')}>Remove</button></td>
+                  <td style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn" disabled={!!sending} onClick={() => email([i])}>{sending === i.email ? 'Sending…' : sent.has(i.email) ? 'Sent ✓ Resend' : 'Email invite'}</button>
+                    <button className="btn ghost" onClick={() => act(() => api.removeInvite(i.email), 'Invite removed.')}>Remove</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <p className="note" style={{ marginTop: 10 }}>Send new people to {location.origin}. They sign in with the email you entered here.</p>
+      <p className="note" style={{ marginTop: 10 }}>Invite emails include a sign-in code and a link. People can also go to {location.origin} and sign in with the email you entered here.</p>
     </section>
   )
 }
