@@ -89,7 +89,9 @@ export const TIER_NAMES: Record<Tier, string> = {
   D: 'Sphere & Watch',
   U: 'No tier yet',
 }
-export const DEFAULT_TIER_DAYS: Record<Tier, number> = { A: 14, B: 30, C: 90, D: 60, U: 30 }
+/** The tiers agents pick from. D and U only exist for older data and behave like C and B. */
+export const TIERS: Tier[] = ['A', 'B', 'C']
+export const DEFAULT_TIER_DAYS: Record<Tier, number> = { A: 14, B: 30, C: 60, D: 60, U: 30 }
 
 export const KIND_LABEL: Record<TouchKind, string> = {
   call: 'Call',
@@ -116,7 +118,7 @@ export function nextDue(c: Contact, p: Profile | null): Date {
   return addDays(parse(c.last_touch_on), tierDays(p, c.tier))
 }
 
-const TIER_ORDER: Record<Tier, number> = { A: 0, B: 1, U: 2, C: 3, D: 4 }
+const TIER_ORDER: Record<Tier, number> = { A: 0, B: 1, U: 1, C: 2, D: 2 }
 
 /** Everyone due by the end of this week who hasn't been touched this week and isn't pushed to later. */
 export function duePool(contacts: Contact[], p: Profile | null, touchedThisWeek: Set<string>, exclude: Set<string>) {

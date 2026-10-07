@@ -3,7 +3,7 @@ import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
@@ -41,6 +41,9 @@ function useAgentData1(id: string) {
   return api.useAgentData(ids)
 }
 
+/** Older tiers that now behave like the three we use. */
+const LEGACY: Partial<Record<Tier, Tier>> = { B: 'U', C: 'D' }
+const withLegacy = (ts: Tier[]) => [...new Set(ts.flatMap((t) => (LEGACY[t] ? [t, LEGACY[t] as Tier] : [t])))]
 const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by', facetoface: 'We met face to face' }
 const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor />, facetoface: <IFace /> }
 
@@ -496,7 +499,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
   const [f, setF] = useState({
     first_name: c?.first_name ?? '', last_name: c?.last_name ?? '', phone: c?.phone ?? '', email: c?.email ?? '',
     address: c?.address ?? '', city: c?.city ?? '', state: c?.state ?? 'TX', zip: c?.zip ?? '',
-    tier: (c?.tier ?? 'U') as Tier, birthday: c?.birthday ?? '', home_anniversary: c?.home_anniversary ?? '', notes: c?.notes ?? '',
+    tier: (c?.tier === 'U' ? 'B' : c?.tier === 'D' ? 'C' : c?.tier ?? 'B') as Tier, birthday: c?.birthday ?? '', home_anniversary: c?.home_anniversary ?? '', notes: c?.notes ?? '',
   })
   const [confirmDel, setConfirmDel] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -550,10 +553,10 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
           <label className="field full"><span>Phone</span><input inputMode="tel" disabled={ro} value={f.phone} onChange={set('phone')} /></label>
         </div>
         <div className="field">
-          <span>How close are you? {f.tier === 'U' ? 'Not sure yet: they come up monthly.' : `${TIER_NAMES[f.tier]}: every ${tierDays(ctx.agent, f.tier)} days.`}</span>
+          <span>How close are you? {TIER_NAMES[f.tier]}: every {tierDays(ctx.agent, f.tier)} days.</span>
           <div className="tiersel" role="group" aria-label="Tier">
-            {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
-              <button type="button" key={t} disabled={ro} aria-pressed={f.tier === t} onClick={() => setF({ ...f, tier: t })}>{t === 'U' ? '?' : t}</button>
+            {TIERS.map((t) => (
+              <button type="button" key={t} disabled={ro} aria-pressed={f.tier === t} onClick={() => setF({ ...f, tier: t })}>{t}</button>
             ))}
           </div>
         </div>
@@ -815,8 +818,7 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
   const [tiers, setTiers] = useState<Tier[]>(['A', 'B', 'C', 'D', 'U'])
   const [busy, setBusy] = useState(false)
   const who = ctx.data.contacts.filter((c) => tiers.includes(c.tier))
-  const all = tiers.length === 5
-  const toggle = (t: Tier) => setTiers(tiers.includes(t) ? tiers.filter((y) => y !== t) : [...tiers, t])
+  const all = TIERS.every((t) => tiers.includes(t))
   async function run(fn: () => Promise<void>, msg: string) {
     setBusy(true)
     try { await fn(); await ctx.reload(); toast(msg); onClose() } catch (e) { toast(`That didn't save: ${(e as Error).message}`); setBusy(false) }
@@ -830,8 +832,8 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
           <div className="field"><span>Who got it? Each person gets credit toward their {ctx.goal}.</span>
             <div className="chips">
               <button aria-pressed={all} onClick={() => setTiers(all ? [] : ['A', 'B', 'C', 'D', 'U'])}>Everyone</button>
-              {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
-                <button key={t} aria-pressed={!all && tiers.includes(t)} onClick={() => (all ? setTiers([t]) : toggle(t))}>{t === 'U' ? 'No tier' : `${t}s`}</button>
+              {TIERS.map((t) => (
+                <button key={t} aria-pressed={!all && tiers.includes(t)} onClick={() => setTiers(all ? withLegacy([t]) : tiers.includes(t) ? tiers.filter((y) => y !== t && y !== LEGACY[t]) : withLegacy([...tiers, t]))}>{`${t}s`}</button>
               ))}
             </div>
           </div>
@@ -1064,7 +1066,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
             <button key={c.id} className="prow" onClick={() => setEdit(c)}>
               <span className="nm">
                 <b>{fullName(c)}</b>
-                <small>{c.tier === 'U' ? 'No tier yet' : `Tier ${c.tier}`}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
+                <small>{c.tier === 'U' ? 'Tier B' : c.tier === 'D' ? 'Tier C' : `Tier ${c.tier}`}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
               </span>
               <Meter c={c} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
             </button>
@@ -1085,9 +1087,9 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
             </div>
             <div className="card stack">
               <h3>How often each tier comes up</h3>
-              {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
+              {TIERS.map((t) => (
                 <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between' }}>
-                  <span>{t === 'U' ? 'No tier yet' : `${t}: ${TIER_NAMES[t]}`} <span className="note">({data.contacts.filter((c) => c.tier === t).length})</span></span>
+                  <span>{`${t}: ${TIER_NAMES[t]}`} <span className="note">({data.contacts.filter((c) => c.tier === t || c.tier === LEGACY[t]).length})</span></span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     every <TierDays value={tierDays(agent, t)} label={`Days between touches for tier ${t}`} onCommit={(n) => setDays(t, n)} /> days
                   </span>
@@ -1135,8 +1137,8 @@ function GroupSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
       </div>
       <div className="field" style={{ marginTop: 12 }}><span>Who got it?</span>
         <div className="chips">
-          {(['A', 'B', 'C', 'D', 'U'] as Tier[]).map((t) => (
-            <button key={t} type="button" aria-pressed={tiers.includes(t)} onClick={() => setTiers(tiers.includes(t) ? tiers.filter((x) => x !== t) : [...tiers, t])}>{t === 'U' ? 'No tier' : `Tier ${t}`}</button>
+          {TIERS.map((t) => (
+            <button key={t} type="button" aria-pressed={tiers.includes(t)} onClick={() => setTiers(tiers.includes(t) ? tiers.filter((x) => x !== t) : [...tiers, t])}>{`Tier ${t}`}</button>
           ))}
         </div>
       </div>
@@ -1168,7 +1170,7 @@ function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
     if (!plan) return
     setBusy(true)
     try {
-      if (plan.fresh.length) await api.importContacts(ctx.me, plan.fresh.map((r) => ({ ...r, tier: r.tier ?? 'U', source: 'CSV import' })))
+      if (plan.fresh.length) await api.importContacts(ctx.me, plan.fresh.map((r) => ({ ...r, tier: r.tier ?? 'B', source: 'CSV import' })))
       if (plan.updates.length) await api.updateContacts(plan.updates)
       await ctx.reload()
       toast([plan.fresh.length && `${plan.fresh.length} added`, plan.updates.length && `${plan.updates.length} updated`].filter(Boolean).join(', ') + '.')

@@ -91,7 +91,8 @@ export function readContacts(text: string): ImportRow[] {
     if (!first) continue
     const tierRaw = get(C.tier).toUpperCase().trim()
     const tagTier = get(C.tags).toUpperCase().split(/[\s,;]+/).find((t) => ['A', 'B', 'C', 'D'].includes(t))
-    const tier = (['A', 'B', 'C', 'D'].includes(tierRaw) ? tierRaw : tagTier ?? null) as Tier | null
+    const raw = ['A', 'B', 'C', 'D'].includes(tierRaw) ? tierRaw : tagTier ?? null
+    const tier = (raw === 'D' ? 'C' : raw) as Tier | null
     const phone = get(C.phone)
     out.push({
       first_name: first, last_name: last,

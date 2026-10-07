@@ -124,7 +124,7 @@ export async function deleteContact(id: string) {
 
 export async function importContacts(me: Profile, rows: ContactInput[]) {
   const t = ymd(today())
-  const payload = rows.map((r) => ({ ...r, tier: (r.tier ?? 'U') as Tier, agent_id: me.id, brokerage_id: me.brokerage_id, added_on: t }))
+  const payload = rows.map((r) => ({ ...r, tier: (r.tier ?? 'B') as Tier, agent_id: me.id, brokerage_id: me.brokerage_id, added_on: t }))
   for (let i = 0; i < payload.length; i += 500) check(await supabase.from('contacts').insert(payload.slice(i, i + 500)))
 }
 
