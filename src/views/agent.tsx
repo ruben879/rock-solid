@@ -6,7 +6,7 @@ import {
   HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
-import { ICard, ICheck, IDoor, IFace, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
+import { ICard, ICheck, IDoor, IFace, IFlame, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -235,6 +235,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </>
       )}
 
+      <Momentum ctx={ctx} />
+
       {b.justCleared && (
         <div className="banner" style={{ marginTop: 16 }}>
           <p><b>You finished 10!</b> Here are your next 10. Keep going or come back tomorrow.</p>
@@ -413,6 +415,56 @@ function DoneSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose:
         <button onClick={onClose} style={{ color: 'var(--muted)' }}>Close</button>
       </div>
     </Sheet>
+  )
+}
+
+// ======================================================================
+// Momentum: an always-positive gauge of the last 7 days, plus a streak
+// ======================================================================
+const LEVELS = [
+  { at: 0, name: 'Warming up', msg: 'Every touch counts. Get one on the board.' },
+  { at: 0.25, name: 'Building', msg: 'Momentum is building. Keep stacking touches.' },
+  { at: 0.5, name: 'Rolling', msg: "You're rolling. Keep it going!" },
+  { at: 0.85, name: 'On fire', msg: "You're on fire this week!" },
+  { at: 1.2, name: 'Unstoppable', msg: 'Unstoppable. Your people can feel it.' },
+]
+
+function momentum(ctx: Ctx) {
+  const ind = ctx.data.touches.filter((t) => !t.is_group)
+  const days = new Set(ind.map((t) => t.occurred_on))
+  const since = ymd(addDays(today(), -6))
+  const ratio = ind.filter((t) => t.occurred_on >= since).length / Math.max(1, ctx.agent.weekly_goal)
+  // Days in a row with a touch. Weekends without a touch don't break it, and today doesn't count against you yet.
+  let streak = 0
+  for (let d = today(), i = 0; i < 400; d = addDays(d, -1), i++) {
+    const k = ymd(d)
+    if (days.has(k)) streak++
+    else if (i === 0 || d.getDay() === 0 || d.getDay() === 6) continue
+    else break
+  }
+  const level = [...LEVELS].reverse().find((l) => ratio >= l.at) ?? LEVELS[0]
+  return { ratio, streak, level, today: days.has(ymd(today())) }
+}
+
+function Momentum({ ctx }: { ctx: Ctx }) {
+  const m = momentum(ctx)
+  const fill = Math.min(1, m.ratio / 1.2)
+  // Half-circle gauge: arc length of a radius-40 semicircle is about 125.7
+  const L = 125.7
+  const streakLine =
+    m.streak >= 2 ? `${m.streak} days in a row` : m.streak === 1 ? (m.today ? 'Day 1 of a new streak' : '1 day so far') : 'Start a streak today'
+  return (
+    <div className="momentum" role="group" aria-label={`Momentum: ${m.level.name}. ${streakLine}.`}>
+      <svg viewBox="0 0 100 58" className="gauge" aria-hidden>
+        <path d="M10 50 A40 40 0 0 1 90 50" className="g-track" />
+        <path d="M10 50 A40 40 0 0 1 90 50" className="g-fill" style={{ strokeDasharray: `${L * Math.max(0.04, fill)} ${L}` }} />
+      </svg>
+      <div className="m-text">
+        <b>{m.level.name}</b>
+        <span className="m-streak">{m.streak >= 2 && <IFlame size={16} />}{streakLine}</span>
+        <span className="m-msg">{m.level.at === 0 && m.today ? "Nice start! Every touch builds momentum." : m.level.msg}</span>
+      </div>
+    </div>
   )
 }
 

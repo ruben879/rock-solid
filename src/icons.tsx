@@ -41,3 +41,6 @@ export const ISearch = ({ size }: P) => (
 export const IFace = ({ size }: P) => (
   <svg {...base(size)}><circle cx="8" cy="8" r="3" /><circle cx="16" cy="8" r="3" /><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0" /></svg>
 )
+export const IFlame = ({ size }: P) => (
+  <svg {...base(size)}><path d="M12 22c4 0 7-2.7 7-6.8 0-3.7-2.6-6.3-4.3-8.2-.4 2-1.4 3.3-2.7 4C12 7.6 10.4 4.4 8 2c.2 3.4-3 6-3 10.6C5 18.8 8 22 12 22Z" /></svg>
+)
