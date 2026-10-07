@@ -1178,10 +1178,10 @@ function GroupSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
 
 function exportCsv(contacts: Contact[], byContact: Map<string, string[]>, agent: Profile) {
   const q = (v: unknown) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
-  const head = ['First Name', 'Last Name', 'Phone', 'Email', 'Address', 'City', 'State', 'Zip', 'Tier', 'Birthday', 'Home Anniversary', 'Wedding Anniversary', 'Notes', 'Touches (12 months)', 'Last Touch']
+  const head = ['First Name', 'Last Name', 'Phone', 'Email', 'Address', 'City', 'State', 'Zip', 'Tier', 'Birthday', 'Home Anniversary', 'Wedding Anniversary', 'Notes', 'Touches (12 months)', 'Last Touch', 'Added On', 'Source']
   const rows = [...contacts].sort((a, b) => fullName(a).localeCompare(fullName(b))).map((c) => [
     c.first_name, c.last_name, c.phone, c.email, c.address, c.city, c.state, c.zip,
-    c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B', c.birthday, c.home_anniversary, c.wedding_anniversary, c.notes, score(c, byContact), c.last_touch_on,
+    c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B', c.birthday, c.home_anniversary, c.wedding_anniversary, c.notes, score(c, byContact), c.last_touch_on, c.added_on, c.source,
   ])
   const csv = [head, ...rows].map((r) => r.map(q).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
