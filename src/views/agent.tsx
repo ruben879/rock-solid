@@ -603,12 +603,13 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
 
 function DateField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
   return (
-    <label className="field full"><span>{label}</span>
-      <span style={{ display: 'flex', gap: 8 }}>
-        <input type="date" disabled={ro} value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }} />
-        {value && !ro && <button type="button" className="btn" onClick={() => onChange('')}>Clear</button>}
-      </span>
-    </label>
+    // Not a <label>: tapping Clear inside a label would open the date picker instead of clearing.
+    <div className="field full"><span>{label}</span>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input type="date" aria-label={label} disabled={ro} value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+        {value && !ro && <button type="button" className="btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange('') }}>Clear</button>}
+      </div>
+    </div>
   )
 }
 
