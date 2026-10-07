@@ -5,6 +5,7 @@ import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '
 import {
   HEAT_NAME, KIND_LABEL, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
+import { planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
 import { ICard, ICheck, IDoor, IFace, IFlame, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
 
@@ -1150,93 +1151,60 @@ function GroupSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   )
 }
 
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = []
-  let cell = ''
-  let quoted = false
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++ }
-      else if (ch === '"') quoted = false
-      else cell += ch
-    } else if (ch === '"') quoted = true
-    else if (ch === ',') { row.push(cell); cell = '' }
-    else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++
-      row.push(cell); rows.push(row); row = []; cell = ''
-    } else cell += ch
-  }
-  if (cell || row.length) { row.push(cell); rows.push(row) }
-  return rows.filter((r) => r.some((c) => c.trim()))
-}
-
 function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const toast = useToast()
-  const [rows, setRows] = useState<api.ContactInput[] | null>(null)
-  const [dupes, setDupes] = useState(0)
+  const [plan, setPlan] = useState<ReturnType<typeof planImport> | null>(null)
   const [busy, setBusy] = useState(false)
   function read(file: File) {
     const r = new FileReader()
     r.onload = () => {
-      const all = parseCsv(String(r.result))
-      if (all.length < 2) return toast('That file has no rows to import.')
-      const head = all[0].map((h) => h.toLowerCase().trim())
-      const col = (...names: string[]) => head.findIndex((h) => names.some((n) => h === n || h.includes(n)))
-      const fi = col('first name', 'first'), li = col('last name', 'last'), pi = col('cell phone 1', 'phone', 'mobile'), ei = col('email')
-      const ai = col('primary address', 'address'), ci = col('primary city', 'city'), si = col('primary state', 'state'), zi = col('primary zip', 'zip')
-      const ti = col('tier'), bi = col('birthday'), hi = col('last closing date', 'anniversary')
-      const existing = new Set(ctx.data.contacts.map((c) => fullName(c).toLowerCase()))
-      let d = 0
-      const out: api.ContactInput[] = []
-      for (const r of all.slice(1)) {
-        const get = (i: number) => (i >= 0 ? (r[i] ?? '').trim() : '')
-        const first = get(fi >= 0 ? fi : 0)
-        if (!first) continue
-        const last = get(li)
-        if (existing.has(`${first} ${last}`.trim().toLowerCase())) { d++; continue }
-        const tierRaw = get(ti).toUpperCase()
-        const date = (v: string) => (/^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null)
-        out.push({
-          first_name: first, last_name: last, phone: get(pi) || null, email: get(ei) || null, address: get(ai) || null,
-          city: get(ci) || null, state: get(si) || null, zip: get(zi) || null,
-          tier: (['A', 'B', 'C', 'D'].includes(tierRaw) ? tierRaw : 'U') as Tier,
-          birthday: date(get(bi)), home_anniversary: date(get(hi)), source: 'CSV import',
-        })
-      }
-      setRows(out)
-      setDupes(d)
+      const rows = readContacts(String(r.result))
+      if (!rows.length) return toast("That file doesn't have any names to bring in.")
+      setPlan(planImport(rows, ctx.data.contacts))
     }
     r.readAsText(file)
   }
   async function go() {
-    if (!rows?.length) return
+    if (!plan) return
     setBusy(true)
     try {
-      await api.importContacts(ctx.me, rows)
+      if (plan.fresh.length) await api.importContacts(ctx.me, plan.fresh.map((r) => ({ ...r, tier: r.tier ?? 'U', source: 'CSV import' })))
+      if (plan.updates.length) await api.updateContacts(plan.updates)
       await ctx.reload()
-      const untagged = rows.filter((r) => r.tier === 'U').length
-      toast(`${rows.length} imported${untagged ? `, ${untagged} with no tier (they'll come up monthly until tagged)` : ''}.`)
+      toast([plan.fresh.length && `${plan.fresh.length} added`, plan.updates.length && `${plan.updates.length} updated`].filter(Boolean).join(', ') + '.')
       onClose()
     } catch (e) {
       toast(`Couldn't import: ${(e as Error).message}`)
       setBusy(false)
     }
   }
+  const nothing = plan && !plan.fresh.length && !plan.updates.length
   return (
     <Sheet label="Import contacts" onClose={onClose}>
-      <h3>Import contacts from a CSV</h3>
-      <p className="note" style={{ margin: '4px 0 12px' }}>Columns it understands: First Name, Last Name, Phone, Email, Address, City, State, Zip, Tier, Birthday. A BoldTrail export works as is. People already in your database are skipped.</p>
+      <h3>Bring in a spreadsheet</h3>
+      <p className="note" style={{ margin: '4px 0 12px' }}>A CSV file, like a BoldTrail export. It reads names, phone, email, address, birthday, closing date and tier. Anyone already here gets their info updated instead of added twice.</p>
       <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
-      {rows && (
-        <p style={{ marginTop: 12 }}>
-          <b>{rows.length}</b> new contacts ready{dupes ? `, ${dupes} already in your database skipped` : ''}. They start as New and are spread across the next few weeks by the 10-at-a-time list.
-        </p>
+      {plan && (
+        <div className="card stack" style={{ marginTop: 14, background: 'var(--bg)', boxShadow: 'none' }}>
+          <p><b>{plan.fresh.length}</b> new {plan.fresh.length === 1 ? 'person' : 'people'} to add</p>
+          <p><b>{plan.updates.length}</b> already here with new info to update{plan.same ? ` (${plan.same} already up to date)` : ''}</p>
+          {plan.updates.length > 0 && (
+            <details className="more" style={{ marginTop: 0 }}>
+              <summary>See what changes</summary>
+              <div style={{ fontSize: 14 }}>
+                {plan.updates.slice(0, 50).map((u) => (
+                  <p key={u.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--line)' }}><b style={{ fontWeight: 500 }}>{u.name}</b>: {Object.keys(u.fields).map((k) => k.replace('_', ' ').replace('home anniversary', 'closing date')).join(', ')}</p>
+                ))}
+                {plan.updates.length > 50 && <p className="note">and {plan.updates.length - 50} more</p>}
+              </div>
+            </details>
+          )}
+          <p className="note">Updates only fill in or change info. Nothing gets erased, and tiers you set in the app stay as they are.</p>
+        </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
-        <button className="btn gold" disabled={!rows?.length || busy} onClick={go}>{busy ? 'Importing…' : 'Import'}</button>
+        <button className="btn gold" disabled={!plan || !!nothing || busy} onClick={go}>{busy ? 'Working…' : nothing ? 'Nothing new' : 'Import'}</button>
       </div>
     </Sheet>
   )

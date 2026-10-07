@@ -128,6 +128,14 @@ export async function importContacts(me: Profile, rows: ContactInput[]) {
   for (let i = 0; i < payload.length; i += 500) check(await supabase.from('contacts').insert(payload.slice(i, i + 500)))
 }
 
+export async function updateContacts(list: { id: string; fields: Partial<Contact> }[]) {
+  const stamp = new Date().toISOString()
+  for (let i = 0; i < list.length; i += 10) {
+    const res = await Promise.all(list.slice(i, i + 10).map((u) => supabase.from('contacts').update({ ...u.fields, updated_at: stamp }).eq('id', u.id)))
+    for (const r of res) check(r)
+  }
+}
+
 export async function logCard(me: Profile, cards: Card[], contacts: Contact[], input: { name: string; relationship: string; occasion: string; note: string }) {
   const repeat = me.card_rule && !!cardWithin12Months(cards, input.name)
   const n = input.name.toLowerCase().replace(/\s+/g, ' ').trim()
