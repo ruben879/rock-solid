@@ -122,6 +122,25 @@ export function nextDue(c: Contact, p: Profile | null): Date {
 const TIER_ORDER: Record<Tier, number> = { A: 0, B: 1, U: 1, C: 2, D: 2 }
 
 /** Everyone due by the end of this week who hasn't been touched this week and isn't pushed to later. */
+/**
+ * Who comes up next on Today. Only one-on-one touches move someone's next turn: a group email or
+ * mailed newsletter counts toward their 36, but they still get their personal call, text or card on schedule.
+ * Fills to `want` people: everyone due this week first, then whoever is coming up soonest.
+ */
+export function rotation(contacts: Contact[], p: Profile | null, touches: Touch[], touchedThisWeek: Set<string>, exclude: Set<string>, want: number) {
+  const personal = new Map<string, string>()
+  for (const t of touches) if (!t.is_group && t.contact_id && (personal.get(t.contact_id) ?? '') < t.occurred_on) personal.set(t.contact_id, t.occurred_on)
+  const rc = contacts.map((c) => ({ ...c, last_touch_on: personal.get(c.id) ?? null }))
+  const due = duePool(rc, p, touchedThisWeek, exclude)
+  if (due.length >= want) return due.slice(0, want)
+  const t = ymd(today())
+  const taken = new Set(due.map((c) => c.id))
+  const ahead = rc
+    .filter((c) => !taken.has(c.id) && !exclude.has(c.id) && !touchedThisWeek.has(c.id) && (!c.skip_until || c.skip_until <= t))
+    .sort((a, b) => nextDue(a, p).getTime() - nextDue(b, p).getTime() || TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || fullName(a).localeCompare(fullName(b)))
+  return [...due, ...ahead].slice(0, want)
+}
+
 export function duePool(contacts: Contact[], p: Profile | null, touchedThisWeek: Set<string>, exclude: Set<string>) {
   const end = addDays(weekStart(), 6)
   const t = ymd(today())

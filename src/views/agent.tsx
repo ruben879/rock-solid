@@ -3,7 +3,7 @@ import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
@@ -60,8 +60,8 @@ function useBatch(ctx: Ctx) {
   const size = Math.min(30, Math.max(1, agent.daily_goal || 5))
   const day = ymd(today())
   const ws = ymd(weekStart())
-  const key = `rs-day-${agent.id}-${day}`
-  const lastKey = `rs-day-${agent.id}-last`
+  const key = `rs-day2-${agent.id}-${day}`
+  const lastKey = `rs-day2-${agent.id}-last`
   const touchedThisWeek = useMemo(
     () => new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on >= ws).map((t) => t.contact_id as string)),
     [data.touches, ws],
@@ -74,7 +74,7 @@ function useBatch(ctx: Ctx) {
     let ids = saved.ids.filter((id) => byId.has(id))
     let round = saved.round
     let cleared = false
-    const poolExcluding = (ex: string[]) => duePool(data.contacts, agent, touchedThisWeek, new Set(ex))
+    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(ex), want)
     if (ids.length === 0) {
       // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
       const last = store.get<{ day: string; ids: string[] } | null>(lastKey, null)
@@ -86,17 +86,21 @@ function useBatch(ctx: Ctx) {
           return c && !reached.has(id) && (!c.skip_until || c.skip_until <= day)
         }).slice(0, size)
       }
-      ids = [...carry, ...poolExcluding(carry).slice(0, size - carry.length).map((c) => c.id)]
+      // People already reached today count toward today's list, so the stones show today's real progress.
+      const doneToday = [...new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on === day && byId.has(t.contact_id)).map((t) => t.contact_id as string))].slice(0, size)
+      carry = carry.filter((id) => !doneToday.includes(id)).slice(0, size - doneToday.length)
+      const start = [...doneToday, ...carry]
+      ids = [...start, ...poolExcluding(start, size - start.length).map((c) => c.id)]
       round = ids.length ? 1 : 0
     }
     const allDone = ids.length > 0 && ids.every((id) => touchedThisWeek.has(id))
-    const waiting = poolExcluding(ids).length
+    const waiting = poolExcluding(ids, 1).length
     return { ids, round, cleared, waiting, size, allDone, stopped: !!saved.stopped }
   }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, day, lastKey])
 
   /** Finished the list: load another round for today (asked, never automatic). */
   const loadMore = () => {
-    const next = duePool(data.contacts, agent, touchedThisWeek, new Set(result.ids)).slice(0, size).map((c) => c.id)
+    const next = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(result.ids), size).map((c) => c.id)
     if (!next.length) return
     const v = { ids: next, round: result.round + 1 }
     if (!readOnly) {
@@ -124,7 +128,7 @@ function useBatch(ctx: Ctx) {
   }, [result, saved, key, lastKey, day, readOnly])
 
   const replace = (id: string) => {
-    const pool = duePool(data.contacts, agent, touchedThisWeek, new Set([...result.ids, id]))
+    const pool = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, id]), 1)
     const ids = result.ids.filter((x) => x !== id)
     if (pool[0]) ids.push(pool[0].id)
     const v = { ids, round: result.round }
