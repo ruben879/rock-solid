@@ -790,8 +790,10 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
   const [occ, setOcc] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [adding, setAdding] = useState(false)
   const dup = name.trim() ? cardWithin12Months(data.cards, name) : undefined
   const q = name.trim().toLowerCase()
+  const known = data.contacts.some((c) => fullName(c).toLowerCase() === q)
   const matches = q ? data.contacts.filter((c) => fullName(c).toLowerCase().includes(q) && fullName(c).toLowerCase() !== q).slice(0, 5) : []
   const who = name.trim().split(' ')[0] || 'them'
   const total = 4 - start
@@ -822,6 +824,9 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
           {matches.length > 0 && (
             <div className="sugs">{matches.map((c) => <button type="button" key={c.id} onClick={() => { setName(fullName(c)); setStep(1) }}>{fullName(c)}</button>)}</div>
           )}
+          {q && !known && (
+            <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><IPlus size={18} /> Add "{name.trim()}" to my people</button>
+          )}
           <button className="btn primary lg block" style={{ marginTop: 14 }} disabled={!name.trim()}>Next</button>
         </form>
       )}
@@ -849,6 +854,10 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
         </div>
       )}
       {step > start && <button className="back" onClick={() => setStep(step - 1)}>Back</button>}
+      {adding && (
+        <EditSheet ctx={ctx} c={null} prefill={{ name }} saveLabel="Save and continue" onClose={() => setAdding(false)}
+          onSaved={(c) => { setAdding(false); setName(fullName(c)); setStep(1); toast(`${c.first_name} added to your people.`) }} />
+      )}
     </div>
   )
 }
@@ -1200,6 +1209,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [hf, setHf] = useState<Heat | '' | 'tag'>('')
   const [edit, setEdit] = useState<Contact | null | 'new'>(null)
   const [view, setView] = useState<Contact | null>(null)
+  const [addName, setAddName] = useState<string | null>(null)
   const [group, setGroup] = useState(false)
   const [importing, setImporting] = useState(false)
   const [shown, setShown] = useState(60)
@@ -1226,6 +1236,9 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       <p className="sub" style={{ marginTop: 4 }}>{data.contacts.length} people. Tap anyone to see or change their details.</p>
 
       <div className="search"><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      {!readOnly && q.trim() && !data.contacts.some((c) => fullName(c).toLowerCase() === q.trim().toLowerCase()) && (
+        <button className="btn" style={{ marginTop: 10 }} onClick={() => setAddName(q.trim())}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
+      )}
       <div className="chips" style={{ margin: '12px 0' }}>
         <button aria-pressed={!hf} onClick={() => setHf('')}>Everyone</button>
         {untagged > 0 && <button aria-pressed={hf === 'tag'} onClick={() => setHf(hf === 'tag' ? '' : 'tag')}>Needs a tag ({untagged})</button>}
@@ -1285,6 +1298,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         </details>
       )}
       {edit && <EditSheet ctx={ctx} c={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
+      {addName !== null && <EditSheet ctx={ctx} c={null} prefill={{ name: addName }} onClose={() => setAddName(null)} />}
       {view && <PersonSheet ctx={ctx} c={view} onClose={() => setView(null)} onEdit={() => { const c = view; setView(null); setEdit(c) }} />}
       {group && <GroupSheet ctx={ctx} onClose={() => setGroup(false)} />}
       {importing && <ImportSheet ctx={ctx} onClose={() => setImporting(false)} />}
