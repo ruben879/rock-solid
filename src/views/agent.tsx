@@ -44,7 +44,7 @@ function useAgentData1(id: string) {
 /** Older tiers that now behave like the three we use. */
 const LEGACY: Partial<Record<Tier, Tier[]>> = { B: ['C', 'D'] }
 const withLegacy = (ts: Tier[]) => [...new Set(ts.flatMap((t) => [t, ...(LEGACY[t] ?? [])]))]
-const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by', facetoface: 'We met face to face' }
+const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', card: 'I sent a card', popby: 'I popped by', facetoface: 'Face to face' }
 const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor />, facetoface: <IFace /> }
 
 // ======================================================================
@@ -129,8 +129,8 @@ function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string; is_gr
     if (d >= 0 && d <= 10) return d === 0 ? 'Birthday is today!' : `Birthday ${fmt(next)}`
   }
   if (!last && !c.last_touch_on) return 'First touch'
-  if (last) return `Last time: ${last.is_group ? 'group ' : ''}${KIND_LABEL[last.kind].toLowerCase()} on ${fmt(last.occurred_on)}`
-  return `Last touch ${fmt(c.last_touch_on as string)}`
+  if (last) return `Last: ${last.is_group ? 'group ' : ''}${KIND_LABEL[last.kind].toLowerCase()}, ${fmt(last.occurred_on)}`
+  return `Last: ${fmt(c.last_touch_on as string)}`
 }
 
 function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
@@ -142,6 +142,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [doneFor, setDoneFor] = useState<Contact | null>(null)
   const [editFor, setEditFor] = useState<Contact | null>(null)
   const [viewFor, setViewFor] = useState<Contact | null>(null)
+  const [recording, setRecording] = useState(false)
   const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
@@ -230,6 +231,12 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     <section>
       <p className="date">{today().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
       <h2 className="hello">{readOnly ? `${first}'s list` : `${greeting()}, ${first}`}</h2>
+      {!readOnly && (
+        <button className="record" onClick={() => setRecording(true)}>
+          <span className="plus"><IPlus size={20} /></span>
+          <span>Record a touch<small>Talked to someone? Log it here, even if they're not on your list.</small></span>
+        </button>
+      )}
 
       {rows.length > 0 && (
         <>
@@ -344,6 +351,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </Sheet>
       )}
       {editFor && <EditSheet ctx={ctx} c={editFor} onClose={() => setEditFor(null)} />}
+      {recording && <RecordSheet ctx={ctx} onClose={() => setRecording(false)} onLog={(c, k, n) => { setRecording(false); log(c, k, n) }} />}
       {viewFor && <PersonSheet ctx={ctx} c={viewFor} onClose={() => setViewFor(null)} onEdit={() => { const c = viewFor; setViewFor(null); setEditFor(c) }} />}
       {doneFor && <DoneSheet ctx={ctx} c={doneFor} onClose={() => setDoneFor(null)} onEdit={() => { const c = doneFor; setDoneFor(null); setEditFor(c) }} />}
       {cardFor && (
@@ -471,6 +479,87 @@ function Momentum({ ctx }: { ctx: Ctx }) {
         <span className="m-msg">{m.level.at === 0 && m.today ? "Nice start! Every touch builds momentum." : m.level.msg}</span>
       </div>
     </div>
+  )
+}
+
+/** Record any touch from the top of Today: pick (or add) the person, pick what you did. */
+function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; onLog: (c: Contact, kind: TouchKind, note: string) => void }) {
+  const toast = useToast()
+  const [q, setQ] = useState('')
+  const [who, setWho] = useState<Contact | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [phone, setPhone] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const term = q.trim().toLowerCase()
+  const matches = term
+    ? ctx.data.contacts.filter((c) => fullName(c).toLowerCase().includes(term) || (c.phone ?? '').replace(/\D/g, '').includes(term.replace(/\D/g, '') || '~')).slice(0, 6)
+    : []
+  const exact = ctx.data.contacts.some((c) => fullName(c).toLowerCase() === term)
+
+  async function pick(kind: TouchKind) {
+    if (busy) return
+    let c = who
+    if (!c) {
+      const parts = q.trim().split(/\s+/)
+      const first_name = parts.shift() ?? ''
+      if (!first_name) return toast('Type their name first.')
+      setBusy(true)
+      try {
+        const last_name = parts.join(' ')
+        const id = await api.saveContact(ctx.me, { first_name, last_name, phone: phone.trim() || null, tier: 'U' })
+        c = { id, first_name, last_name, agent_id: ctx.me.id } as Contact
+        toast(`${first_name} added to your people. Tag them A or B when you get a chance.`)
+      } catch (e) {
+        setBusy(false)
+        return toast(`That didn't save: ${(e as Error).message}`)
+      }
+    }
+    onLog(c, kind, note)
+  }
+
+  const ready = !!who || (adding && !!q.trim())
+  return (
+    <Sheet label="Record a touch" onClose={onClose}>
+      <h3>Record a touch</h3>
+      {!ready ? (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div className="search"><ISearch size={20} /><input autoFocus aria-label="Who did you talk to?" placeholder="Who did you talk to?" value={q} onChange={(e) => { setQ(e.target.value); setAdding(false) }} /></div>
+          {matches.length > 0 && (
+            <div className="sugs" style={{ marginTop: -4 }}>
+              {matches.map((c) => (
+                <button key={c.id} onClick={() => setWho(c)}>{fullName(c)}{c.phone ? <span className="note"> · {c.phone}</span> : null}</button>
+              ))}
+            </div>
+          )}
+          {term && !exact && (
+            <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => setAdding(true)}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
+          )}
+          {!term && <p className="note">Start typing a name. If they're not in your people yet, you can add them right here.</p>}
+        </div>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          <div className="pick">
+            <span><b style={{ fontWeight: 600 }}>{who ? fullName(who) : q.trim()}</b>{!who && <span className="note"> (new)</span>}</span>
+            <button className="link" onClick={() => { setWho(null); setAdding(false) }}>Change</button>
+          </div>
+          {!who && (
+            <label className="field" style={{ marginTop: 10 }}><span>Phone (optional)</span>
+              <input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </label>
+          )}
+          <p className="q" style={{ margin: '16px 0 0', fontSize: 18 }}>What did you do?</p>
+          <div className="opts">
+            {(['call', 'text', 'facetoface', 'popby', 'card'] as TouchKind[]).map((k) => (
+              <button key={k} className={`opt k-${k}`} disabled={busy} onClick={() => pick(k)}>{KIND_ICON[k]}{DID_LABEL[k]}</button>
+            ))}
+          </div>
+          <textarea aria-label="Note" placeholder="Want to remember anything? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+          <p className="note" style={{ marginTop: 8 }}>This counts toward their 36 and resets when they come up next.</p>
+        </div>
+      )}
+      <button className="btn ghost block" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
+    </Sheet>
   )
 }
 

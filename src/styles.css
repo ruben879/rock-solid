@@ -113,7 +113,8 @@ details.more[open] > summary::before { content: "–"; }
 .person { background: var(--surface); border-radius: var(--r); padding: 16px 16px 12px; box-shadow: 0 1px 2px rgba(20, 32, 58, .06); }
 .person .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .person h3 { font-size: 20px; line-height: 1.25; }
-.person .why { color: var(--muted); font-size: 14.5px; margin-top: 2px; }
+.person .why { color: var(--muted); font-size: 14.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person .head > div:first-child { min-width: 0; flex: 1; }
 .iconbtn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; flex: none; margin: -6px -8px 0 0; }
 .iconbtn:hover { background: var(--bg); }
 .go { margin-top: 14px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 14px; min-height: 56px; padding: 12px 16px; font: 600 17px var(--font); cursor: pointer; text-decoration: none; }
@@ -336,3 +337,10 @@ tr:last-child td { border-bottom: 0; }
 
 /* Offline notice: a slim strip at the top so it never covers buttons or messages */
 .offbar { position: sticky; top: 0; z-index: 16; background: var(--gold-soft); color: var(--ink); border-bottom: 1px solid color-mix(in srgb, var(--gold) 50%, transparent); padding: calc(6px + env(safe-area-inset-top, 0px)) 16px 6px; font-size: 13.5px; text-align: center; }
+
+/* Record a touch, top of Today */
+.record { width: 100%; display: flex; align-items: center; gap: 12px; margin: 14px 0 22px; padding: 14px 16px; border-radius: var(--r); border: 1.5px dashed color-mix(in srgb, var(--navy) 35%, transparent); background: var(--surface); color: var(--navy); font: 600 17px var(--font); cursor: pointer; text-align: left; }
+.record .plus { width: 34px; height: 34px; border-radius: 50%; background: var(--navy); color: #fff; display: grid; place-items: center; flex: none; }
+@media (prefers-color-scheme: dark) { .record .plus { color: #0f1526; } }
+.record small { display: block; font-weight: 400; font-size: 14px; color: var(--muted); }
+.pick { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg); border-radius: 12px; padding: 10px 14px; margin-bottom: 4px; }

@@ -166,13 +166,18 @@ export async function skipToNextWeek(c: Contact) {
 
 export type ContactInput = Partial<Omit<Contact, 'id' | 'agent_id' | 'brokerage_id'>> & { first_name: string }
 
+/** Saves a person. Returns their id (new people get one right away, so they work offline too). */
 export async function saveContact(me: Profile, input: ContactInput, id?: string) {
-  if (id) await exec(me.id, [{ t: 'update', table: 'contacts', id, fields: { ...input, updated_at: new Date().toISOString() } }])
-  else
-    await exec(me.id, [{
-      t: 'insert', table: 'contacts',
-      rows: [{ id: uuid(), added_on: ymd(today()), tier: 'U', prior_touches: 0, last_touch_on: null, skip_until: null, ...input, agent_id: me.id, brokerage_id: me.brokerage_id }],
-    }])
+  if (id) {
+    await exec(me.id, [{ t: 'update', table: 'contacts', id, fields: { ...input, updated_at: new Date().toISOString() } }])
+    return id
+  }
+  const newId = uuid()
+  await exec(me.id, [{
+    t: 'insert', table: 'contacts',
+    rows: [{ id: newId, added_on: ymd(today()), tier: 'U', prior_touches: 0, last_touch_on: null, skip_until: null, ...input, agent_id: me.id, brokerage_id: me.brokerage_id }],
+  }])
+  return newId
 }
 
 export async function deleteContact(me: Profile, id: string) {
