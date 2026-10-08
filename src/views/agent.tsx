@@ -3,7 +3,7 @@ import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
@@ -111,7 +111,7 @@ function goalState(ctx: Ctx) {
   return {
     today: ind.filter((x) => x.occurred_on === t).length,
     week: ind.filter((x) => x.occurred_on >= ws).length,
-    card: ctx.data.cards.some((c) => c.sent_on === t && c.counts_for_challenge),
+    card: cardCoverage(ctx.data.cards).has(t),
   }
 }
 
@@ -866,16 +866,20 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   const { data, agent, readOnly } = ctx
   const [cele, setCele] = useState(false)
   const counting = data.cards.filter((c) => c.counts_for_challenge)
-  const days = new Set(counting.map((c) => c.sent_on))
-  const doneToday = days.has(ymd(today()))
+  const cov = cardCoverage(data.cards)
+  const tk = ymd(today())
+  const doneToday = cov.has(tk)
+  const coveredToday = !cov.written.has(tk) && cov.covered.has(tk)
   let streak = 0
   for (let d = today(); ; d = addDays(d, -1)) {
-    if (days.has(ymd(d))) streak++
-    else if (ymd(d) === ymd(today())) continue
+    if (cov.has(ymd(d))) streak++
+    else if (ymd(d) === tk) continue
     else break
   }
   const ms = ymd(monthStart())
-  const monthDays = [...days].filter((d) => d >= ms).length
+  let monthDays = 0
+  for (let d = monthStart(); ymd(d) <= tk; d = addDays(d, 1)) if (cov.has(ymd(d))) monthDays++
+  const bankedAhead = [...cov.covered.keys()].filter((k) => k > tk).length
   const yearCount = counting.filter((c) => c.sent_on.startsWith(String(today().getFullYear()))).length
 
   function logged(r: { firstToday: boolean }) {
@@ -901,7 +905,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
       <div className="streak" style={{ margin: '10px 0 4px' }}>
         <b>{streak}</b><span>day streak</span>
       </div>
-      <p className="muted" style={{ marginBottom: 18 }}>{doneToday ? "Today's card is done. Nice work." : 'One handwritten card today keeps it going.'}</p>
+      <p className="muted" style={{ marginBottom: 18 }}>{coveredToday ? 'Today is covered by an extra card you already wrote. Nice planning.' : doneToday ? "Today's card is done. Nice work." : 'One handwritten card today keeps it going.'}{bankedAhead > 0 ? ` You're ${bankedAhead} ${bankedAhead === 1 ? 'day' : 'days'} ahead.` : ''}</p>
 
       {!readOnly && (
         <div className="card">
@@ -918,10 +922,17 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
             const d = new Date(first.getFullYear(), first.getMonth(), i + 1, 12)
             const k = ymd(d)
             const who = counting.filter((c) => c.sent_on === k).map((c) => c.recipient_name).join(', ')
-            return <div key={k} title={who} className={`d ${days.has(k) ? 'on' : ''} ${k === ymd(today()) ? 'today' : ''} ${d > today() ? 'fut' : ''}`}>{i + 1}</div>
+            const from = cov.covered.get(k)
+            const cls = cov.written.has(k) ? 'on' : from ? 'cov' : ''
+            const tip = who || (from ? `Covered by an extra card written ${fmt(from)}` : '')
+            return <div key={k} title={tip} aria-label={`${fmt(d)}${tip ? `: ${tip}` : ''}`} className={`d ${cls} ${k === tk ? 'today' : ''} ${d > today() && !from ? 'fut' : ''}`}>{i + 1}</div>
           })}
         </div>
-        <p className="note" style={{ marginTop: 12, textAlign: 'center' }}>{yearCount} cards so far this year</p>
+        <div className="callegend" aria-hidden>
+          <span><i className="on" /> Written that day</span>
+          <span><i className="cov" /> Covered by an extra card</span>
+        </div>
+        <p className="note" style={{ marginTop: 8, textAlign: 'center' }}>{yearCount} cards so far this year. Write extras on a busy day and they fill in the days around it.</p>
       </div>
 
       <details className="more">

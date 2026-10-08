@@ -237,3 +237,29 @@ export function cardWithin12Months(cards: Card[], name: string, before?: string)
     .filter((c) => c.recipient_name.toLowerCase().replace(/\s+/g, ' ').trim() === n && c.sent_on >= from && (!before || c.sent_on < before))
     .sort((a, b) => b.sent_on.localeCompare(a.sent_on))[0]
 }
+
+// ---------- Card a Day coverage ----------
+/**
+ * Days covered by Card a Day. A day with a card written on it is "written".
+ * Extra cards written on the same day cover nearby empty days: first catching up on missed days
+ * in the 6 days before, then banking ahead for the 7 days after. Those days are "covered".
+ */
+export function cardCoverage(cards: Card[]) {
+  const counting = cards.filter((c) => c.counts_for_challenge)
+  const perDay = new Map<string, number>()
+  for (const c of counting) perDay.set(c.sent_on, (perDay.get(c.sent_on) ?? 0) + 1)
+  const written = new Set(perDay.keys())
+  const covered = new Map<string, string>() // covered day -> day the card was actually written
+  for (const day of [...perDay.keys()].sort()) {
+    let extra = (perDay.get(day) ?? 1) - 1
+    const base = parse(day)
+    const tryDay = (n: number) => {
+      const k = ymd(addDays(base, n))
+      if (extra > 0 && !written.has(k) && !covered.has(k)) { covered.set(k, day); extra-- }
+    }
+    for (let n = -1; n >= -6 && extra > 0; n--) tryDay(n)
+    for (let n = 1; n <= 7 && extra > 0; n++) tryDay(n)
+  }
+  const has = (k: string) => written.has(k) || covered.has(k)
+  return { written, covered, has }
+}
