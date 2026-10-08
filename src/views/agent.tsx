@@ -115,6 +115,14 @@ function goalState(ctx: Ctx) {
   }
 }
 
+/** "Group email" for email blasts, "Group mailout" for mailed newsletters, otherwise the plain type. */
+function touchLabel(t: { kind: TouchKind; is_group?: boolean }) {
+  if (!t.is_group) return KIND_LABEL[t.kind]
+  if (t.kind === 'email') return 'Group email'
+  if (t.kind === 'newsletter') return 'Group mailout'
+  return `Group ${KIND_LABEL[t.kind].toLowerCase()}`
+}
+
 function greeting() {
   const h = new Date().getHours()
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
@@ -129,7 +137,7 @@ function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string; is_gr
     if (d >= 0 && d <= 10) return d === 0 ? 'Birthday is today!' : `Birthday ${fmt(next)}`
   }
   if (!last && !c.last_touch_on) return 'First touch'
-  if (last) return `Last: ${last.is_group ? 'group ' : ''}${KIND_LABEL[last.kind].toLowerCase()}, ${fmt(last.occurred_on)}`
+  if (last) return `Last: ${touchLabel(last).toLowerCase()}, ${fmt(last.occurred_on)}`
   return `Last: ${fmt(c.last_touch_on as string)}`
 }
 
@@ -314,7 +322,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                 <button key={c.id} className="donerow" disabled={readOnly} onClick={() => setDoneFor(c)}>
                   <span className="tick"><ICheck size={16} /></span>
                   <span style={{ flex: 1 }}>{fullName(c)}</span>
-                  {l && <span className="note">{KIND_LABEL[l.kind]}</span>}
+                  {l && <span className="note">{touchLabel(l)}</span>}
                 </button>
               )
             })}
@@ -614,7 +622,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
             <div key={t.id} className="hrow">
               <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <b>{t.is_group ? `Group ${KIND_LABEL[t.kind].toLowerCase()}` : KIND_LABEL[t.kind]}</b>
+                <b>{touchLabel(t)}</b>
                 {t.note && t.note !== 'Group touch' && <small>{t.note}</small>}
               </span>
               <span className="note" style={{ whiteSpace: 'nowrap' }}>{longDate(t.occurred_on)}</span>
@@ -901,7 +909,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   return (
     <section>
-      <h2 style={{ marginTop: 14 }}>Card a Day</h2>
+      <h2 style={{ marginTop: 14 }}>Card a Day Challenge</h2>
       <div className="streak" style={{ margin: '10px 0 4px' }}>
         <b>{streak}</b><span>day streak</span>
       </div>
