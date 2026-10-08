@@ -48,60 +48,94 @@ const DID_LABEL: Record<string, string> = { call: 'I called', text: 'I texted', 
 const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />, card: <ICard />, popby: <IDoor />, facetoface: <IFace /> }
 
 // ======================================================================
-// Today: the next 10
+// Today: a list the size of your daily goal
 // ======================================================================
-const BATCH = 10
-
+/**
+ * Today's list holds as many people as your daily goal.
+ * Anyone you didn't get to yesterday carries over, and the list is topped back up to the daily goal (never more),
+ * so a missed day never snowballs. Finish the whole list and the next set loads.
+ */
 function useBatch(ctx: Ctx) {
   const { data, agent, readOnly } = ctx
+  const size = Math.min(30, Math.max(1, agent.daily_goal || 5))
+  const day = ymd(today())
   const ws = ymd(weekStart())
-  const key = `rs-batch-${agent.id}-${ws}`
+  const key = `rs-day-${agent.id}-${day}`
+  const lastKey = `rs-day-${agent.id}-last`
   const touchedThisWeek = useMemo(
     () => new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on >= ws).map((t) => t.contact_id as string)),
     [data.touches, ws],
   )
-  const [saved, setSaved] = useState<{ ids: string[]; round: number }>(() => store.get(key, { ids: [], round: 0 }))
+  const [saved, setSaved] = useState<{ ids: string[]; round: number; stopped?: boolean }>(() => store.get(key, { ids: [], round: 0 }))
   const [justCleared, setJustCleared] = useState(false)
 
   const result = useMemo(() => {
-    const exists = new Set(data.contacts.map((c) => c.id))
-    let ids = saved.ids.filter((id) => exists.has(id))
+    const byId = new Map(data.contacts.map((c) => [c.id, c]))
+    let ids = saved.ids.filter((id) => byId.has(id))
     let round = saved.round
     let cleared = false
     const poolExcluding = (ex: string[]) => duePool(data.contacts, agent, touchedThisWeek, new Set(ex))
     if (ids.length === 0) {
-      ids = poolExcluding([]).slice(0, BATCH).map((c) => c.id)
-      round = ids.length ? 1 : 0
-    } else if (ids.every((id) => touchedThisWeek.has(id))) {
-      const next = poolExcluding(ids).slice(0, BATCH).map((c) => c.id)
-      if (next.length) {
-        ids = next
-        round += 1
-        cleared = true
+      // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
+      const last = store.get<{ day: string; ids: string[] } | null>(lastKey, null)
+      let carry: string[] = []
+      if (last && last.day < day) {
+        const reached = new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on >= last.day).map((t) => t.contact_id as string))
+        carry = last.ids.filter((id) => {
+          const c = byId.get(id)
+          return c && !reached.has(id) && (!c.skip_until || c.skip_until <= day)
+        }).slice(0, size)
       }
+      ids = [...carry, ...poolExcluding(carry).slice(0, size - carry.length).map((c) => c.id)]
+      round = ids.length ? 1 : 0
     }
-    return { ids, round, cleared, waiting: poolExcluding(ids).length }
-  }, [saved, data.contacts, agent, touchedThisWeek])
+    const allDone = ids.length > 0 && ids.every((id) => touchedThisWeek.has(id))
+    const waiting = poolExcluding(ids).length
+    return { ids, round, cleared, waiting, size, allDone, stopped: !!saved.stopped }
+  }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, day, lastKey])
+
+  /** Finished the list: load another round for today (asked, never automatic). */
+  const loadMore = () => {
+    const next = duePool(data.contacts, agent, touchedThisWeek, new Set(result.ids)).slice(0, size).map((c) => c.id)
+    if (!next.length) return
+    const v = { ids: next, round: result.round + 1 }
+    if (!readOnly) {
+      store.set(key, v)
+      store.set(lastKey, { day, ids: next })
+    }
+    setSaved(v)
+  }
+  const stopForToday = () => {
+    const v = { ids: result.ids, round: result.round, stopped: true }
+    if (!readOnly) store.set(key, v)
+    setSaved(v)
+  }
 
   useEffect(() => {
     if (result.ids.join() !== saved.ids.join() || result.round !== saved.round) {
       const v = { ids: result.ids, round: result.round }
-      if (!readOnly) store.set(key, v)
+      if (!readOnly) {
+        store.set(key, v)
+        store.set(lastKey, { day, ids: result.ids })
+      }
       setSaved(v)
       if (result.cleared) setJustCleared(true)
     }
-  }, [result, saved, key, readOnly])
+  }, [result, saved, key, lastKey, day, readOnly])
 
   const replace = (id: string) => {
     const pool = duePool(data.contacts, agent, touchedThisWeek, new Set([...result.ids, id]))
     const ids = result.ids.filter((x) => x !== id)
     if (pool[0]) ids.push(pool[0].id)
     const v = { ids, round: result.round }
-    if (!readOnly) store.set(key, v)
+    if (!readOnly) {
+      store.set(key, v)
+      store.set(lastKey, { day, ids })
+    }
     setSaved(v)
     return pool[0]
   }
-  return { ...result, touchedThisWeek, justCleared, setJustCleared, replace }
+  return { ...result, touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday }
 }
 
 function goalState(ctx: Ctx) {
@@ -251,23 +285,33 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           <div className="stones" role="img" aria-label={`${done} of ${rows.length} done`}>
             {rows.map((c, i) => <span key={c.id} className={`stone ${i < done ? 'on' : ''}`} />)}
           </div>
-          <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round} this week)` : ''}</p>
+          <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round} today)` : ''}</p>
         </>
       )}
 
       <Momentum ctx={ctx} />
 
-      {b.justCleared && (
-        <div className="banner" style={{ marginTop: 16 }}>
-          <p><b>You finished 10!</b> Here are your next 10. Keep going or come back tomorrow.</p>
-          <button className="btn" onClick={() => b.setJustCleared(false)}>OK</button>
-        </div>
+      {b.allDone && b.waiting > 0 && !readOnly && (
+        b.stopped ? (
+          <div className="banner" style={{ marginTop: 16 }}>
+            <p><b>Done for today.</b> Nice work. Your next ones will be here tomorrow.</p>
+            <button className="btn ghost" onClick={b.loadMore}>Load {Math.min(b.size, b.waiting)} more</button>
+          </div>
+        ) : (
+          <div className="banner" style={{ marginTop: 16, flexDirection: 'column', alignItems: 'stretch' }}>
+            <p><b>You finished all {rows.length}!</b> Want to load another round of {Math.min(b.size, b.waiting)} for today?</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn primary" style={{ flex: 1 }} onClick={b.loadMore}>Yes, load {Math.min(b.size, b.waiting)} more</button>
+              <button className="btn" style={{ flex: 1 }} onClick={b.stopForToday}>I'm done for today</button>
+            </div>
+          </div>
+        )
       )}
 
       {caughtUp ? (
         <div className="card empty" style={{ marginTop: 20 }}>
           <h3 style={{ color: 'var(--ink)', marginBottom: 6 }}>{data.contacts.length ? "You're all caught up" : 'Your list is empty'}</h3>
-          <p>{data.contacts.length ? 'Nobody else is due this week. Enjoy it.' : 'Add the people you know and they will show up here, 10 at a time.'}</p>
+          <p>{data.contacts.length ? 'Nobody else is due this week. Enjoy it.' : 'Add the people you know and they will show up here, a few each day.'}</p>
           {!data.contacts.length && !readOnly && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => onGo?.('db')}>Add people</button>}
         </div>
       ) : (
