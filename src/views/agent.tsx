@@ -488,37 +488,25 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
   const [q, setQ] = useState('')
   const [who, setWho] = useState<Contact | null>(null)
   const [adding, setAdding] = useState(false)
-  const [phone, setPhone] = useState('')
   const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
+  const busy = false
   const term = q.trim().toLowerCase()
   const matches = term
     ? ctx.data.contacts.filter((c) => fullName(c).toLowerCase().includes(term) || (c.phone ?? '').replace(/\D/g, '').includes(term.replace(/\D/g, '') || '~')).slice(0, 6)
     : []
   const exact = ctx.data.contacts.some((c) => fullName(c).toLowerCase() === term)
 
-  async function pick(kind: TouchKind) {
-    if (busy) return
-    let c = who
-    if (!c) {
-      const parts = q.trim().split(/\s+/)
-      const first_name = parts.shift() ?? ''
-      if (!first_name) return toast('Type their name first.')
-      setBusy(true)
-      try {
-        const last_name = parts.join(' ')
-        const id = await api.saveContact(ctx.me, { first_name, last_name, phone: phone.trim() || null, tier: 'U' })
-        c = { id, first_name, last_name, agent_id: ctx.me.id } as Contact
-        toast(`${first_name} added to your people. Tag them A or B when you get a chance.`)
-      } catch (e) {
-        setBusy(false)
-        return toast(`That didn't save: ${(e as Error).message}`)
-      }
-    }
-    onLog(c, kind, note)
+  function pick(kind: TouchKind) {
+    if (who) onLog(who, kind, note)
   }
 
-  const ready = !!who || (adding && !!q.trim())
+  // New person: fill in everything you know first (same form as People), then pick what you did.
+  if (adding && !who)
+    return (
+      <EditSheet ctx={ctx} c={null} prefill={{ name: q }} saveLabel="Save and continue" onClose={() => setAdding(false)}
+        onSaved={(c) => { setWho(c); setAdding(false); toast(`${c.first_name} added to your people.`) }} />
+    )
+  const ready = !!who
   return (
     <Sheet label="Record a touch" onClose={onClose}>
       <h3>Record a touch</h3>
@@ -540,14 +528,9 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
       ) : (
         <div style={{ marginTop: 12 }}>
           <div className="pick">
-            <span><b style={{ fontWeight: 600 }}>{who ? fullName(who) : q.trim()}</b>{!who && <span className="note"> (new)</span>}</span>
+            <span><b style={{ fontWeight: 600 }}>{who ? fullName(who) : ''}</b></span>
             <button className="link" onClick={() => { setWho(null); setAdding(false) }}>Change</button>
           </div>
-          {!who && (
-            <label className="field" style={{ marginTop: 10 }}><span>Phone (optional)</span>
-              <input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </label>
-          )}
           <p className="q" style={{ margin: '16px 0 0', fontSize: 18 }}>What did you do?</p>
           <div className="opts">
             {(['call', 'text', 'facetoface', 'popby', 'card'] as TouchKind[]).map((k) => (
@@ -651,10 +634,16 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
 // ======================================================================
 // Edit / add a person
 // ======================================================================
-function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: () => void }) {
+function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
+  ctx: Ctx; c: Contact | null; onClose: () => void
+  /** For a new person: name and phone typed elsewhere. */ prefill?: { name?: string; phone?: string }
+  /** Called with the saved person instead of closing (used by Record a touch). */ onSaved?: (c: Contact) => void
+  saveLabel?: string
+}) {
+  const pre = (prefill?.name ?? '').trim().split(/\s+/)
   const toast = useToast()
   const [f, setF] = useState({
-    first_name: c?.first_name ?? '', last_name: c?.last_name ?? '', phone: c?.phone ?? '', email: c?.email ?? '',
+    first_name: c?.first_name ?? pre[0] ?? '', last_name: c?.last_name ?? pre.slice(1).join(' '), phone: c?.phone ?? prefill?.phone ?? '', email: c?.email ?? '',
     address: c?.address ?? '', city: c?.city ?? '', state: c?.state ?? 'TX', zip: c?.zip ?? '',
     tier: (c?.tier === 'C' || c?.tier === 'D' ? 'B' : c?.tier ?? 'U') as Tier, birthday: c?.birthday ?? '', home_anniversary: c?.home_anniversary ?? '', wedding_anniversary: c?.wedding_anniversary ?? '', notes: c?.notes ?? '',
   })
@@ -677,8 +666,12 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
       // Only send the wedding date when there is one (or there was one), so saving works before that column exists.
       if (f.wedding_anniversary || c?.wedding_anniversary) input.wedding_anniversary = f.wedding_anniversary || null
       else delete input.wedding_anniversary
-      await api.saveContact(ctx.me, input, c?.id)
+      const id = await api.saveContact(ctx.me, input, c?.id)
       await ctx.reload()
+      if (onSaved) {
+        onSaved({ ...(c ?? {}), ...input, id, agent_id: ctx.me.id } as Contact)
+        return
+      }
       toast(c ? 'Saved.' : `${f.first_name} added. They'll show up on Today soon.`)
       onClose()
     } catch (err) {
@@ -721,7 +714,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
           </div>
         </div>
         <label className="field"><span>Notes</span><textarea disabled={ro} value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
-        <details className="more" style={{ marginTop: 0 }}>
+        <details className="more" style={{ marginTop: 0 }} open={!!prefill || undefined}>
           <summary>Email, address and special dates</summary>
           <div className="ed">
             <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} /></label>
@@ -747,7 +740,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
           <button type="button" className="btn block" onClick={onClose}>Close</button>
         ) : (
           <>
-            <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : c ? 'Save' : 'Add person'}</button>
+            <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : saveLabel ?? (c ? 'Save' : 'Add person')}</button>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               {c ? <button type="button" className="btn ghost" onClick={() => setConfirmDel(true)}>Remove</button> : <span />}
               <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
