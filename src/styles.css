@@ -314,3 +314,22 @@ tr:last-child td { border-bottom: 0; }
 .ptr svg { transition: transform .1s linear; }
 .ptr.go svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Person details + history */
+.namebtn { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: var(--line); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.namebtn:hover { text-decoration-color: var(--navy-2); }
+.facts { display: flex; flex-direction: column; margin-top: 12px; border-top: 1px solid var(--line); }
+.facts > div { display: flex; flex-direction: column; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.facts > div span { font-size: 13px; color: var(--muted); }
+.facts > div b { font-weight: 500; overflow-wrap: anywhere; }
+.facts a { color: var(--navy-2); text-decoration: none; }
+.hist { display: flex; flex-direction: column; max-height: 42vh; overflow: auto; }
+.hrow { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.hrow:last-child { border-bottom: 0; }
+.hrow b { font-weight: 500; display: block; }
+.hrow small { color: var(--muted); font-size: 14px; display: block; overflow-wrap: anywhere; }
+.hic { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); color: var(--ink); flex: none; }
+.hic svg { width: 18px; height: 18px; }
+.hic.k-call { background: var(--call-soft); color: var(--call); }
+.hic.k-text { background: var(--text-soft); color: var(--text); }
+.hic.k-card { background: var(--card-soft); color: var(--card); }

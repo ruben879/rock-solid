@@ -141,6 +141,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [moreFor, setMoreFor] = useState<Contact | null>(null)
   const [doneFor, setDoneFor] = useState<Contact | null>(null)
   const [editFor, setEditFor] = useState<Contact | null>(null)
+  const [viewFor, setViewFor] = useState<Contact | null>(null)
   const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
@@ -263,7 +264,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
               <article key={c.id} className="person">
                 <div className="head">
                   <div style={{ minWidth: 0 }}>
-                    <h3>{fullName(c)} <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} title={TIER_NAMES[c.tier]}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span></h3>
+                    <h3><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button> <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} title={TIER_NAMES[c.tier]}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span></h3>
                     <p className="why">{whyLine(c, lastOf(c))}</p>
                   </div>
                   <div className="sig">
@@ -343,6 +344,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </Sheet>
       )}
       {editFor && <EditSheet ctx={ctx} c={editFor} onClose={() => setEditFor(null)} />}
+      {viewFor && <PersonSheet ctx={ctx} c={viewFor} onClose={() => setViewFor(null)} onEdit={() => { const c = viewFor; setViewFor(null); setEditFor(c) }} />}
       {doneFor && <DoneSheet ctx={ctx} c={doneFor} onClose={() => setDoneFor(null)} onEdit={() => { const c = doneFor; setDoneFor(null); setEditFor(c) }} />}
       {cardFor && (
         <Sheet label={`Card for ${cardFor.first_name}`} onClose={() => setCardFor(null)}>
@@ -492,6 +494,72 @@ function LogSheet({ c, suggested, goal, onClose, onLog }: { c: Contact; suggeste
 }
 
 // ======================================================================
+// One person: details at a glance, plus every touch logged
+// ======================================================================
+const longDate = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+const monthDay = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+
+function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
+  const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
+  const byContact = useMemo(() => touchCounts(ctx.data.touches), [ctx.data.touches])
+  const history = ctx.data.touches
+    .filter((t) => t.contact_id === live.id)
+    .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  const where = live.address || live.city ? [live.address, [live.city, live.state].filter(Boolean).join(', '), live.zip].filter(Boolean).join(' ') : ''
+  const dates: [string, string | null | undefined][] = [
+    ['Birthday', live.birthday], ['Home anniversary', live.home_anniversary], ['Wedding anniversary', live.wedding_anniversary],
+  ]
+  const shown = dates.filter(([, v]) => v)
+  return (
+    <Sheet label={fullName(live)} onClose={onClose}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <h3 style={{ fontSize: 22 }}>{fullName(live)}</h3>
+        <span className={`ttag ${live.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{live.tier === 'U' ? '?' : live.tier === 'A' ? 'A' : 'B'}</span>
+        <span className="note">{TIER_NAMES[live.tier === 'C' || live.tier === 'D' ? 'B' : live.tier]}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 4px', flexWrap: 'wrap' }}>
+        <Meter c={live} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
+        <span className="note">touches in the last 12 months</span>
+      </div>
+
+      <div className="facts">
+        {live.phone && (
+          <div><span>Phone</span><b>{ctx.readOnly ? live.phone : <a href={`tel:${telOf(live.phone)}`}>{live.phone}</a>}</b></div>
+        )}
+        {live.email && <div><span>Email</span><b>{ctx.readOnly ? live.email : <a href={`mailto:${live.email}`}>{live.email}</a>}</b></div>}
+        {where && <div><span>Address</span><b><a href={`https://maps.apple.com/?q=${encodeURIComponent(where)}`} target="_blank" rel="noreferrer">{where}</a></b></div>}
+        {shown.map(([l, v]) => <div key={l}><span>{l}</span><b>{l === 'Birthday' ? monthDay(v as string) : longDate(v as string)}</b></div>)}
+        {live.notes && <div><span>Notes</span><b style={{ fontWeight: 400, whiteSpace: 'pre-wrap' }}>{live.notes}</b></div>}
+        {!live.phone && !live.email && !where && !shown.length && !live.notes && <p className="note">No contact details yet. Tap Edit details to add them.</p>}
+      </div>
+
+      <div className="grp" style={{ marginTop: 18 }}>History <span className="note" style={{ fontWeight: 400 }}>{history.length} {history.length === 1 ? 'touch' : 'touches'}</span></div>
+      {history.length === 0 ? (
+        <p className="note">Nothing logged yet. Your first touch will show up here.</p>
+      ) : (
+        <div className="hist">
+          {history.map((t) => (
+            <div key={t.id} className="hrow">
+              <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <b>{t.is_group ? `Group ${KIND_LABEL[t.kind].toLowerCase()}` : KIND_LABEL[t.kind]}</b>
+                {t.note && t.note !== 'Group touch' && <small>{t.note}</small>}
+              </span>
+              <span className="note" style={{ whiteSpace: 'nowrap' }}>{longDate(t.occurred_on)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        {!ctx.readOnly && <button className="btn primary" style={{ flex: 1 }} onClick={onEdit}>Edit details</button>}
+        <button className="btn" style={{ flex: 1 }} onClick={onClose}>Close</button>
+      </div>
+    </Sheet>
+  )
+}
+
+// ======================================================================
 // Edit / add a person
 // ======================================================================
 function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: () => void }) {
@@ -569,8 +637,9 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
           <div className="ed">
             <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} /></label>
             <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} /></label>
-            <label className="field"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} /></label>
-            <label className="field"><span>Zip</span><input disabled={ro} value={f.zip} onChange={set('zip')} /></label>
+            <label className="field full"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} /></label>
+            <label className="field"><span>State</span><input disabled={ro} value={f.state} onChange={set('state')} autoCapitalize="characters" maxLength={20} /></label>
+            <label className="field"><span>Zip</span><input disabled={ro} inputMode="numeric" value={f.zip} onChange={set('zip')} /></label>
             <DateField label="Birthday" ro={ro} value={f.birthday} onChange={(v) => setF({ ...f, birthday: v })} />
             <DateField label="Home anniversary" ro={ro} value={f.home_anniversary} onChange={(v) => setF({ ...f, home_anniversary: v })} />
             <DateField label="Wedding anniversary" ro={ro} value={f.wedding_anniversary} onChange={(v) => setF({ ...f, wedding_anniversary: v })} />
@@ -602,13 +671,23 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
 }
 
 function DateField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
+  const [asking, setAsking] = useState(false)
   return (
     // Not a <label>: tapping Clear inside a label would open the date picker instead of clearing.
     <div className="field full"><span>{label}</span>
       <div style={{ display: 'flex', gap: 8 }}>
         <input type="date" aria-label={label} disabled={ro} value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-        {value && !ro && <button type="button" className="btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChange('') }}>Clear</button>}
+        {value && !ro && !asking && <button type="button" className="btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAsking(true) }}>Clear</button>}
       </div>
+      {asking && (
+        <div className="warn" style={{ marginTop: 6 }}>
+          Remove this {label.toLowerCase()}?
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="btn" onClick={() => { onChange(''); setAsking(false) }}>Yes, remove it</button>
+            <button type="button" className="btn ghost" onClick={() => setAsking(false)}>Keep it</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1038,6 +1117,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [q, setQ] = useState('')
   const [hf, setHf] = useState<Heat | '' | 'tag'>('')
   const [edit, setEdit] = useState<Contact | null | 'new'>(null)
+  const [view, setView] = useState<Contact | null>(null)
   const [group, setGroup] = useState(false)
   const [importing, setImporting] = useState(false)
   const [shown, setShown] = useState(60)
@@ -1081,7 +1161,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       ) : (
         <div className="plist">
           {list.slice(0, shown).map((c) => (
-            <button key={c.id} className="prow" onClick={() => setEdit(c)}>
+            <button key={c.id} className="prow" onClick={() => setView(c)}>
               <span className="nm">
                 <b>{fullName(c)}</b>
                 <small>{c.tier === 'U' ? 'Needs a tag (?)' : c.tier === 'A' ? 'A' : 'B'}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
@@ -1123,6 +1203,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         </details>
       )}
       {edit && <EditSheet ctx={ctx} c={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
+      {view && <PersonSheet ctx={ctx} c={view} onClose={() => setView(null)} onEdit={() => { const c = view; setView(null); setEdit(c) }} />}
       {group && <GroupSheet ctx={ctx} onClose={() => setGroup(false)} />}
       {importing && <ImportSheet ctx={ctx} onClose={() => setImporting(false)} />}
     </section>
