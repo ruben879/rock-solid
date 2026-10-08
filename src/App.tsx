@@ -7,6 +7,7 @@ import type { Brokerage, Profile } from './lib/model'
 import { OfflineBar, PullToRefresh, Sheet, ToastProvider, store } from './ui'
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
+import { Reminders } from './views/reminders'
 import { ICard, IChart, IHome, IPeople, ITeam } from './icons'
 
 export default function App() {
@@ -213,6 +214,7 @@ function Signed({ session }: { session: Session }) {
         <Sheet label="Account" onClose={() => setMenu(false)}>
           <h3>{me.full_name || me.email}</h3>
           <p className="note">{me.email} · {me.role === 'broker' ? 'Broker' : me.role === 'coach' ? 'Coach' : 'Agent'} · {brokerage?.name ?? 'Clear Rock Realty'}</p>
+          <Reminders me={me} />
           <div className="menu" style={{ marginTop: 12 }}>
             <button onClick={signOut}>Sign out</button>
             <button onClick={() => setMenu(false)}>Close</button>
