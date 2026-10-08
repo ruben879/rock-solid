@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
-import type { Brokerage, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
+import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, duePool, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
@@ -888,6 +888,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   let monthDays = 0
   for (let d = monthStart(); ymd(d) <= tk; d = addDays(d, 1)) if (cov.has(ymd(d))) monthDays++
   const bankedAhead = [...cov.covered.keys()].filter((k) => k > tk).length
+  const [dayOpen, setDayOpen] = useState<string | null>(null)
   const yearCount = counting.filter((c) => c.sent_on.startsWith(String(today().getFullYear()))).length
 
   function logged(r: { firstToday: boolean }) {
@@ -933,7 +934,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
             const from = cov.covered.get(k)
             const cls = cov.written.has(k) ? 'on' : from ? 'cov' : ''
             const tip = who || (from ? `Covered by an extra card written ${fmt(from)}` : '')
-            return <div key={k} title={tip} aria-label={`${fmt(d)}${tip ? `: ${tip}` : ''}`} className={`d ${cls} ${k === tk ? 'today' : ''} ${d > today() && !from ? 'fut' : ''}`}>{i + 1}</div>
+            return <button key={k} type="button" title={tip} aria-label={`${fmt(d)}${tip ? `: ${tip}` : ''}`} onClick={() => setDayOpen(k)} className={`d ${cls} ${k === tk ? 'today' : ''} ${d > today() && !from ? 'fut' : ''}`}>{i + 1}</button>
           })}
         </div>
         <div className="callegend" aria-hidden>
@@ -961,8 +962,54 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
           </label>
         )}
       </details>
+      {dayOpen && <CardDaySheet day={dayOpen} cov={cov} onClose={() => setDayOpen(null)} />}
       {cele && <Celebrate eyebrow="Card a Day" title="Card a Day: done!" sub="Today's card is written and logged." onClose={() => setCele(false)} />}
     </section>
+  )
+}
+
+/** What happened on one day of the Card a Day calendar. */
+function CardDaySheet({ day, cov, onClose }: { day: string; cov: ReturnType<typeof cardCoverage>; onClose: () => void }) {
+  const written = cov.byDay.get(day) ?? []
+  // The first card written that day counts for the day itself; any others covered nearby days.
+  const extras = written.slice(1)
+  const covering = cov.coveredBy.get(day)
+  const nice = parse(day).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+  const extraHome = (c: Card) => [...cov.coveredBy.entries()].find(([, x]) => x.id === c.id)?.[0]
+  const CardRow = ({ c, sub }: { c: Card; sub?: string }) => (
+    <div className="hrow" style={{ alignItems: 'flex-start' }}>
+      <span className="hic k-card"><ICard /></span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <b>{c.recipient_name}</b>
+        <small>{[c.occasion, c.relationship].filter(Boolean).join(' · ')}</small>
+        {c.note && <small style={{ color: 'var(--ink)', marginTop: 2 }}>{c.note}</small>}
+        {sub && <small style={{ marginTop: 2 }}>{sub}</small>}
+      </span>
+    </div>
+  )
+  return (
+    <Sheet label={`Cards for ${nice}`} onClose={onClose}>
+      <h3>{nice}</h3>
+      {written.length > 0 ? (
+        <>
+          <p className="note" style={{ marginBottom: 6 }}>{written.length === 1 ? '1 card written this day' : `${written.length} cards written this day`}</p>
+          <div className="hist">
+            {written.map((c) => {
+              const home = extras.includes(c) ? extraHome(c) : undefined
+              return <CardRow key={c.id} c={c} sub={home ? `Extra card, covers ${fmt(home)}` : undefined} />
+            })}
+          </div>
+        </>
+      ) : covering ? (
+        <>
+          <p className="note" style={{ marginBottom: 6 }}>Covered by an extra card written {fmt(covering.sent_on)}</p>
+          <div className="hist"><CardRow c={covering} /></div>
+        </>
+      ) : (
+        <p className="note" style={{ marginTop: 8 }}>No card this day.</p>
+      )}
+      <button className="btn block" style={{ marginTop: 14 }} onClick={onClose}>Close</button>
+    </Sheet>
   )
 }
 

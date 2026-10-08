@@ -246,22 +246,26 @@ export function cardWithin12Months(cards: Card[], name: string, before?: string)
  */
 export function cardCoverage(cards: Card[]) {
   const counting = cards.filter((c) => c.counts_for_challenge)
-  const perDay = new Map<string, number>()
-  for (const c of counting) perDay.set(c.sent_on, (perDay.get(c.sent_on) ?? 0) + 1)
-  const written = new Set(perDay.keys())
+  const byDay = new Map<string, Card[]>()
+  for (const c of counting) {
+    if (!byDay.has(c.sent_on)) byDay.set(c.sent_on, [])
+    byDay.get(c.sent_on)!.push(c)
+  }
+  const written = new Set(byDay.keys())
   // Nothing before someone's very first card can be "caught up": they hadn't started yet.
   const firstDay = [...written].sort()[0] ?? ''
   const covered = new Map<string, string>() // covered day -> day the card was actually written
-  for (const day of [...perDay.keys()].sort()) {
-    let extra = (perDay.get(day) ?? 1) - 1
+  const coveredBy = new Map<string, Card>() // covered day -> the extra card that covers it
+  for (const day of [...byDay.keys()].sort()) {
+    const extras = byDay.get(day)!.slice(1) // the first card counts for its own day
     const base = parse(day)
     const tryDay = (n: number) => {
       const k = ymd(addDays(base, n))
-      if (extra > 0 && k >= firstDay && !written.has(k) && !covered.has(k)) { covered.set(k, day); extra-- }
+      if (extras.length && k >= firstDay && !written.has(k) && !covered.has(k)) { covered.set(k, day); coveredBy.set(k, extras.shift() as Card) }
     }
-    for (let n = -1; n >= -6 && extra > 0; n--) tryDay(n)
-    for (let n = 1; n <= 7 && extra > 0; n++) tryDay(n)
+    for (let n = -1; n >= -6 && extras.length; n--) tryDay(n)
+    for (let n = 1; n <= 7 && extras.length; n++) tryDay(n)
   }
   const has = (k: string) => written.has(k) || covered.has(k)
-  return { written, covered, has }
+  return { written, covered, coveredBy, byDay, has }
 }

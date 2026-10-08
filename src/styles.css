@@ -235,7 +235,7 @@ tr:last-child td { border-bottom: 0; }
 /* Card a Day calendar */
 .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; font-size: 13px; text-align: center; }
 .cal .h { color: var(--muted); }
-.cal .d { aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: var(--bg); font-variant-numeric: tabular-nums; }
+.cal .d { aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: var(--bg); font-variant-numeric: tabular-nums; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; width: 100%; }
 .cal .d.on { background: var(--gold); color: #1a2238; font-weight: 600; }
 .cal .d.today { outline: 2px solid var(--navy-2); }
 .cal .d.fut { opacity: .4; }
