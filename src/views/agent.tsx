@@ -1147,7 +1147,7 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
       {!readOnly && (
         <details className="more" style={{ marginTop: 0 }}>
           <summary>My daily and weekly goals</summary>
-          <MyGoals agent={agent} me={ctx.me} onProfileChange={onProfileChange} />
+          <MyGoals ctx={ctx} onProfileChange={onProfileChange} />
         </details>
       )}
       <details className="more" style={{ marginTop: 0 }}>
@@ -1158,17 +1158,71 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   )
 }
 
-function MyGoals({ agent, me, onProfileChange }: { agent: Profile; me: Profile; onProfileChange?: () => void }) {
+/** One-on-one touches per person per year: the personal part of the 36 (6 calls, 6 texts, 2 cards, 2 pop-bys). */
+const PERSONAL_TOUCHES = 16
+
+function planNumbers(plan: Record<string, number> | undefined) {
+  const p = { income: 80000, cap: 0, price: 275000, rate: 2.7, conversion: 12, ...(plan ?? {}) }
+  const gci = p.income + p.cap
+  const perDeal = p.price * (p.rate / 100)
+  const deals = perDeal > 0 ? Math.ceil(gci / perDeal) : 0
+  const dbNeeded = p.conversion > 0 ? Math.ceil(deals / (p.conversion / 100)) : 0
+  return { gci, perDeal, deals, dbNeeded }
+}
+
+/** Daily and weekly goals that keep the plan's people on pace. Weekly is always 5 days' worth. */
+export function goalsFromPlan(plan: Record<string, number> | undefined, have: number) {
+  const people = planNumbers(plan).dbNeeded || have
+  const daily = Math.max(1, Math.ceil((people * PERSONAL_TOUCHES) / 52 / 5))
+  return { daily, weekly: daily * 5, people }
+}
+
+function MyGoals({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
+  const { agent, me, data } = ctx
+  const auto = !!agent.plan?.auto_goals
+  const g = goalsFromPlan(agent.plan, data.contacts.length)
   const [day, setDay] = useState(agent.daily_goal)
-  const [week, setWeek] = useState(agent.weekly_goal)
+  const toast = useToast()
   async function save(f: Partial<Profile>) {
-    await api.updateMyProfile(me, f)
-    onProfileChange?.()
+    try {
+      await api.updateMyProfile(me, f)
+      onProfileChange?.()
+    } catch (e) {
+      toast((e as Error).message)
+    }
   }
   return (
-    <div className="card ed">
-      <label className="field"><span>Touches a day</span><NumInput value={day} onChange={setDay} onCommit={(n) => save({ daily_goal: Math.max(1, n || 1) })} /></label>
-      <label className="field"><span>Touches a week</span><NumInput value={week} onChange={setWeek} onCommit={(n) => save({ weekly_goal: Math.max(1, n || 1) })} /></label>
+    <div className="card stack">
+      <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 15 }}>
+        <input type="checkbox" style={{ width: 22, height: 22 }} checked={auto}
+          onChange={(e) => {
+            const on = e.target.checked
+            save(on
+              ? { plan: { ...(agent.plan ?? {}), auto_goals: 1 }, daily_goal: g.daily, weekly_goal: g.weekly }
+              : { plan: { ...(agent.plan ?? {}), auto_goals: 0 } })
+            if (on) setDay(g.daily)
+          }} />
+        Set my goals from my plan
+      </label>
+      {auto ? (
+        <>
+          <div className="stats" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <div className="stat"><div className="n">{agent.daily_goal}</div><div className="l">touches a day</div></div>
+            <div className="stat"><div className="n">{agent.weekly_goal}</div><div className="l">touches a week</div></div>
+          </div>
+          <p className="note">Based on {g.people} people and {PERSONAL_TOUCHES} one-on-one touches each a year (the calls, texts, cards and pop-bys in the 36). Emails and newsletters cover the rest. These update when you change your plan.</p>
+        </>
+      ) : (
+        <>
+          <div className="ed">
+            <label className="field"><span>Touches a day</span>
+              <NumInput value={day} onChange={setDay} onCommit={(n) => { const d = Math.max(1, n || 1); save({ daily_goal: d, weekly_goal: d * 5 }) }} />
+            </label>
+            <div className="field"><span>Touches a week</span><div style={{ fontSize: 20, fontWeight: 600, padding: '9px 2px' }}>{Math.max(1, day || 1) * 5}</div></div>
+          </div>
+          <p className="note">A week is 5 workdays, so your weekly goal is your daily goal times 5. Your plan suggests {g.daily} a day.</p>
+        </>
+      )}
     </div>
   )
 }
@@ -1209,13 +1263,13 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const { agent, readOnly, data } = ctx
   const init = { income: 80000, cap: 0, price: 275000, rate: 2.7, conversion: 12, ...(agent.plan ?? {}) }
   const [p, setP] = useState(init)
-  const gci = p.income + p.cap
-  const perDeal = p.price * (p.rate / 100)
-  const deals = perDeal > 0 ? Math.ceil(gci / perDeal) : 0
-  const dbNeeded = p.conversion > 0 ? Math.ceil(deals / (p.conversion / 100)) : 0
+  const { gci, deals, dbNeeded } = planNumbers(p)
   const have = data.contacts.length
   async function save(next: typeof p) {
-    await api.updateMyProfile(ctx.me, { plan: next })
+    // Keep the "set goals from my plan" choice as it is now, and refresh those goals when it's on.
+    const plan = { ...next, auto_goals: agent.plan?.auto_goals ?? 0 }
+    const extra = plan.auto_goals ? (({ daily, weekly }) => ({ daily_goal: daily, weekly_goal: weekly }))(goalsFromPlan(plan, have)) : {}
+    await api.updateMyProfile(ctx.me, { plan, ...extra })
     onProfileChange?.()
   }
   const num = (k: keyof typeof p, label: string, kind: 'money' | 'decimal') => {
@@ -1247,7 +1301,7 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       </div>
       <p className="note">
         {have >= dbNeeded ? 'You have enough people for this plan. ' : `Add ${dbNeeded - have} more people to support this plan. `}
-        At 36 touches each, that's about {Math.round((dbNeeded * 36) / 52)} touches a week.
+        That's about {goalsFromPlan(p, have).weekly} one-on-one touches a week ({goalsFromPlan(p, have).daily} a workday), with emails and newsletters covering the rest of the 36.
       </p>
     </div>
   )

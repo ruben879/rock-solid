@@ -37,7 +37,9 @@ export async function loadMe(userId: string): Promise<{ profile: Profile | null;
     if (error) throw new Error(error.message)
     if (!profile) return { profile: null, brokerage: null }
     const { data: brokerage } = await supabase.from('brokerages').select('id, name, settings').eq('id', profile.brokerage_id).maybeSingle()
-    return stash(k, { profile: profile as Profile, brokerage: brokerage as Brokerage | null }) as { profile: Profile; brokerage: Brokerage | null }
+    // A week is 5 workdays: the weekly goal is always the daily goal times 5.
+    const me = { ...(profile as Profile), weekly_goal: (profile as Profile).daily_goal * 5 }
+    return stash(k, { profile: me, brokerage: brokerage as Brokerage | null }) as { profile: Profile; brokerage: Brokerage | null }
   } catch (e) {
     const saved = stash<{ profile: Profile; brokerage: Brokerage | null }>(k)
     if (saved && isNetworkError(e)) return saved
