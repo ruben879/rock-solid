@@ -408,7 +408,7 @@ function DoneSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose:
             {!isCad && <textarea aria-label="Note" placeholder="Note (optional)" value={e.note} onChange={(ev) => setEdits({ ...edits, [t.id]: { ...e, note: ev.target.value } })} />}
             <div style={{ display: 'flex', gap: 8 }}>
               {!isCad && (
-                <button className="btn primary" style={{ flex: 1 }} disabled={busy || (e.kind === t.kind && e.note === (t.note ?? ''))} onClick={() => run(() => api.updateTouch(t.id, { kind: e.kind, note: e.note || null }), 'Saved.')}>Save change</button>
+                <button className="btn primary" style={{ flex: 1 }} disabled={busy || (e.kind === t.kind && e.note === (t.note ?? ''))} onClick={() => run(() => api.updateTouch(ctx.me, t.id, { kind: e.kind, note: e.note || null }), 'Saved.')}>Save change</button>
               )}
               <button className="btn" style={{ flex: 1 }} disabled={busy} onClick={() => run(() => api.deleteTouch(t, ctx.data.touches, ctx.data.cards), `Undone. ${c.first_name} is back on your list.`)}>Undo this</button>
             </div>
@@ -600,7 +600,7 @@ function EditSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact | null; onClose: 
   async function del() {
     if (!c) return
     try {
-      await api.deleteContact(c.id)
+      await api.deleteContact(ctx.me, c.id)
       await ctx.reload()
       toast(`${c.first_name} removed.`)
       onClose()

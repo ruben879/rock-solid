@@ -333,3 +333,6 @@ tr:last-child td { border-bottom: 0; }
 .hic.k-call { background: var(--call-soft); color: var(--call); }
 .hic.k-text { background: var(--text-soft); color: var(--text); }
 .hic.k-card { background: var(--card-soft); color: var(--card); }
+
+/* Offline notice: a slim strip at the top so it never covers buttons or messages */
+.offbar { position: sticky; top: 0; z-index: 16; background: var(--gold-soft); color: var(--ink); border-bottom: 1px solid color-mix(in srgb, var(--gold) 50%, transparent); padding: calc(6px + env(safe-area-inset-top, 0px)) 16px 6px; font-size: 13.5px; text-align: center; }

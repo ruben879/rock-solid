@@ -3,6 +3,8 @@ import { supabase } from '../supabase'
 import { addDays, monthStart, today, weekStart, ymd } from './dates'
 import type { Brokerage, Card, Contact, Profile, Tally, Tier, Touch, TouchKind } from './model'
 import { cardWithin12Months, fullName } from './model'
+import { exec, flush, getCached, isNetworkError, isOnline, pendingCount, setCached, subscribe, uuid, type AgentData } from './offline'
+export type { AgentData } from './offline'
 
 const PROFILE_COLS = 'id, brokerage_id, full_name, email, role, coach_id, tier_days, daily_goal, weekly_goal, card_rule, plan'
 
@@ -17,24 +19,43 @@ async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ da
   }
 }
 
-export async function loadMe(userId: string) {
-  const { data: profile } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', userId).maybeSingle()
-  if (!profile) return { profile: null, brokerage: null }
-  const { data: brokerage } = await supabase.from('brokerages').select('id, name, settings').eq('id', profile.brokerage_id).maybeSingle()
-  return { profile: profile as Profile, brokerage: brokerage as Brokerage | null }
+function stash<T>(k: string, v?: T): T | null {
+  try {
+    if (v !== undefined) { localStorage.setItem(k, JSON.stringify(v)); return v }
+    const raw = localStorage.getItem(k)
+    return raw ? (JSON.parse(raw) as T) : null
+  } catch {
+    return null
+  }
+}
+
+/** Your profile and brokerage. Falls back to the copy saved on the phone when offline. */
+export async function loadMe(userId: string): Promise<{ profile: Profile | null; brokerage: Brokerage | null }> {
+  const k = `rs-me-${userId}`
+  try {
+    const { data: profile, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', userId).maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!profile) return { profile: null, brokerage: null }
+    const { data: brokerage } = await supabase.from('brokerages').select('id, name, settings').eq('id', profile.brokerage_id).maybeSingle()
+    return stash(k, { profile: profile as Profile, brokerage: brokerage as Brokerage | null }) as { profile: Profile; brokerage: Brokerage | null }
+  } catch (e) {
+    const saved = stash<{ profile: Profile; brokerage: Brokerage | null }>(k)
+    if (saved && isNetworkError(e)) return saved
+    throw e
+  }
 }
 
 export async function loadTeam(brokerageId: string) {
-  const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('brokerage_id', brokerageId).order('full_name')
-  if (error) throw new Error(error.message)
-  return (data ?? []) as Profile[]
-}
-
-export interface AgentData {
-  contacts: Contact[]
-  touches: Touch[]
-  cards: Card[]
-  tallies: Tally[]
+  const k = `rs-team-${brokerageId}`
+  try {
+    const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('brokerage_id', brokerageId).order('full_name')
+    if (error) throw new Error(error.message)
+    return stash(k, (data ?? []) as Profile[]) as Profile[]
+  } catch (e) {
+    const saved = stash<Profile[]>(k)
+    if (saved && isNetworkError(e)) return saved
+    throw e
+  }
 }
 
 export async function loadAgentData(agentIds: string[]): Promise<AgentData> {
@@ -50,26 +71,54 @@ export async function loadAgentData(agentIds: string[]): Promise<AgentData> {
   return { contacts, touches, cards, tallies }
 }
 
+/**
+ * Loads an agent's data. Shows the copy saved on the phone right away, sends any changes made offline,
+ * then refreshes from the server. Offline, it keeps working from the saved copy.
+ */
 export function useAgentData(agentIds: string[]) {
   const key = agentIds.join(',')
-  const [data, setData] = useState<AgentData | null>(null)
+  const [data, setData] = useState<AgentData | null>(() => (key ? getCached(key) : null))
   const [error, setError] = useState('')
+  useEffect(() => {
+    if (!key) return
+    const c = getCached(key)
+    if (c) setData(c)
+    return subscribe(key, setData)
+  }, [key])
   const reload = useCallback(async () => {
     if (!key) {
       setData({ contacts: [], touches: [], cards: [], tallies: [] })
       return
     }
+    if (!isOnline()) {
+      const c = getCached(key)
+      if (c) { setData(c); setError(''); return }
+    }
     try {
-      setData(await loadAgentData(key.split(',')))
+      if (pendingCount()) await flush()
+      if (pendingCount() && !isOnline()) return
+      const fresh = await loadAgentData(key.split(','))
+      // Don't overwrite changes that are still waiting to be sent.
+      if (!pendingCount()) setCached(key, fresh)
+      else setData(getCached(key) ?? fresh)
       setError('')
     } catch (e) {
+      const c = getCached(key)
+      if (c && isNetworkError(e)) { setData(c); setError(''); return }
       setError((e as Error).message)
     }
   }, [key])
   useEffect(() => {
     reload()
+    const again = () => { reload() }
+    window.addEventListener('rs-synced', again)
+    return () => window.removeEventListener('rs-synced', again)
   }, [reload])
   return { data, error, reload }
+}
+
+function needOnline() {
+  if (!isOnline()) throw new Error("You're offline. This one needs a connection, so try again when you're back online")
 }
 
 // ---------- Mutations (agent acting on their own data) ----------
@@ -79,56 +128,66 @@ function check<T>(r: { data: T; error: { message: string } | null }) {
 }
 
 export async function logTouch(me: Profile, contactId: string | null, kind: TouchKind, note?: string) {
-  return check(
-    await supabase.from('touches').insert({ agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: contactId, kind, note: note || null, occurred_on: ymd(today()) }).select('id, agent_id, contact_id, kind, is_group, note, occurred_on').single(),
-  ) as Touch
+  const row: Touch = { id: uuid(), agent_id: me.id, contact_id: contactId, kind, is_group: false, note: note || null, occurred_on: ymd(today()) }
+  await exec(me.id, [{ t: 'insert', table: 'touches', rows: [{ ...row, brokerage_id: me.brokerage_id }] }])
+  return row
 }
 
 /** Undo a logged touch. Also removes its Card a Day entry and resets the contact's last touch date. */
 export async function deleteTouch(t: Touch, all: Touch[], cards: Card[]) {
-  check(await supabase.from('touches').delete().eq('id', t.id))
+  const key = t.agent_id
+  const ops: Parameters<typeof exec>[1] = [{ t: 'delete', table: 'touches', id: t.id }]
   if (t.kind === 'card' && t.note?.startsWith('Card a Day: ')) {
     const name = t.note.slice('Card a Day: '.length)
     const card = cards.find((c) => c.sent_on === t.occurred_on && c.recipient_name === name)
-    if (card) check(await supabase.from('cards').delete().eq('id', card.id))
+    if (card) ops.push({ t: 'delete', table: 'cards', id: card.id })
   }
   if (t.contact_id) {
     const rest = all.filter((x) => x.contact_id === t.contact_id && x.id !== t.id).map((x) => x.occurred_on).sort().at(-1) ?? null
-    check(await supabase.from('contacts').update({ last_touch_on: rest }).eq('id', t.contact_id))
+    ops.push({ t: 'update', table: 'contacts', id: t.contact_id, fields: { last_touch_on: rest } })
   }
+  await exec(key, ops)
 }
 
-export async function updateTouch(id: string, fields: { kind?: TouchKind; note?: string | null }) {
-  check(await supabase.from('touches').update(fields).eq('id', id))
+export async function updateTouch(me: Profile, id: string, fields: { kind?: TouchKind; note?: string | null }) {
+  await exec(me.id, [{ t: 'update', table: 'touches', id, fields }])
 }
 
 export async function groupTouch(me: Profile, contacts: Contact[], kind: TouchKind, note = 'Group touch') {
-  const rows = contacts.map((c) => ({ agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, kind, is_group: true, note, occurred_on: ymd(today()) }))
-  for (let i = 0; i < rows.length; i += 500) check(await supabase.from('touches').insert(rows.slice(i, i + 500)))
+  const rows = contacts.map((c) => ({ id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, kind, is_group: true, note, occurred_on: ymd(today()) }))
+  const ops: Parameters<typeof exec>[1] = []
+  for (let i = 0; i < rows.length; i += 500) ops.push({ t: 'insert', table: 'touches', rows: rows.slice(i, i + 500) })
+  await exec(me.id, ops)
 }
 
 export async function skipToNextWeek(c: Contact) {
-  check(await supabase.from('contacts').update({ skip_until: ymd(addDays(weekStart(), 7)) }).eq('id', c.id))
+  await exec(c.agent_id, [{ t: 'update', table: 'contacts', id: c.id, fields: { skip_until: ymd(addDays(weekStart(), 7)) } }])
 }
 
 export type ContactInput = Partial<Omit<Contact, 'id' | 'agent_id' | 'brokerage_id'>> & { first_name: string }
 
 export async function saveContact(me: Profile, input: ContactInput, id?: string) {
-  if (id) check(await supabase.from('contacts').update({ ...input, updated_at: new Date().toISOString() }).eq('id', id))
-  else check(await supabase.from('contacts').insert({ added_on: ymd(today()), ...input, agent_id: me.id, brokerage_id: me.brokerage_id }))
+  if (id) await exec(me.id, [{ t: 'update', table: 'contacts', id, fields: { ...input, updated_at: new Date().toISOString() } }])
+  else
+    await exec(me.id, [{
+      t: 'insert', table: 'contacts',
+      rows: [{ id: uuid(), added_on: ymd(today()), tier: 'U', prior_touches: 0, last_touch_on: null, skip_until: null, ...input, agent_id: me.id, brokerage_id: me.brokerage_id }],
+    }])
 }
 
-export async function deleteContact(id: string) {
-  check(await supabase.from('contacts').delete().eq('id', id))
+export async function deleteContact(me: Profile, id: string) {
+  await exec(me.id, [{ t: 'delete', table: 'contacts', id }])
 }
 
 export async function importContacts(me: Profile, rows: ContactInput[]) {
+  needOnline()
   const t = ymd(today())
   const payload = rows.map((r) => ({ ...r, tier: (r.tier ?? 'U') as Tier, agent_id: me.id, brokerage_id: me.brokerage_id, added_on: t }))
   for (let i = 0; i < payload.length; i += 500) check(await supabase.from('contacts').insert(payload.slice(i, i + 500)))
 }
 
 export async function updateContacts(list: { id: string; fields: Partial<Contact> }[]) {
+  needOnline()
   const stamp = new Date().toISOString()
   for (let i = 0; i < list.length; i += 10) {
     const res = await Promise.all(list.slice(i, i + 10).map((u) => supabase.from('contacts').update({ ...u.fields, updated_at: stamp }).eq('id', u.id)))
@@ -140,38 +199,28 @@ export async function logCard(me: Profile, cards: Card[], contacts: Contact[], i
   const repeat = me.card_rule && !!cardWithin12Months(cards, input.name)
   const n = input.name.toLowerCase().replace(/\s+/g, ' ').trim()
   const match = contacts.find((c) => fullName(c).toLowerCase().replace(/\s+/g, ' ') === n)
-  check(
-    await supabase.from('cards').insert({
-      agent_id: me.id,
-      brokerage_id: me.brokerage_id,
-      contact_id: match?.id ?? null,
-      recipient_name: input.name.trim(),
-      relationship: input.relationship,
-      occasion: input.occasion,
-      note: input.note || null,
-      counts_for_challenge: !repeat,
-      sent_on: ymd(today()),
-    }),
-  )
-  await logTouch(me, match?.id ?? null, 'card', `Card a Day: ${input.name.trim()}`)
+  const card = {
+    id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: match?.id ?? null,
+    recipient_name: input.name.trim(), relationship: input.relationship, occasion: input.occasion,
+    note: input.note || null, counts_for_challenge: !repeat, sent_on: ymd(today()),
+  }
+  const touch = { id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: match?.id ?? null, kind: 'card', is_group: false, note: `Card a Day: ${input.name.trim()}`, occurred_on: ymd(today()) }
+  await exec(me.id, [{ t: 'insert', table: 'cards', rows: [card] }, { t: 'insert', table: 'touches', rows: [touch] }])
   return { repeat, match }
 }
 
 export async function bumpTally(me: Profile, tallies: Tally[], kind: string, delta: number) {
-  const month = ymd(monthStart())
   const cur = tallies.find((t) => t.kind === kind)?.count ?? 0
-  check(
-    await supabase
-      .from('tallies')
-      .upsert({ agent_id: me.id, brokerage_id: me.brokerage_id, month, kind, count: Math.max(0, cur + delta) }, { onConflict: 'agent_id,month,kind' }),
-  )
+  await setTally(me, kind, cur + delta)
 }
 
 export async function setTally(me: Profile, kind: string, count: number) {
-  check(await supabase.from('tallies').upsert({ agent_id: me.id, brokerage_id: me.brokerage_id, month: ymd(monthStart()), kind, count: Math.max(0, count) }, { onConflict: 'agent_id,month,kind' }))
+  const row = { agent_id: me.id, brokerage_id: me.brokerage_id, month: ymd(monthStart()), kind, count: Math.max(0, count) }
+  await exec(me.id, [{ t: 'upsert', table: 'tallies', row, onConflict: 'agent_id,month,kind' }])
 }
 
 export async function updateMyProfile(me: Profile, fields: Partial<Pick<Profile, 'daily_goal' | 'weekly_goal' | 'card_rule' | 'tier_days' | 'plan' | 'full_name'>>) {
+  needOnline()
   check(await supabase.from('profiles').update(fields).eq('id', me.id))
 }
 

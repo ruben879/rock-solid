@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { Contact, Heat } from './lib/model'
 import { HEAT_ICON, HEAT_NAME, heat, score, target, windowDays } from './lib/model'
 import { fmt } from './lib/dates'
+import { isOnline, onPending, pendingCount } from './lib/offline'
 
 // ---------- Toasts ----------
 type ToastAction = { label: string; run: () => void }
@@ -218,6 +219,29 @@ export function PullToRefresh() {
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ transform: going ? undefined : `rotate(${ready ? 180 : pull * 2}deg)` }}>
         <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" />
       </svg>
+    </div>
+  )
+}
+
+// ---------- Offline / syncing notice ----------
+export function OfflineBar() {
+  const [online, setOnline] = useState(isOnline())
+  const [pending, setPending] = useState(pendingCount())
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    const stop = onPending(setPending)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); stop() }
+  }, [])
+  if (online && !pending) return null
+  const n = pending === 1 ? '1 change' : `${pending} changes`
+  return (
+    <div className="offbar" role="status">
+      {!online
+        ? pending ? `Offline. ${n} saved on your phone and will sync when you're back online.` : "Offline. You can keep working; changes sync when you're back online."
+        : `Syncing ${n}…`}
     </div>
   )
 }

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import type { Session } from '@supabase/supabase-js'
 import { configured, supabase } from './supabase'
 import * as api from './lib/data'
+import { startSync } from './lib/offline'
 import type { Brokerage, Profile } from './lib/model'
-import { PullToRefresh, Sheet, ToastProvider, store } from './ui'
+import { OfflineBar, PullToRefresh, Sheet, ToastProvider, store } from './ui'
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { ICard, IChart, IHome, IPeople, ITeam } from './icons'
@@ -13,7 +14,11 @@ export default function App() {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
+      // Offline with an expired sign-in token: keep using the saved sign-in until the connection is back.
+      setSession(data.session ?? (!navigator.onLine ? savedSession() : null))
+      setReady(true)
+    }).catch(() => {
+      setSession(savedSession())
       setReady(true)
     })
     const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
@@ -25,6 +30,21 @@ export default function App() {
   else if (!ready) body = <p className="muted">Loading…</p>
   else if (!session) body = <SignIn />
   return <ToastProvider>{session && configured ? <Signed session={session} /> : <Shell>{body}</Shell>}</ToastProvider>
+}
+
+function savedSession(): Session | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) ?? ''
+      if (/^sb-.*-auth-token$/.test(k)) {
+        const v = JSON.parse(localStorage.getItem(k) ?? 'null')
+        if (v?.user?.id) return v as Session
+      }
+    }
+  } catch {
+    /* nothing saved */
+  }
+  return null
 }
 
 function Mark() {
@@ -112,17 +132,25 @@ function Signed({ session }: { session: Session }) {
   const [viewing, setViewing] = useState<Profile | null>(null)
   const [menu, setMenu] = useState(false)
 
+  const [loadErr, setLoadErr] = useState('')
   const loadProfile = useCallback(async () => {
-    const r = await api.loadMe(session.user.id)
-    setMe(r.profile)
-    setBrokerage(r.brokerage)
-    if (r.profile) setTeam(await api.loadTeam(r.profile.brokerage_id).catch(() => []))
+    try {
+      const r = await api.loadMe(session.user.id)
+      setMe(r.profile)
+      setBrokerage(r.brokerage)
+      setLoadErr('')
+      if (r.profile) setTeam(await api.loadTeam(r.profile.brokerage_id).catch(() => []))
+    } catch (e) {
+      setLoadErr(navigator.onLine ? (e as Error).message : "You're offline, and this phone doesn't have a saved copy yet. Open Rock Solid once with a connection and it will work offline after that.")
+    }
   }, [session.user.id])
   useEffect(() => { loadProfile() }, [loadProfile])
+  // Send changes made offline as soon as the connection is back, then refresh what's on screen.
+  useEffect(() => startSync(() => window.dispatchEvent(new Event('rs-synced'))), [])
 
   const signOut = () => supabase.auth.signOut()
 
-  if (me === undefined) return <Shell><p className="muted" style={{ marginTop: 24 }}>Loading…</p></Shell>
+  if (me === undefined) return <Shell>{loadErr ? <Notice title="Can't load right now">{loadErr}</Notice> : <p className="muted" style={{ marginTop: 24 }}>Loading…</p>}</Shell>
   if (me === null)
     return (
       <Shell>
@@ -147,6 +175,7 @@ function Signed({ session }: { session: Session }) {
 
   return (
     <>
+      <OfflineBar />
       <Shell wide={current === 'team'} right={<button className="me" aria-label="Account" onClick={() => setMenu(true)}>{initial}</button>}>
         {viewing && (
           <div className="viewing">
