@@ -191,6 +191,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [recording, setRecording] = useState(false)
   const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
+  const [noteFor, setNoteFor] = useState<{ t: Touch; c: Contact } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
   const pendingCheck = useRef<boolean[] | null>(null)
 
@@ -212,7 +213,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   // Celebrate only a goal that THIS log just completed, once per day/week.
   useEffect(() => {
     const before = pendingCheck.current
-    if (!before || readOnly) return
+    if (!before || readOnly || noteFor) return // Wait until the note question is answered.
     pendingCheck.current = null
     const now = flags()
     const dk = ymd(today())
@@ -236,7 +237,9 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       const t = await api.logTouch(ctx.me, c.id, kind, note)
       pendingCheck.current = before
       await ctx.reload()
-      toast(`${KIND_LABEL[kind]} logged for ${c.first_name}.`, { label: 'Undo', run: () => undo(t) })
+      // The note question shows what was logged and has its own Undo, so no toast covering it.
+      if (!note) setNoteFor({ t, c })
+      else toast(`${KIND_LABEL[kind]} logged for ${c.first_name}.`, { label: 'Undo', run: () => undo(t) })
     } catch (e) {
       toast(`That didn't save: ${(e as Error).message}`)
     }
@@ -424,6 +427,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           </div>
         </div>
       )}
+      {noteFor && <NoteSheet ctx={ctx} t={noteFor.t} c={noteFor.c} onClose={() => setNoteFor(null)} onUndo={() => { const t = noteFor.t; setNoteFor(null); undo(t) }} />}
       {cele && <Celebrate {...cele} onClose={() => setCele(null)} />}
     </section>
   )
@@ -544,7 +548,6 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
   const [q, setQ] = useState('')
   const [who, setWho] = useState<Contact | null>(null)
   const [adding, setAdding] = useState(false)
-  const [note, setNote] = useState('')
   const busy = false
   const term = q.trim().toLowerCase()
   const matches = term
@@ -553,7 +556,7 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
   const exact = ctx.data.contacts.some((c) => fullName(c).toLowerCase() === term)
 
   function pick(kind: TouchKind) {
-    if (who) onLog(who, kind, note)
+    if (who) onLog(who, kind, '')
   }
 
   // New person: fill in everything you know first (same form as People), then pick what you did.
@@ -593,7 +596,6 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
               <button key={k} className={`opt k-${k}`} disabled={busy} onClick={() => pick(k)}>{KIND_ICON[k]}{DID_LABEL[k]}</button>
             ))}
           </div>
-          <textarea aria-label="Note" placeholder="Want to remember anything? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
           <p className="note" style={{ marginTop: 8 }}>This counts toward their 36 and resets when they come up next.</p>
         </div>
       )}
@@ -603,20 +605,51 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
 }
 
 function LogSheet({ c, suggested, goal, onClose, onLog }: { c: Contact; suggested: TouchKind; goal: number; onClose: () => void; onLog: (k: TouchKind, note: string) => void }) {
-  const [note, setNote] = useState('')
   return (
     <Sheet label="Log a touch" onClose={onClose}>
       <h3>What did you already do for {c.first_name || fullName(c)}?</h3>
       <p className="note">This just records it. Anything you pick counts toward their {goal} touches this year.</p>
       <div className="opts">
         {([suggested, ...(['call', 'text', 'card', 'popby', 'facetoface'] as TouchKind[]).filter((x) => x !== suggested)]).map((k) => (
-          <button key={k} className={`opt k-${k}`} onClick={() => onLog(k, note)}>
+          <button key={k} className={`opt k-${k}`} onClick={() => onLog(k, '')}>
             {KIND_ICON[k]}{DID_LABEL[k] ?? KIND_LABEL[k]}
           </button>
         ))}
       </div>
-      <textarea aria-label="Note" placeholder="Want to remember anything? (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
       <button className="btn ghost block" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
+    </Sheet>
+  )
+}
+
+/** Right after a touch is logged (or from someone's history): add or change the note on it. */
+function NoteSheet({ ctx, t, c, onClose, onUndo }: { ctx: Ctx; t: Touch; c: Contact; onClose: () => void; onUndo?: () => void }) {
+  const toast = useToast()
+  const [note, setNote] = useState(t.note ?? '')
+  const [busy, setBusy] = useState(false)
+  const editing = !!t.note
+  async function save() {
+    setBusy(true)
+    try {
+      await api.updateTouch(ctx.me, t.id, { note: note.trim() || null })
+      await ctx.reload()
+      toast(note.trim() ? 'Note saved.' : 'Note removed.')
+      onClose()
+    } catch (e) {
+      toast(`That didn't save: ${(e as Error).message}`)
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet label="Add a note" onClose={onClose}>
+      <h3>{editing ? 'Edit note' : `Any notes about ${c.first_name || fullName(c)}?`}</h3>
+      <p className="note">
+        {onUndo ? <>{KIND_LABEL[t.kind]} logged. <button className="link" onClick={onUndo}>Undo</button></> : `${touchLabel(t)}, ${longDate(t.occurred_on)}`}
+      </p>
+      <textarea autoFocus aria-label="Note" placeholder="What did you talk about? Anything to remember next time?" value={note} onChange={(e) => setNote(e.target.value)} />
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button className="btn primary" style={{ flex: 1 }} disabled={busy || note.trim() === (t.note ?? '').trim()} onClick={save}>Save note</button>
+        <button className="btn" style={{ flex: 1 }} onClick={onClose}>{editing ? 'Cancel' : 'Skip'}</button>
+      </div>
     </Sheet>
   )
 }
@@ -629,6 +662,7 @@ const monthDay = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'l
 
 function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
   const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
+  const [noteOn, setNoteOn] = useState<Touch | null>(null)
   const byContact = useMemo(() => touchCounts(ctx.data.touches), [ctx.data.touches])
   const history = ctx.data.touches
     .filter((t) => t.contact_id === live.id)
@@ -666,16 +700,22 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         <p className="note">Nothing logged yet. Your first touch will show up here.</p>
       ) : (
         <div className="hist">
-          {history.map((t) => (
-            <div key={t.id} className="hrow">
-              <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <b>{touchLabel(t)}</b>
-                {t.note && t.note !== 'Group touch' && <small>{t.note}</small>}
-              </span>
-              <span className="note" style={{ whiteSpace: 'nowrap' }}>{longDate(t.occurred_on)}</span>
-            </div>
-          ))}
+          {history.map((t) => {
+            const canNote = !ctx.readOnly && !t.is_group && !(t.kind === 'card' && t.note?.startsWith('Card a Day: '))
+            const inner = (
+              <>
+                <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b>{touchLabel(t)}</b>
+                  {t.note && t.note !== 'Group touch' ? <small>{t.note}</small> : canNote ? <small className="addnote">+ Add a note</small> : null}
+                </span>
+                <span className="note" style={{ whiteSpace: 'nowrap' }}>{longDate(t.occurred_on)}</span>
+              </>
+            )
+            return canNote
+              ? <button key={t.id} className="hrow tap" onClick={() => setNoteOn(t)}>{inner}</button>
+              : <div key={t.id} className="hrow">{inner}</div>
+          })}
         </div>
       )}
 
@@ -683,6 +723,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         {!ctx.readOnly && <button className="btn primary" style={{ flex: 1 }} onClick={onEdit}>Edit details</button>}
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>Close</button>
       </div>
+      {noteOn && <NoteSheet ctx={ctx} t={noteOn} c={live} onClose={() => setNoteOn(null)} />}
     </Sheet>
   )
 }

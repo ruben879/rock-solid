@@ -329,6 +329,9 @@ tr:last-child td { border-bottom: 0; }
 .hrow:last-child { border-bottom: 0; }
 .hrow b { font-weight: 500; display: block; }
 .hrow small { color: var(--muted); font-size: 14px; display: block; overflow-wrap: anywhere; }
+.hrow.tap { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.hrow.tap:last-child { border-bottom: 0; }
+.hrow .addnote { color: var(--navy); }
 .hic { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); color: var(--ink); flex: none; }
 .hic svg { width: 18px; height: 18px; }
 .hic.k-call { background: var(--call-soft); color: var(--call); }
