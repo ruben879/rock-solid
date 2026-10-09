@@ -2,11 +2,12 @@ import webpush from 'web-push'
 import { admin, vapid } from './_push.js'
 
 /*
-  The 9:00 a.m. nudge: "Let's get to stacking those rocks."
-  Goes to each person with reminders on who hasn't logged anything yet today (no touch, no card), Monday to Friday.
+  The morning nudge: "Let's get to stacking those rocks."
+  Goes to each phone with the nudge on, at the hour its owner picked (7, 8, 9 or 10 a.m. Lubbock time, 9 by default),
+  if they haven't logged anything yet today (no touch, no card), Monday to Friday.
 
-  Vercel runs this at 14:00 and 15:00 UTC (see vercel.json). Only the run that lands in the 9 o'clock hour
-  in Lubbock sends, so it stays at 9 a.m. on both sides of daylight saving time.
+  Vercel runs this every hour from 12:00 to 16:00 UTC on weekdays (see vercel.json), which covers 7 to 10 a.m.
+  in Lubbock on both sides of daylight saving time. Each run only sends to phones whose hour it is.
   With ?test=1 and a signed-in user's token, it sends that person the nudge right away.
 */
 
@@ -41,15 +42,22 @@ export default async function handler(req: Req, res: Res) {
     }
 
     const t = nowLocal()
-    if (!test && (t.hour !== 9 || t.weekend)) return res.status(200).json({ sent: 0, note: 'Not 9 a.m. on a weekday in Lubbock.' })
+    if (!test && (t.hour < 7 || t.hour > 10 || t.weekend)) return res.status(200).json({ sent: 0, note: 'Not nudge time on a weekday in Lubbock.' })
 
     const keys = await vapid(db)
     webpush.setVapidDetails('mailto:ruben@clearrockrealty.com', keys.public_key, keys.private_key)
 
-    let q = db.from('push_subscriptions').select('endpoint, user_id, p256dh, auth')
-    if (onlyUser) q = q.eq('user_id', onlyUser)
-    const { data: subs, error } = await q
-    if (error) throw new Error(error.message)
+    type Sub = { endpoint: string; user_id: string; p256dh: string; auth: string; nudge?: boolean; nudge_hour?: number }
+    const load = (cols: string) => {
+      let q = db.from('push_subscriptions').select(cols)
+      if (onlyUser) q = q.eq('user_id', onlyUser)
+      return q
+    }
+    let r = await load('endpoint, user_id, p256dh, auth, nudge, nudge_hour')
+    // Before the nudge settings SQL is run, everyone gets it at 9.
+    if (r.error && /nudge/.test(r.error.message)) r = await load('endpoint, user_id, p256dh, auth')
+    if (r.error) throw new Error(r.error.message)
+    const subs = ((r.data ?? []) as unknown as Sub[]).filter((s) => test || ((s.nudge ?? true) && (s.nudge_hour ?? 9) === t.hour))
     if (!subs?.length) return res.status(200).json({ sent: 0, note: 'No phones signed up yet.' })
 
     const users = [...new Set(subs.map((s) => s.user_id as string))]

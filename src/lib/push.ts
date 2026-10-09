@@ -37,18 +37,25 @@ export async function turnOn(me: Profile, headsUp: boolean) {
   if (error) throw new Error(error.message)
 }
 
-export async function setHeadsUp(headsUp: boolean) {
+export interface PushPrefs { heads_up: boolean; nudge: boolean; nudge_hour: number }
+export const DEFAULT_PREFS: PushPrefs = { heads_up: true, nudge: true, nudge_hour: 9 }
+
+/** Save one of this phone's reminder choices. */
+export async function setPrefs(fields: Partial<PushPrefs>) {
   const sub = await currentSubscription()
   if (!sub) return
-  const { error } = await supabase.from('push_subscriptions').update({ heads_up: headsUp }).eq('endpoint', sub.endpoint)
-  if (error) throw new Error(error.message)
+  const { error } = await supabase.from('push_subscriptions').update(fields).eq('endpoint', sub.endpoint)
+  if (error) throw new Error(/nudge/.test(error.message) ? 'Morning nudge settings need the 0007 SQL run in Supabase first.' : error.message)
 }
 
-export async function getHeadsUp() {
+export async function getPrefs(): Promise<PushPrefs> {
   const sub = await currentSubscription()
-  if (!sub) return true
+  if (!sub) return DEFAULT_PREFS
+  const full = await supabase.from('push_subscriptions').select('heads_up, nudge, nudge_hour').eq('endpoint', sub.endpoint).maybeSingle()
+  if (!full.error) return { ...DEFAULT_PREFS, ...(full.data ?? {}) }
+  // Before the nudge columns exist: just the heads-up choice.
   const { data } = await supabase.from('push_subscriptions').select('heads_up').eq('endpoint', sub.endpoint).maybeSingle()
-  return data?.heads_up ?? true
+  return { ...DEFAULT_PREFS, ...(data ?? {}) }
 }
 
 export async function turnOff() {
