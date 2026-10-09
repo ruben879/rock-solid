@@ -5,9 +5,9 @@ import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } 
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
-import { planImport, readContacts } from '../lib/importer'
+import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
-import { ICard, ICheck, IDoor, IFace, IFlame, IMore, IPhone, IPlus, ISearch, IText } from '../icons'
+import { ICard, ICheck, IDoor, IFace, IFlame, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -237,9 +237,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       const t = await api.logTouch(ctx.me, c.id, kind, note)
       pendingCheck.current = before
       await ctx.reload()
-      // The note question shows what was logged and has its own Undo, so no toast covering it.
+      toast(`${KIND_LABEL[kind]} recorded for ${c.first_name}.`, { label: 'Undo', run: () => { setNoteFor(null); undo(t) } })
       if (!note) setNoteFor({ t, c })
-      else toast(`${KIND_LABEL[kind]} logged for ${c.first_name}.`, { label: 'Undo', run: () => undo(t) })
     } catch (e) {
       toast(`That didn't save: ${(e as Error).message}`)
     }
@@ -643,7 +642,7 @@ function NoteSheet({ ctx, t, c, onClose, onUndo }: { ctx: Ctx; t: Touch; c: Cont
     <Sheet label="Add a note" onClose={onClose}>
       <h3>{editing ? 'Edit note' : `Any notes about ${c.first_name || fullName(c)}?`}</h3>
       <p className="note">
-        {onUndo ? <>{KIND_LABEL[t.kind]} logged. <button className="link" onClick={onUndo}>Undo</button></> : `${touchLabel(t)}, ${longDate(t.occurred_on)}`}
+        {onUndo ? <>{KIND_LABEL[t.kind]} recorded. <button className="link" onClick={onUndo}>Undo</button></> : `${touchLabel(t)}, ${longDate(t.occurred_on)}`}
       </p>
       <textarea autoFocus aria-label="Note" placeholder="What did you talk about? Anything to remember next time?" value={note} onChange={(e) => setNote(e.target.value)} />
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -731,6 +730,34 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
 // ======================================================================
 // Edit / add a person
 // ======================================================================
+// ----- Pull someone's info from the phone's contacts (Android Chrome; iPhone uses AutoFill Contact instead) -----
+type PickedContact = { name?: string[]; tel?: string[]; email?: string[]; address?: { addressLine?: string[]; city?: string; region?: string; postalCode?: string }[] }
+const canPickContact = () => typeof navigator !== 'undefined' && 'contacts' in navigator && typeof window !== 'undefined' && 'ContactsManager' in window
+async function pickPhoneContact(): Promise<PickedContact | null> {
+  try {
+    const mgr = (navigator as unknown as { contacts: { select: (p: string[], o: { multiple: boolean }) => Promise<PickedContact[]>; getProperties?: () => Promise<string[]> } }).contacts
+    const have = (await mgr.getProperties?.()) ?? ['name', 'tel', 'email']
+    const want = ['name', 'tel', 'email', 'address'].filter((p) => have.includes(p))
+    const [p] = await mgr.select(want, { multiple: false })
+    return p ?? null
+  } catch {
+    return null
+  }
+}
+function mergePicked<T extends { first_name: string; last_name: string; phone: string; email: string; address: string; city: string; state: string; zip: string }>(f: T, p: PickedContact): T {
+  const [first, ...rest] = (p.name?.[0] ?? '').trim().split(/\s+/)
+  const a = p.address?.[0]
+  // Only fill what's still empty, so nothing already typed gets replaced.
+  const keep = (cur: string, v?: string) => cur.trim() || (v ?? '').trim()
+  return {
+    ...f,
+    first_name: keep(f.first_name, first), last_name: keep(f.last_name, rest.join(' ')),
+    phone: keep(f.phone, p.tel?.[0] ? formatPhone(p.tel[0]) ?? p.tel[0] : ''), email: keep(f.email, p.email?.[0]),
+    address: keep(f.address, a?.addressLine?.join(' ')), city: keep(f.city, a?.city),
+    state: a?.region && (!f.state.trim() || f.state === 'TX') ? a.region : f.state, zip: keep(f.zip, a?.postalCode),
+  }
+}
+
 function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
   ctx: Ctx; c: Contact | null; onClose: () => void
   /** For a new person: name and phone typed elsewhere. */ prefill?: { name?: string; phone?: string }
@@ -746,6 +773,9 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
   })
   const [confirmDel, setConfirmDel] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [openMore, setOpenMore] = useState(false)
+  // New people: let the phone offer to fill in from its contacts (iPhone AutoFill Contact). Existing people: no autofill.
+  const ac = (v: string) => (c ? 'off' : v)
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
   const byContact = useMemo(() => touchCounts(ctx.data.touches), [ctx.data.touches])
   const ro = ctx.readOnly
@@ -797,10 +827,15 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
             <span className="note">touches in the last 12 months</span>
           </div>
         )}
+        {!c && !ro && canPickContact() && (
+          <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={async () => { const p = await pickPhoneContact(); if (p) { setF((cur) => mergePicked(cur, p)); setOpenMore(true) } }}>
+            <IPeople size={18} /> Fill in from my phone's contacts
+          </button>
+        )}
         <div className="ed">
-          <label className="field"><span>First name</span><input required disabled={ro} value={f.first_name} onChange={set('first_name')} /></label>
-          <label className="field"><span>Last name</span><input disabled={ro} value={f.last_name} onChange={set('last_name')} /></label>
-          <label className="field full"><span>Phone</span><input inputMode="tel" disabled={ro} value={f.phone} onChange={set('phone')} /></label>
+          <label className="field"><span>First name</span><input required disabled={ro} value={f.first_name} onChange={set('first_name')} autoComplete={ac('given-name')} /></label>
+          <label className="field"><span>Last name</span><input disabled={ro} value={f.last_name} onChange={set('last_name')} autoComplete={ac('family-name')} /></label>
+          <label className="field full"><span>Phone</span><input inputMode="tel" disabled={ro} value={f.phone} onChange={set('phone')} autoComplete={ac('tel')} /></label>
         </div>
         <div className="field">
           <span>How close are you? {f.tier === 'U' ? `Not tagged yet. Pick A or B. Until then they come up every ${tierDays(ctx.agent, 'U')} days.` : `${TIER_NAMES[f.tier]}: every ${tierDays(ctx.agent, f.tier)} days.`}</span>
@@ -811,14 +846,14 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
           </div>
         </div>
         <label className="field"><span>Notes</span><textarea disabled={ro} value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
-        <details className="more" style={{ marginTop: 0 }} open={!!prefill || undefined}>
+        <details className="more" style={{ marginTop: 0 }} open={!!prefill || openMore || undefined}>
           <summary>Email, address and special dates</summary>
           <div className="ed">
-            <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} /></label>
-            <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} /></label>
-            <label className="field full"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} /></label>
-            <label className="field"><span>State</span><input disabled={ro} value={f.state} onChange={set('state')} autoCapitalize="characters" maxLength={20} /></label>
-            <label className="field"><span>Zip</span><input disabled={ro} inputMode="numeric" value={f.zip} onChange={set('zip')} /></label>
+            <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} autoComplete={ac('email')} /></label>
+            <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} autoComplete={ac('street-address')} /></label>
+            <label className="field full"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} autoComplete={ac('address-level2')} /></label>
+            <label className="field"><span>State</span><input disabled={ro} value={f.state} onChange={set('state')} autoCapitalize="characters" maxLength={20} autoComplete={ac('address-level1')} /></label>
+            <label className="field"><span>Zip</span><input disabled={ro} inputMode="numeric" value={f.zip} onChange={set('zip')} autoComplete={ac('postal-code')} /></label>
             <DateField label="Birthday" ro={ro} value={f.birthday} onChange={(v) => setF({ ...f, birthday: v })} />
             <DateField label="Home anniversary" ro={ro} value={f.home_anniversary} onChange={(v) => setF({ ...f, home_anniversary: v })} />
             <DateField label="Wedding anniversary" ro={ro} value={f.wedding_anniversary} onChange={(v) => setF({ ...f, wedding_anniversary: v })} />
@@ -1105,6 +1140,13 @@ function CardDaySheet({ day, cov, onClose }: { day: string; cov: ReturnType<type
 // ======================================================================
 // Progress
 // ======================================================================
+/** Emails only reach people with an email; mailed newsletters only reach people with an address. */
+function reachable(c: Contact, kind?: TouchKind) {
+  if (kind === 'email') return !!c.email?.trim()
+  if (kind === 'newsletter') return !!c.address?.trim()
+  return true
+}
+
 /** Monthly lead-gen extras. "reach" ones can also credit a touch to people in the database. */
 const EXTRAS: { k: string; l: string; reach?: TouchKind }[] = [
   { k: 'social', l: 'Social post' },
@@ -1158,7 +1200,9 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
   const [total, setTotal] = useState(current)
   const [tiers, setTiers] = useState<Tier[]>(['A', 'B', 'C', 'D', 'U'])
   const [busy, setBusy] = useState(false)
-  const who = ctx.data.contacts.filter((c) => tiers.includes(c.tier))
+  const picked = ctx.data.contacts.filter((c) => tiers.includes(c.tier))
+  const who = picked.filter((c) => reachable(c, x.reach))
+  const skipped = picked.length - who.length
   const all = [...TIERS, 'U' as Tier].every((t) => tiers.includes(t))
   async function run(fn: () => Promise<void>, msg: string) {
     setBusy(true)
@@ -1179,8 +1223,9 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
             </div>
           </div>
           <button className="btn gold lg block" disabled={busy || !who.length} onClick={() => run(async () => { await api.groupTouch(ctx.me, who, x.reach as TouchKind, x.l); await api.setTally(ctx.me, x.k, current + 1) }, `${x.l} logged for ${who.length} people.`)}>
-            {who.length ? `Log it for ${who.length} people` : 'Pick who got it'}
+            {who.length ? `Log it for ${who.length} people` : picked.length ? `No one picked has ${x.reach === 'email' ? 'an email' : 'an address'}` : 'Pick who got it'}
           </button>
+          {skipped > 0 && <p className="note" style={{ margin: 0 }}>Only people with {x.reach === 'email' ? 'an email' : 'a mailing address'} get credit. {skipped} without one {skipped === 1 ? 'is' : 'are'} skipped.</p>}
         </div>
       )}
       <div className="field" style={{ marginTop: 20 }}>
@@ -1305,7 +1350,7 @@ function MyGoals({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => v
         <>
           <div className="ed">
             <label className="field"><span>Touches a day</span>
-              <NumInput value={day} onChange={setDay} onCommit={(n) => { const d = Math.max(1, n || 1); save({ daily_goal: d, weekly_goal: d * 5 }) }} />
+              <NumInput value={day} onChange={setDay} onCommit={(n) => { const d = Math.max(1, n || 1); save({ daily_goal: d, weekly_goal: d * 5, plan: { ...(agent.plan ?? {}), auto_goals: 0 } }) }} />
             </label>
             <div className="field"><span>Touches a week</span><div style={{ fontSize: 20, fontWeight: 600, padding: '9px 2px' }}>{Math.max(1, day || 1) * 5}</div></div>
           </div>
@@ -1427,9 +1472,12 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const counts: Record<Heat, number> = { hot: 0, warm: 0, cold: 0, new: 0 }
   for (const h of heats.values()) counts[h]++
   const untagged = data.contacts.filter((c) => c.tier === 'U').length
+  // Typing a name searches everyone, and the matches show right under the search box.
+  const term = q.trim().toLowerCase()
+  const searching = !!term
   const list = data.contacts
-    .filter((c) => (!hf || (hf === 'tag' ? c.tier === 'U' : heats.get(c.id) === hf)) && fullName(c).toLowerCase().includes(q.trim().toLowerCase()))
-    .sort((a, b) => (hf && hf !== 'tag' ? score(a, byContact) - score(b, byContact) : 0) || fullName(a).localeCompare(fullName(b)))
+    .filter((c) => (searching ? fullName(c).toLowerCase().includes(term) || (c.phone ?? '').replace(/\D/g, '').includes(term.replace(/\D/g, '') || '~') : !hf || (hf === 'tag' ? c.tier === 'U' : heats.get(c.id) === hf)))
+    .sort((a, b) => (!searching && hf && hf !== 'tag' ? score(a, byContact) - score(b, byContact) : 0) || fullName(a).localeCompare(fullName(b)))
 
   async function setDays(t: Tier, v: number) {
     await api.updateMyProfile(ctx.me, { tier_days: { ...agent.tier_days, [t]: Math.max(1, v || 1) } })
@@ -1445,23 +1493,21 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       <p className="sub" style={{ marginTop: 4 }}>{data.contacts.length} people. Tap anyone to see or change their details.</p>
 
       <div className="search"><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-      {!readOnly && q.trim() && !data.contacts.some((c) => fullName(c).toLowerCase() === q.trim().toLowerCase()) && (
-        <button className="btn" style={{ marginTop: 10 }} onClick={() => setAddName(q.trim())}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
-      )}
-      <div className="chips" style={{ margin: '12px 0' }}>
+      {!searching && <div className="chips" style={{ margin: '12px 0' }}>
         <button aria-pressed={!hf} onClick={() => setHf('')}>Everyone</button>
         {untagged > 0 && <button aria-pressed={hf === 'tag'} onClick={() => setHf(hf === 'tag' ? '' : 'tag')}>Needs a tag ({untagged})</button>}
         {(['cold', 'warm', 'hot', ...(counts.new ? ['new'] : [])] as Heat[]).map((h) => (
           <button key={h} aria-pressed={hf === h} onClick={() => setHf(hf === h ? '' : h)}>{HEAT_NAME[h]} ({counts[h]})</button>
         ))}
-      </div>
+      </div>}
+      {searching && <div style={{ height: 12 }} />}
 
       {data.contacts.length === 0 ? (
         <div className="card empty">
           <p>No one here yet. Add people one at a time, or bring in a spreadsheet under More tools.</p>
         </div>
       ) : list.length === 0 ? (
-        <div className="card empty"><p>No one matches that.</p></div>
+        <div className="card empty"><p>No one by that name yet.</p></div>
       ) : (
         <div className="plist">
           {list.slice(0, shown).map((c) => (
@@ -1476,6 +1522,9 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         </div>
       )}
       {list.length > shown && <button className="btn block" style={{ marginTop: 12 }} onClick={() => setShown(shown + 100)}>Show more ({list.length - shown})</button>}
+      {!readOnly && q.trim() && !data.contacts.some((c) => fullName(c).toLowerCase() === q.trim().toLowerCase()) && (
+        <button className="btn" style={{ marginTop: 12 }} onClick={() => setAddName(q.trim())}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
+      )}
       <p className="note" style={{ marginTop: 12 }}>The bar shows touches in the last 12 months out of {ctx.goal}. Red means it's been a long time since you reached out.</p>
 
       {!readOnly && (
@@ -1520,7 +1569,7 @@ function GroupSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const [kind, setKind] = useState<TouchKind>('email')
   const [tiers, setTiers] = useState<Tier[]>(['A', 'B', 'C', 'D', 'U'])
   const [busy, setBusy] = useState(false)
-  const who = ctx.data.contacts.filter((c) => tiers.includes(c.tier))
+  const who = ctx.data.contacts.filter((c) => tiers.includes(c.tier) && reachable(c, kind))
   async function go() {
     setBusy(true)
     try {

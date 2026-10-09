@@ -29,6 +29,16 @@ function stash<T>(k: string, v?: T): T | null {
   }
 }
 
+/** Someone who hasn't set goals yet gets goals sized for 100 people: 100 x 16 one-on-one touches a year, over 52 weeks of 5 days. */
+export const STARTER_DAILY_GOAL = Math.ceil((100 * 16) / 52 / 5)
+const DB_DEFAULT_DAILY = 5
+function withGoals(p: Profile): Profile {
+  const untouched = !p.plan || Object.keys(p.plan).length === 0
+  const daily = untouched && p.daily_goal === DB_DEFAULT_DAILY ? STARTER_DAILY_GOAL : p.daily_goal
+  // A week is 5 workdays: the weekly goal is always the daily goal times 5.
+  return { ...p, daily_goal: daily, weekly_goal: daily * 5 }
+}
+
 /** Your profile and brokerage. Falls back to the copy saved on the phone when offline. */
 export async function loadMe(userId: string): Promise<{ profile: Profile | null; brokerage: Brokerage | null }> {
   const k = `rs-me-${userId}`
@@ -37,8 +47,7 @@ export async function loadMe(userId: string): Promise<{ profile: Profile | null;
     if (error) throw new Error(error.message)
     if (!profile) return { profile: null, brokerage: null }
     const { data: brokerage } = await supabase.from('brokerages').select('id, name, settings').eq('id', profile.brokerage_id).maybeSingle()
-    // A week is 5 workdays: the weekly goal is always the daily goal times 5.
-    const me = { ...(profile as Profile), weekly_goal: (profile as Profile).daily_goal * 5 }
+    const me = withGoals(profile as Profile)
     return stash(k, { profile: me, brokerage: brokerage as Brokerage | null }) as { profile: Profile; brokerage: Brokerage | null }
   } catch (e) {
     const saved = stash<{ profile: Profile; brokerage: Brokerage | null }>(k)
@@ -52,7 +61,7 @@ export async function loadTeam(brokerageId: string) {
   try {
     const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('brokerage_id', brokerageId).order('full_name')
     if (error) throw new Error(error.message)
-    return stash(k, (data ?? []) as Profile[]) as Profile[]
+    return stash(k, ((data ?? []) as Profile[]).map(withGoals)) as Profile[]
   } catch (e) {
     const saved = stash<Profile[]>(k)
     if (saved && isNetworkError(e)) return saved

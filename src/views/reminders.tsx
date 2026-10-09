@@ -20,7 +20,7 @@ export function Reminders({ me }: { me: Profile }) {
   }
   return (
     <div className="card stack" style={{ background: 'var(--bg)', boxShadow: 'none', marginTop: 14 }}>
-      <h3>Birthday and anniversary reminders</h3>
+      <h3>Reminders</h3>
       {!pushSupported() || needsHomeScreen() ? (
         <p className="note">
           {needsHomeScreen()
@@ -29,7 +29,7 @@ export function Reminders({ me }: { me: Profile }) {
         </p>
       ) : (
         <>
-          <p className="note">A note on this phone in the morning when someone has a birthday, home anniversary or wedding anniversary.</p>
+          <p className="note">A note on this phone when someone has a birthday, home anniversary or wedding anniversary, plus a 9:00 nudge on weekdays if you haven't logged anything yet.</p>
           {on ? (
             <>
               <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 15 }}>

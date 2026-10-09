@@ -1,4 +1,8 @@
 {
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
-  "crons": [{ "path": "/api/send-reminders", "schedule": "0 13 * * *" }]
+  "crons": [
+    { "path": "/api/send-reminders", "schedule": "0 13 * * *" },
+    { "path": "/api/morning-nudge?run=cdt", "schedule": "0 14 * * 1-5" },
+    { "path": "/api/morning-nudge?run=cst", "schedule": "0 15 * * 1-5" }
+  ]
 }
