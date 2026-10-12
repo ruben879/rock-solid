@@ -3,7 +3,7 @@ import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
@@ -60,8 +60,8 @@ function useBatch(ctx: Ctx) {
   const size = Math.min(30, Math.max(1, agent.daily_goal || 5))
   const day = ymd(today())
   const ws = ymd(weekStart())
-  const key = `rs-day2-${agent.id}-${day}`
-  const lastKey = `rs-day2-${agent.id}-last`
+  const key = `rs-day3-${agent.id}-${day}`
+  const lastKey = `rs-day3-${agent.id}-last`
   const touchedThisWeek = useMemo(
     () => new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on >= ws).map((t) => t.contact_id as string)),
     [data.touches, ws],
@@ -74,7 +74,7 @@ function useBatch(ctx: Ctx) {
     let ids = saved.ids.filter((id) => byId.has(id))
     let round = saved.round
     let cleared = false
-    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(ex), want)
+    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(ex), want, agent.id)
     if (ids.length === 0) {
       // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
       const last = store.get<{ day: string; ids: string[] } | null>(lastKey, null)
@@ -90,7 +90,8 @@ function useBatch(ctx: Ctx) {
       const doneToday = [...new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on === day && byId.has(t.contact_id)).map((t) => t.contact_id as string))].slice(0, size)
       carry = carry.filter((id) => !doneToday.includes(id)).slice(0, size - doneToday.length)
       const start = [...doneToday, ...carry]
-      ids = [...start, ...poolExcluding(start, size - start.length).map((c) => c.id)]
+      // Mixed order (not alphabetical), the same all day.
+      ids = shuffled([...start, ...poolExcluding(start, size - start.length).map((c) => c.id)], `${agent.id}|${day}`)
       round = ids.length ? 1 : 0
     }
     const allDone = ids.length > 0 && ids.every((id) => touchedThisWeek.has(id))
@@ -100,7 +101,7 @@ function useBatch(ctx: Ctx) {
 
   /** Finished the list: load another round for today (asked, never automatic). */
   const loadMore = () => {
-    const next = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(result.ids), size).map((c) => c.id)
+    const next = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(result.ids), size, agent.id).map((c) => c.id)
     if (!next.length) return
     const v = { ids: next, round: result.round + 1 }
     if (!readOnly) {
@@ -128,7 +129,7 @@ function useBatch(ctx: Ctx) {
   }, [result, saved, key, lastKey, day, readOnly])
 
   const replace = (id: string) => {
-    const pool = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, id]), 1)
+    const pool = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, id]), 1, agent.id)
     const ids = result.ids.filter((x) => x !== id)
     if (pool[0]) ids.push(pool[0].id)
     const v = { ids, round: result.round }
@@ -210,7 +211,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const done = doneRows.length
   // Position in the list decides ties, so each day's list mixes calls, texts and cards.
   const sug = (c: Contact) => suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
-  const byContact = useMemo(() => touchCounts(data.touches), [data.touches])
+  // Bars cool off from the last one-on-one touch; group emails and mailouts don't warm them back up.
+  const personalBy = useMemo(() => touchCounts(data.touches.filter((t) => !t.is_group)), [data.touches])
   const lastOf = (c: Contact) => data.touches.filter((t) => t.contact_id === c.id).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)).at(-1)
   const g = goalState(ctx)
 
@@ -380,7 +382,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                     <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span>
                     <span className="note">{TIER_NAMES[c.tier === 'C' || c.tier === 'D' ? 'B' : c.tier]}</span>
                     <span style={{ flex: 1 }} />
-                    <Signal bars={signal(c, byContact, agent.tier_days)} plain />
+                    <Signal bars={signal(c, personalBy, agent.tier_days)} plain />
                     {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
                   </div>
                   <h3 className="pc-name"><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button></h3>
@@ -430,7 +432,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                     <p className="why">{whyLine(c, lastOf(c))}</p>
                   </div>
                   <div className="sig">
-                    <Signal bars={signal(c, byContact, agent.tier_days)} plain />
+                    <Signal bars={signal(c, personalBy, agent.tier_days)} plain />
                     {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
                   </div>
                 </div>

@@ -121,23 +121,66 @@ export function nextDue(c: Contact, p: Profile | null): Date {
 
 const TIER_ORDER: Record<Tier, number> = { A: 0, B: 1, U: 1, C: 2, D: 2 }
 
-/** Everyone due by the end of this week who hasn't been touched this week and isn't pushed to later. */
+/** A repeatable random number source: the same seed gives the same list all day, a new day gives a new mix. */
+export function seeded(seed: string) {
+  let h = 2166136261
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507)
+    h = Math.imul(h ^ (h >>> 13), 3266489909)
+    h ^= h >>> 16
+    return (h >>> 0) / 4294967296
+  }
+}
+export function shuffled<T>(xs: T[], seed: string) {
+  const r = seeded(seed)
+  const a = [...xs]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+/** Each person's last one-on-one touch. Group emails and mailouts don't count: they're not "touching base". */
+export function lastPersonal(touches: Touch[]) {
+  const m = new Map<string, string>()
+  for (const t of touches) if (!t.is_group && t.contact_id && (m.get(t.contact_id) ?? '') < t.occurred_on) m.set(t.contact_id, t.occurred_on)
+  return m
+}
+
+/**
+ * How "cold" someone is: time since their last one-on-one touch compared with how often their tier should hear from you.
+ * 1 = right on time, 2 = twice as long as it should be. Never touched counts as 1.5.
+ */
+export function coolness(c: Contact, p: Profile | null, last: Map<string, string>, plusDays = 0) {
+  const d = last.get(c.id)
+  if (!d) return 1.5
+  return (daysBetween(parse(d), today()) + plusDays) / tierDays(p, c.tier)
+}
+
 /**
  * Who comes up next on Today. Only one-on-one touches move someone's next turn: a group email or
  * mailed newsletter counts toward their 36, but they still get their personal call, text or card on schedule.
- * Fills to `want` people: everyone due this week first, then whoever is coming up soonest.
+ * Everyone due by the end of this week is in the running, A's and B's alike. The colder someone is, the more
+ * likely they come up, but the picks and the order are shuffled each day so the list stays fresh.
+ * If fewer than `want` are due, it fills with whoever is closest to due.
  */
-export function rotation(contacts: Contact[], p: Profile | null, touches: Touch[], touchedThisWeek: Set<string>, exclude: Set<string>, want: number) {
-  const personal = new Map<string, string>()
-  for (const t of touches) if (!t.is_group && t.contact_id && (personal.get(t.contact_id) ?? '') < t.occurred_on) personal.set(t.contact_id, t.occurred_on)
-  const rc = contacts.map((c) => ({ ...c, last_touch_on: personal.get(c.id) ?? null }))
-  const due = duePool(rc, p, touchedThisWeek, exclude)
-  if (due.length >= want) return due.slice(0, want)
+export function rotation(contacts: Contact[], p: Profile | null, touches: Touch[], touchedThisWeek: Set<string>, exclude: Set<string>, want: number, seed = '') {
+  const last = lastPersonal(touches)
   const t = ymd(today())
-  const taken = new Set(due.map((c) => c.id))
-  const ahead = rc
-    .filter((c) => !taken.has(c.id) && !exclude.has(c.id) && !touchedThisWeek.has(c.id) && (!c.skip_until || c.skip_until <= t))
-    .sort((a, b) => nextDue(a, p).getTime() - nextDue(b, p).getTime() || TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || fullName(a).localeCompare(fullName(b)))
+  const left = Math.max(0, daysBetween(today(), addDays(weekStart(), 6)))
+  const open = contacts.filter((c) => !exclude.has(c.id) && !touchedThisWeek.has(c.id) && (!c.skip_until || c.skip_until <= t))
+  const scored = open.map((c) => ({ c, s: coolness(c, p, last), due: coolness(c, p, last, left) >= 1 }))
+  const r = seeded(`${seed}|${t}|${exclude.size}`)
+  // Weighted shuffle: colder people get bigger weights, so they tend to come first without it being predictable.
+  const due = scored
+    .filter((x) => x.due)
+    .map((x) => ({ ...x, key: Math.pow(r(), 1 / Math.pow(Math.min(x.s, 4) + 0.25, 2)) }))
+    .sort((a, b) => b.key - a.key)
+    .map((x) => x.c)
+  if (due.length >= want) return due.slice(0, want)
+  const ahead = scored.filter((x) => !x.due).sort((a, b) => b.s - a.s).map((x) => x.c)
   return [...due, ...ahead].slice(0, want)
 }
 
@@ -232,15 +275,17 @@ export function heat(c: Contact, byContact: Map<string, string[]>, goal: number,
 }
 
 /**
- * Signal strength, 0 to 5, like phone bars: how recently they've heard from you compared with their tier.
- * 5 = touched in the first half of their window, 1 = more than two windows with nothing, 0 = never touched.
+ * Signal strength, 0 to 5, like phone bars: how long since your last one-on-one touch compared with their tier.
+ * Pass each person's personal (non-group) touch dates, so a newsletter doesn't make everyone look freshly contacted.
+ * Bars drop steadily as time passes: 5 right after a touch, 3 when they're due, 1 when it's been twice as long.
+ * 0 = no personal touch yet.
  */
 export function signal(c: Contact, byContact: Map<string, string[]>, days: Record<Tier, number> = DEFAULT_TIER_DAYS): number {
-  const lastSeen = (byContact.get(c.id) ?? []).reduce((m, d) => (d > m ? d : m), c.last_touch_on ?? '')
+  const lastSeen = (byContact.get(c.id) ?? []).reduce((m, d) => (d > m ? d : m), '')
   if (!lastSeen) return 0
   const every = days[c.tier] || DEFAULT_TIER_DAYS[c.tier]
   const r = daysBetween(parse(lastSeen), today()) / every
-  return r <= 0.5 ? 5 : r <= 1 ? 4 : r <= 1.5 ? 3 : r <= 2 ? 2 : 1
+  return r <= 0.35 ? 5 : r <= 0.7 ? 4 : r <= 1 ? 3 : r <= 1.5 ? 2 : 1
 }
 
 // ---------- Goals ----------
@@ -261,7 +306,7 @@ export function cardWithin12Months(cards: Card[], name: string, before?: string)
 /**
  * Days covered by Card a Day. A day with a card written on it is "written".
  * Extra cards written on the same day cover nearby empty days: first catching up on missed days
- * in the 6 days before (never before their first card), then banking ahead for the 7 days after.
+ * in the 6 days before (never before their first card), then banking ahead on the next open days.
  */
 export function cardCoverage(cards: Card[]) {
   const counting = cards.filter((c) => c.counts_for_challenge)
@@ -283,7 +328,8 @@ export function cardCoverage(cards: Card[]) {
       if (extras.length && k >= firstDay && !written.has(k) && !covered.has(k)) { covered.set(k, day); coveredBy.set(k, extras.shift() as Card) }
     }
     for (let n = -1; n >= -6 && extras.length; n--) tryDay(n)
-    for (let n = 1; n <= 7 && extras.length; n++) tryDay(n)
+    // Banked cards always sit on the next open days. Write a card on a banked day and the bank slides forward.
+    for (let n = 1; n <= 60 && extras.length; n++) tryDay(n)
   }
   const has = (k: string) => written.has(k) || covered.has(k)
   return { written, covered, coveredBy, byDay, has }
