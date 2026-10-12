@@ -194,7 +194,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
   const [noteFor, setNoteFor] = useState<{ t: Touch; c: Contact } | null>(null)
   // List or one-at-a-time cards. Each person picks; the phone remembers.
-  const [view, setViewMode] = useState<'list' | 'cards'>(() => (store.get<string>('rs-view', 'list') === 'cards' ? 'cards' : 'list'))
+  const [view, setViewMode] = useState<'list' | 'cards'>(() => (store.get<string>('rs-view', 'cards') === 'list' ? 'list' : 'cards'))
   const pickView = (v: 'list' | 'cards') => { setViewMode(v); store.set('rs-view', v) }
   // Stack: which card is showing, plus the live drag so the card follows your finger.
   const [pos, setPos] = useState(0)
@@ -289,23 +289,15 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     <section>
       <p className="date">{today().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
       <h2 className="hello">{readOnly ? `${first}'s list` : `${greeting()}, ${first}`}</h2>
-      {!readOnly && (
-        <button className="record" onClick={() => setRecording(true)}>
-          <span className="plus"><IPlus size={20} /></span>
-          <span>Record a touch<small>Talked to someone? Log it here, even if they're not on your list.</small></span>
-        </button>
-      )}
-
       {rows.length > 0 && (
-        <>
-          <div className="stones" role="img" aria-label={`${done} of ${rows.length} done`}>
-            {rows.map((c, i) => <Rock key={c.id} i={i} on={i < done} />)}
-          </div>
-          <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round} today)` : ''}</p>
-        </>
+        <div className="stones" role="img" aria-label={`${done} of ${rows.length} done`}>
+          {rows.map((c, i) => <Rock key={c.id} i={i} on={i < done} />)}
+        </div>
       )}
-
-      <Momentum ctx={ctx} />
+      <div className="todayrow">
+        {rows.length > 0 ? <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round})` : ''}</p> : <span />}
+        {!readOnly && <button className="recpill" onClick={() => setRecording(true)}><IPlus size={18} /> Record a touch</button>}
+      </div>
 
       {b.allDone && b.waiting > 0 && !readOnly && (
         b.stopped ? (
@@ -332,9 +324,9 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </div>
       ) : (
         <>
-        <div className="viewtog" role="group" aria-label="How to show your people">
-          <button aria-pressed={view === 'list'} onClick={() => pickView('list')}><IList size={18} /> List</button>
-          <button aria-pressed={view === 'cards'} onClick={() => pickView('cards')}><ICards size={18} /> Stack</button>
+        <div className={`viewtog ${view === 'cards' ? 'over' : ''}`} role="group" aria-label="How to show your people">
+          <button aria-pressed={view === 'cards'} aria-label="One at a time" onClick={() => pickView('cards')}><ICards size={18} /></button>
+          <button aria-pressed={view === 'list'} aria-label="List" onClick={() => pickView('list')}><IList size={18} /></button>
         </div>
         {view === 'cards' ? (() => {
           // Swipe left for the next person, right to go back. When someone is done they drop out and the next slides in.
@@ -465,7 +457,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
 
       {doneRows.length > 0 && (
         <details className="donelist">
-          <summary>Done this week ({doneRows.length}). Tap one to change or undo it.</summary>
+          <summary>Done this week ({doneRows.length})</summary>
           <div className="card" style={{ padding: '4px 16px' }}>
             {doneRows.map((c) => {
               const l = lastOf(c)
@@ -479,19 +471,6 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
             })}
           </div>
         </details>
-      )}
-
-      <div className="todaybar">
-        <div className={g.today >= agent.daily_goal ? 'hit' : ''}><b>{g.today} of {agent.daily_goal}</b><span>today</span></div>
-        <div className={g.week >= agent.weekly_goal ? 'hit' : ''}><b>{g.week} of {agent.weekly_goal}</b><span>this week</span></div>
-        <div className={g.card ? 'hit' : ''} role={readOnly ? undefined : 'button'} style={{ cursor: readOnly ? undefined : 'pointer' }} onClick={() => !readOnly && onGo?.('cards')}>
-          <b>{g.card ? 'Done' : 'Not yet'}</b><span>today's card</span>
-        </div>
-      </div>
-      {!readOnly && todo.length > 0 && (
-        <p className="note" style={{ textAlign: 'center', marginTop: 18 }}>
-          <button className="link" onClick={copyList}>Copy my list</button> to paste into a calendar block.
-        </p>
       )}
 
       <Extras ctx={ctx} />
@@ -1249,10 +1228,10 @@ function reachable(c: Contact, kind?: TouchKind) {
 }
 
 /** Monthly lead-gen extras. "reach" ones can also credit a touch to people in the database. */
-const EXTRAS: { k: string; l: string; reach?: TouchKind }[] = [
-  { k: 'social', l: 'Social post' },
-  { k: 'video', l: 'Video' },
-  { k: 'openhouse', l: 'Open house' },
+const EXTRAS: { k: string; l: string; reach?: TouchKind; week?: boolean }[] = [
+  { k: 'social', l: 'Social post', week: true },
+  { k: 'video', l: 'Video', week: true },
+  { k: 'openhouse', l: 'Open house', week: true },
   { k: 'giveaway', l: 'Monthly giveaway' },
   { k: 'email', l: 'Email newsletter', reach: 'email' },
   { k: 'newsletter', l: 'Mailed newsletter', reach: 'newsletter' },
@@ -1273,23 +1252,27 @@ function Extras({ ctx }: { ctx: Ctx }) {
       toast(`That didn't save: ${(e as Error).message}`)
     }
   }
+  const [span, setSpan] = useState<'week' | 'month'>('week')
   return (
     <>
-      <div className="grp" style={{ marginTop: 28 }}>This month <span className="note" style={{ fontWeight: 400 }}>Each one is a drawing entry</span></div>
-      <div className="extras">
-        {EXTRAS.map((x) => {
-          const n = val(x.k)
-          return (
-            <div key={x.k} className={`extra ${n ? 'did' : ''}`}>
-              <button className="ex-body" disabled={readOnly} onClick={() => setOpen(x)} aria-label={`${x.l}: ${n} this month. Tap to change.`}>
-                <b>{n}</b><span>{x.l}</span>
-              </button>
-              {!readOnly && (
-                <button className="ex-plus" aria-label={`Add ${x.l}`} onClick={() => (x.reach ? setOpen(x) : plusOne(x.k, x.l))}><IPlus size={20} /></button>
-              )}
-            </div>
-          )
-        })}
+      <div className="xcard">
+        <div className="seg" role="group" aria-label="This week or this month" style={{ margin: 0 }}>
+          <button aria-pressed={span === 'week'} onClick={() => setSpan('week')}>This week</button>
+          <button aria-pressed={span === 'month'} onClick={() => setSpan('month')}>This month</button>
+        </div>
+        <div className="xlist">
+          {EXTRAS.filter((x) => (span === 'week') === !!x.week).map((x) => {
+            const n = val(x.k)
+            return (
+              <div key={x.k} className="xrow">
+                <button className="xname" disabled={readOnly} onClick={() => setOpen(x)} aria-label={`${x.l}: ${n}. Tap to change.`}>{x.l}</button>
+                <b className={n ? 'did' : ''}>{n}</b>
+                {!readOnly && <button className="xplus" aria-label={`Add ${x.l}`} onClick={() => (x.reach ? setOpen(x) : plusOne(x.k, x.l))}><IPlus size={18} /></button>}
+              </div>
+            )
+          })}
+        </div>
+        <p className="note" style={{ textAlign: 'center', fontSize: 13 }}>Each one is a drawing entry</p>
       </div>
       {open && <ExtraSheet ctx={ctx} x={open} current={val(open.k)} onClose={() => setOpen(null)} />}
     </>
@@ -1354,6 +1337,8 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
     <section>
       <h2 style={{ marginTop: 14 }}>{today().toLocaleDateString('en-US', { month: 'long' })}</h2>
       <p className="sub">Everything you log on Today and Cards adds up here on its own.</p>
+      <Momentum ctx={ctx} />
+      <div style={{ height: 14 }} />
       <div className="card bigbars">
         {(['call', 'text', 'card'] as const).map((k) => {
           const n = count(k)
