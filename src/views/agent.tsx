@@ -6,7 +6,7 @@ import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
-import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
+import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
 import { ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
@@ -297,7 +297,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       {rows.length > 0 && (
         <>
           <div className="stones" role="img" aria-label={`${done} of ${rows.length} done`}>
-            {rows.map((c, i) => <span key={c.id} className={`stone ${i < done ? 'on' : ''}`} />)}
+            {rows.map((c, i) => <Rock key={c.id} i={i} on={i < done} />)}
           </div>
           <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round} today)` : ''}</p>
         </>

@@ -101,12 +101,33 @@ details.more[open] > summary::before { content: "–"; }
 /* Today */
 .date { color: var(--muted); font-size: 15px; margin-top: 14px; }
 .hello { font-size: 30px; margin: 2px 0 18px; }
-.stones { display: flex; gap: 6px; align-items: flex-end; }
-.stone { flex: 1; height: 26px; max-width: 46px; background: var(--line); border-radius: 48% 52% 44% 56% / 58% 50% 50% 42%; transition: background .35s ease, transform .35s ease; }
-.stone:nth-child(2n) { height: 22px; border-radius: 55% 45% 52% 48% / 46% 56% 44% 54%; }
-.stone:nth-child(3n) { height: 24px; border-radius: 50% 50% 40% 60% / 60% 46% 54% 40%; }
-.stone.on { background: var(--gold); }
-@media (prefers-reduced-motion: no-preference) { .stone.on { transform: translateY(-2px); } }
+.stones { display: flex; gap: 4px; align-items: flex-end; }
+.rock { flex: 1; min-width: 0; max-width: 54px; height: auto; overflow: visible; transition: transform .35s ease; }
+.rock .rk-top { stop-color: #e1e6ee; }
+.rock .rk-bot { stop-color: #c4ccda; }
+.rock .rk-ground { fill: rgba(20, 32, 58, .07); }
+.rock .rk-lit { fill: #fff; opacity: .55; }
+.rock .rk-dark { fill: rgba(20, 32, 58, .07); }
+.rock.on .rk-top { stop-color: #e2c06f; }
+.rock.on .rk-bot { stop-color: #a8802c; }
+.rock.on .rk-ground { fill: rgba(20, 32, 58, .14); }
+.rock.on .rk-lit { opacity: .32; }
+.rock.on .rk-dark { fill: rgba(70, 45, 0, .22); }
+.rock:nth-child(3n) { max-width: 50px; }
+.rock:nth-child(4n+1) { max-width: 58px; }
+@media (prefers-color-scheme: dark) {
+  .rock .rk-top { stop-color: #33406a; }
+  .rock .rk-bot { stop-color: #222c4b; }
+  .rock .rk-ground { fill: rgba(0, 0, 0, .3); }
+  .rock .rk-lit { opacity: .08; }
+  .rock .rk-dark { fill: rgba(0, 0, 0, .18); }
+  .rock.on .rk-top { stop-color: #ecca76; }
+  .rock.on .rk-bot { stop-color: #a37a28; }
+  .rock.on .rk-lit { opacity: .3; }
+  .rock.on .rk-dark { fill: rgba(60, 35, 0, .3); }
+}
+@media (prefers-reduced-motion: no-preference) { .rock.on { animation: rockSet .45s ease-out; } }
+@keyframes rockSet { 0% { transform: translateY(-6px); } 60% { transform: translateY(1px); } 100% { transform: none; } }
 .stones-l { margin: 10px 0 0; font-size: 17px; }
 .stones-l b { font-weight: 600; }
 .people { display: flex; flex-direction: column; gap: 12px; margin-top: 22px; }
