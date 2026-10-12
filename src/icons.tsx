@@ -44,3 +44,9 @@ export const IFace = ({ size }: P) => (
 export const IFlame = ({ size }: P) => (
   <svg {...base(size)}><path d="M12 22c4 0 7-2.7 7-6.8 0-3.7-2.6-6.3-4.3-8.2-.4 2-1.4 3.3-2.7 4C12 7.6 10.4 4.4 8 2c.2 3.4-3 6-3 10.6C5 18.8 8 22 12 22Z" /></svg>
 )
+export const IList = ({ size }: P) => (
+  <svg {...base(size)}><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1" fill="currentColor" /><circle cx="4.5" cy="12" r="1" fill="currentColor" /><circle cx="4.5" cy="18" r="1" fill="currentColor" /></svg>
+)
+export const ICards = ({ size }: P) => (
+  <svg {...base(size)}><rect x="6" y="3" width="12" height="16" rx="2.5" /><path d="M4 7v12a2 2 0 0 0 2 2h9" /></svg>
+)

@@ -357,3 +357,27 @@ body:has(.sheet) .toast { bottom: auto; top: calc(14px + env(safe-area-inset-top
 .callegend i { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
 .callegend i.on { background: var(--gold); }
 .callegend i.cov { background: var(--gold-soft); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gold) 60%, transparent); }
+
+/* ---------- Today: list or one-at-a-time cards ---------- */
+.viewtog { display: flex; justify-content: flex-end; gap: 4px; margin: 20px 0 -8px; }
+.viewtog button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--muted); font: 500 14px var(--font); padding: 6px 10px; border-radius: 10px; cursor: pointer; }
+.viewtog button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(20, 32, 58, .1); }
+.deck { margin-top: 18px; }
+.togo { text-align: center; font-weight: 600; font-size: 17px; color: var(--ink); margin-bottom: 14px; }
+.pcard { position: relative; border-radius: 28px; background: var(--surface); box-shadow: 0 10px 30px rgba(20, 32, 58, .12); overflow: hidden; animation: pcIn .28s ease-out; touch-action: pan-y; }
+.pcard.stacked { margin-bottom: 14px; box-shadow: 0 10px 30px rgba(20, 32, 58, .12), 0 8px 0 -4px var(--surface), 0 9px 2px -4px rgba(20, 32, 58, .08), 0 16px 0 -8px var(--surface), 0 17px 2px -8px rgba(20, 32, 58, .06); overflow: visible; }
+.pcard.stacked .pc-top { border-radius: 28px 28px 0 0; }
+.pcard.stacked .pc-bot { border-radius: 0 0 28px 28px; }
+.pc-top { padding: 22px 22px 34px; background: linear-gradient(170deg, var(--gold-soft), var(--surface) 85%); border-radius: 28px 28px 0 0; }
+.pc-row { display: flex; align-items: center; gap: 8px; }
+.pc-name { font-size: 30px; line-height: 1.15; margin: 40px 0 6px; letter-spacing: -.01em; }
+.pc-name .namebtn { font-size: inherit; }
+.pcard .why { color: var(--muted); font-size: 16px; }
+.pc-bot { padding: 6px 22px 22px; background: var(--surface); position: relative; }
+.pc-bot::before { content: ""; position: absolute; left: 0; right: 0; top: -18px; height: 36px; background: var(--surface); border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+.pc-bot > * { position: relative; }
+.pc-bot .go { margin-top: 0; min-height: 60px; font-size: 18px; }
+.pc-foot { display: flex; gap: 10px; margin-top: 18px; }
+.pc-foot .btn { flex: 1; white-space: nowrap; font-size: 16px; padding-left: 10px; padding-right: 10px; }
+@keyframes pcIn { from { opacity: 0; transform: translateX(28px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pcard { animation: none; } }

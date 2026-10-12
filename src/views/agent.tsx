@@ -7,7 +7,7 @@ import {
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
-import { ICard, ICheck, IDoor, IFace, IFlame, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
+import { ICard, ICards, ICheck, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -192,6 +192,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [cardFor, setCardFor] = useState<Contact | null>(null)
   const [reach, setReach] = useState<{ c: Contact; kind: 'call' | 'text' } | null>(null)
   const [noteFor, setNoteFor] = useState<{ t: Touch; c: Contact } | null>(null)
+  // List or one-at-a-time cards. Each person picks; the phone remembers.
+  const [view, setViewMode] = useState<'list' | 'cards'>(() => (store.get<string>('rs-view', 'list') === 'cards' ? 'cards' : 'list'))
+  const pickView = (v: 'list' | 'cards') => { setViewMode(v); store.set('rs-view', v) }
+  const [skipped, setSkipped] = useState<string[]>([])
+  const swipeX = useRef<number | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
   const pendingCheck = useRef<boolean[] | null>(null)
 
@@ -321,6 +326,66 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           {!data.contacts.length && !readOnly && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => onGo?.('db')}>Add people</button>}
         </div>
       ) : (
+        <>
+        <div className="viewtog" role="group" aria-label="How to show your people">
+          <button aria-pressed={view === 'list'} onClick={() => pickView('list')}><IList size={18} /> List</button>
+          <button aria-pressed={view === 'cards'} onClick={() => pickView('cards')}><ICards size={18} /> Stack</button>
+        </div>
+        {view === 'cards' ? (() => {
+          // Skipped people go to the back of the stack for now.
+          const deck = [...todo.filter((c) => !skipped.includes(c.id)), ...skipped.map((id) => todo.find((c) => c.id === id)).filter(Boolean) as Contact[]]
+          const c = deck[0]
+          if (!c) return null
+          const k = sug(c)
+          const name = c.first_name || fullName(c)
+          const skipIt = () => deck.length > 1 && setSkipped([...skipped.filter((id) => id !== c.id), c.id])
+          return (
+            <div className="deck">
+              <p className="togo">{todo.length} to go</p>
+              <article key={c.id} className={`pcard ${deck.length > 1 ? 'stacked' : ''}`}
+                onTouchStart={(e) => { swipeX.current = e.touches[0].clientX }}
+                onTouchEnd={(e) => { const s = swipeX.current; swipeX.current = null; if (s !== null && e.changedTouches[0].clientX - s < -70) skipIt() }}>
+                <div className="pc-top">
+                  <div className="pc-row">
+                    <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span>
+                    <span className="note">{TIER_NAMES[c.tier === 'C' || c.tier === 'D' ? 'B' : c.tier]}</span>
+                    <span style={{ flex: 1 }} />
+                    <Signal bars={signal(c, byContact, agent.tier_days)} plain />
+                    {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
+                  </div>
+                  <h3 className="pc-name"><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button></h3>
+                  <p className="why">{whyLine(c, lastOf(c))}</p>
+                </div>
+                <div className="pc-bot">
+                  {readOnly ? (
+                    <p className={`kind k-${k}`}>{KIND_ICON[k]} {KIND_LABEL[k]} suggested</p>
+                  ) : k === 'card' ? (
+                    <button className="go k-card" onClick={() => setCardFor(c)}><ICard /> Write {name} a card</button>
+                  ) : c.phone ? (
+                    <a className={`go k-${k}`} href={`${k === 'call' ? 'tel' : 'sms'}:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: k })}>
+                      {KIND_ICON[k]} {k === 'call' ? 'Call' : 'Text'} {name}
+                    </a>
+                  ) : (
+                    <button className="go k-other" onClick={() => setLogFor(c)}><ICheck /> Mark {name} done</button>
+                  )}
+                  {!readOnly && (
+                    <div className="alts">
+                      {c.phone && k !== 'call' && <a className="alt k-call" href={`tel:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: 'call' })}><IPhone size={18} /> Call</a>}
+                      {c.phone && k !== 'text' && <a className="alt k-text" href={`sms:${telOf(c.phone)}`} onClick={() => setReach({ c, kind: 'text' })}><IText size={18} /> Text</a>}
+                      {k !== 'card' && <button className="alt k-card" onClick={() => setCardFor(c)}><ICard size={18} /> Card</button>}
+                    </div>
+                  )}
+                </div>
+              </article>
+              {!readOnly && (
+                <div className="pc-foot">
+                  {deck.length > 1 && <button className="btn lg" onClick={skipIt}>Skip for now</button>}
+                  <button className="btn primary lg" onClick={() => setLogFor(c)}><ICheck size={18} /> Already did it</button>
+                </div>
+              )}
+            </div>
+          )
+        })() : (
         <div className="people">
           {todo.map((c) => {
             const k = sug(c)
@@ -360,6 +425,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
             )
           })}
         </div>
+        )}
+        </>
       )}
 
       {doneRows.length > 0 && (
