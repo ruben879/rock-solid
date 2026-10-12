@@ -223,23 +223,40 @@ export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profil
   const [entries, setEntries] = useState<{ agent_id: string; entries: number }[] | null>(null)
   const [draws, setDraws] = useState<api.Drawing[]>([])
   const [spinning, setSpinning] = useState(false)
+  const [out, setOut] = useState<Set<string>>(new Set())
   const angle = useRef(0)
   const canvas = useRef<HTMLCanvasElement>(null)
 
   const load = useCallback(async () => {
     try {
-      const [e, d] = await Promise.all([api.loadDrawingEntries(month), api.loadDrawings(month)])
+      const [e, d, o] = await Promise.all([api.loadDrawingEntries(month), api.loadDrawings(month), api.loadDrawingOut(me.brokerage_id)])
       setEntries(e)
       setDraws(d)
+      setOut(o)
     } catch (err) {
       toast((err as Error).message)
     }
-  }, [month, toast])
+  }, [month, toast, me.brokerage_id])
   useEffect(() => { load() }, [load])
+
+  async function toggle(id: string) {
+    const on = out.has(id)
+    const next = new Set(out)
+    if (on) next.delete(id)
+    else next.add(id)
+    setOut(next)
+    try {
+      await api.setInDrawing(id, on)
+      toast(on ? `${name(id)} is back in the drawing.` : `${name(id)} is out of the drawing.`)
+    } catch (err) {
+      setOut(out)
+      toast((err as Error).message)
+    }
+  }
 
   const name = (id: string | null) => { const p = team.find((x) => x.id === id); return p ? nameOf(p) : 'Unknown' }
   const won = new Set(draws.map((d) => d.winner_id))
-  const live = (entries ?? []).filter((e) => e.entries > 0 && !won.has(e.agent_id))
+  const live = (entries ?? []).filter((e) => e.entries > 0 && !won.has(e.agent_id) && !out.has(e.agent_id))
   const total = live.reduce((s, e) => s + e.entries, 0)
 
   const paint = useCallback(() => {
@@ -320,7 +337,7 @@ export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profil
             <button className="btn gold lg" disabled={spinning || !total || n >= prizes.length} onClick={spin}>{n < prizes.length ? `Spin for $${prizes[n]}` : 'All prizes drawn'}</button>
             <button className="btn ghost" disabled={spinning || !n} onClick={reset}>Start over</button>
           </div>
-          <div className="note">{live.length} agents on the wheel · {total} entries</div>
+          <div className="note">{live.length} agents on the wheel · {total} entries{out.size ? ` · ${out.size} left out` : ''}</div>
         </div>
         <div className="stack" style={{ minWidth: 0 }}>
           <div className="card">
@@ -334,12 +351,25 @@ export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profil
           </div>
           <div className="tblwrap">
             <table>
-              <thead><tr><th>Agent</th><th>Entries</th></tr></thead>
+              <thead><tr><th>Agent</th><th>Entries</th><th style={{ textAlign: 'right' }}>In drawing</th></tr></thead>
               <tbody>
-                {(entries ?? []).sort((a, b) => b.entries - a.entries).map((e) => (
-                  <tr key={e.agent_id}><td>{name(e.agent_id)}</td><td>{won.has(e.agent_id) ? <span className="pill ok">Won</span> : e.entries}</td></tr>
-                ))}
-                {entries && entries.length === 0 && <tr><td colSpan={2} className="note">No interactions logged yet this month.</td></tr>}
+                {[
+                  ...(entries ?? []),
+                  ...team.filter((p) => out.has(p.id) && !(entries ?? []).some((e) => e.agent_id === p.id)).map((p) => ({ agent_id: p.id, entries: 0 })),
+                ].sort((a, b) => Number(out.has(a.agent_id)) - Number(out.has(b.agent_id)) || b.entries - a.entries).map((e) => {
+                  const isOut = out.has(e.agent_id)
+                  return (
+                    <tr key={e.agent_id} style={isOut ? { opacity: 0.55 } : undefined}>
+                      <td>{name(e.agent_id)}</td>
+                      <td>{won.has(e.agent_id) ? <span className="pill ok">Won</span> : e.entries}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input type="checkbox" style={{ width: 22, height: 22 }} checked={!isOut} disabled={spinning}
+                          aria-label={`${name(e.agent_id)} in the drawing`} onChange={() => toggle(e.agent_id)} />
+                      </td>
+                    </tr>
+                  )
+                })}
+                {entries && entries.length === 0 && !out.size && <tr><td colSpan={3} className="note">No interactions logged yet this month.</td></tr>}
               </tbody>
             </table>
           </div>

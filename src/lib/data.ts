@@ -314,6 +314,18 @@ export async function loadDrawingEntries(month: string) {
   return [...by].map(([agent_id, entries]) => ({ agent_id, entries }))
 }
 
+/** Who the broker has left out of the drawing. Empty until the drawing SQL (0008) is run. */
+export async function loadDrawingOut(brokerageId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.from('profiles').select('id, in_drawing').eq('brokerage_id', brokerageId).eq('in_drawing', false)
+  if (error) return new Set()
+  return new Set((data ?? []).map((r) => r.id as string))
+}
+
+export async function setInDrawing(agentId: string, on: boolean) {
+  const { error } = await supabase.from('profiles').update({ in_drawing: on }).eq('id', agentId)
+  if (error) throw new Error(/in_drawing/.test(error.message) ? 'Run the drawing SQL (0008) in Supabase first.' : error.message)
+}
+
 export interface Drawing {
   id: string
   month: string
