@@ -1242,12 +1242,17 @@ function Extras({ ctx }: { ctx: Ctx }) {
   const { data, readOnly } = ctx
   const toast = useToast()
   const [open, setOpen] = useState<(typeof EXTRAS)[number] | null>(null)
-  const val = (k: string) => data.tallies.find((x) => x.kind === k)?.count ?? 0
+  const ms = ymd(monthStart())
+  const ws = ymd(weekStart())
+  const isWeek = (k: string) => !!EXTRAS.find((x) => x.k === k)?.week
+  const val = (k: string) => (isWeek(k) ? data.tallies.find((x) => x.kind === api.weekKind(k) && x.month === ws) : data.tallies.find((x) => x.kind === k && x.month === ms))?.count ?? 0
   async function plusOne(k: string, l: string) {
+    const before = val(k)
+    const set = (n: number) => (isWeek(k) ? api.setWeekly(ctx.me, ctx.data.tallies, k, n) : api.setTally(ctx.me, k, n))
     try {
-      await api.bumpTally(ctx.me, data.tallies, k, 1)
+      await set(before + 1)
       await ctx.reload()
-      toast(`${l} added.`, { label: 'Undo', run: async () => { await api.setTally(ctx.me, k, val(k)); await ctx.reload() } })
+      toast(`${l} added.`, { label: 'Undo', run: async () => { await set(before); await ctx.reload() } })
     } catch (e) {
       toast(`That didn't save: ${(e as Error).message}`)
     }
@@ -1295,7 +1300,7 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
   return (
     <Sheet label={x.l} onClose={onClose}>
       <h3>{x.l}</h3>
-      <p className="note">{current} so far this month.</p>
+      <p className="note">{current} so far this {x.week ? 'week' : 'month'}.</p>
       {x.reach && (
         <div className="stack" style={{ marginTop: 16 }}>
           <div className="field"><span>Who got it? Each person gets credit toward their {ctx.goal}.</span>
@@ -1313,10 +1318,10 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
         </div>
       )}
       <div className="field" style={{ marginTop: 20 }}>
-        <span>{x.reach ? 'Or just set the count for this month' : 'How many this month?'}</span>
+        <span>{x.reach ? 'Or just set the count for this month' : `How many this ${x.week ? 'week' : 'month'}?`}</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <NumInput label={`${x.l} this month`} value={total} onChange={setTotal} style={{ flex: 1 }} />
-          <button className="btn primary" disabled={busy || total === current} onClick={() => run(() => api.setTally(ctx.me, x.k, total), 'Saved.')}>Save</button>
+          <button className="btn primary" disabled={busy || total === current} onClick={() => run(() => (x.week ? api.setWeekly(ctx.me, ctx.data.tallies, x.k, total) : api.setTally(ctx.me, x.k, total)), 'Saved.')}>Save</button>
         </div>
       </div>
       <button className="btn ghost block" style={{ marginTop: 10 }} onClick={onClose}>Cancel</button>
@@ -1360,10 +1365,10 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
 
       <div className="card tally" style={{ padding: '4px 16px', marginTop: 12 }}>
         {EXTRAS.map((t) => (
-          <div key={t.k} className="tl"><span>{t.l}</span><span className="v">{data.tallies.find((x) => x.kind === t.k)?.count ?? 0}</span></div>
+          <div key={t.k} className="tl"><span>{t.l}</span><span className="v">{data.tallies.find((x) => x.kind === t.k && x.month === ymd(monthStart()))?.count ?? 0}</span></div>
         ))}
       </div>
-      <p className="note" style={{ marginTop: 8 }}>Add these from the bottom of Today. Each one is also an entry in the monthly drawing.</p>
+      <p className="note" style={{ marginTop: 8 }}>This month's totals. Add these from the bottom of Today. Each one is also an entry in the monthly drawing.</p>
       {!readOnly && (
         <details className="more" style={{ marginTop: 0 }}>
           <summary>My daily and weekly goals</summary>

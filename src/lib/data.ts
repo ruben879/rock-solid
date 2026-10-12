@@ -77,7 +77,7 @@ export async function loadAgentData(agentIds: string[]): Promise<AgentData> {
       supabase.from('touches').select('id, agent_id, contact_id, kind, is_group, note, occurred_on, created_at').in('agent_id', agentIds).gte('occurred_on', since).order('occurred_on').range(a, b),
     ),
     fetchAll<Card>((a, b) => supabase.from('cards').select('*').in('agent_id', agentIds).gte('sent_on', since).order('sent_on').range(a, b)),
-    fetchAll<Tally>((a, b) => supabase.from('tallies').select('agent_id, month, kind, count').in('agent_id', agentIds).eq('month', ymd(monthStart())).range(a, b)),
+    fetchAll<Tally>((a, b) => supabase.from('tallies').select('agent_id, month, kind, count').in('agent_id', agentIds).in('month', [...new Set([ymd(monthStart()), ymd(weekStart())])]).range(a, b)),
   ])
   return { contacts, touches, cards, tallies }
 }
@@ -230,6 +230,23 @@ export async function bumpTally(me: Profile, tallies: Tally[], kind: string, del
   await setTally(me, kind, cur + delta)
 }
 
+/** Weekly extras (social posts, videos, open houses) keep a count for this week too, saved as "<kind>@w" on the week's Monday. */
+export const weekKind = (kind: string) => `${kind}@w`
+
+/** Set this week's count. The month's count moves by the same amount, so the drawing and Progress stay right. */
+export async function setWeekly(me: Profile, tallies: Tally[], kind: string, count: number) {
+  const ws = ymd(weekStart())
+  const ms = ymd(monthStart())
+  const curW = tallies.find((t) => t.kind === weekKind(kind) && t.month === ws)?.count ?? 0
+  const curM = tallies.find((t) => t.kind === kind && t.month === ms)?.count ?? 0
+  const n = Math.max(0, count)
+  const base = { agent_id: me.id, brokerage_id: me.brokerage_id }
+  await exec(me.id, [
+    { t: 'upsert', table: 'tallies', row: { ...base, month: ws, kind: weekKind(kind), count: n }, onConflict: 'agent_id,month,kind' },
+    { t: 'upsert', table: 'tallies', row: { ...base, month: ms, kind, count: Math.max(0, curM + n - curW) }, onConflict: 'agent_id,month,kind' },
+  ])
+}
+
 export async function setTally(me: Profile, kind: string, count: number) {
   const row = { agent_id: me.id, brokerage_id: me.brokerage_id, month: ymd(monthStart()), kind, count: Math.max(0, count) }
   await exec(me.id, [{ t: 'upsert', table: 'tallies', row, onConflict: 'agent_id,month,kind' }])
@@ -292,7 +309,8 @@ export async function loadDrawingEntries(month: string) {
   if (error) throw new Error(error.message)
   const by = new Map<string, number>()
   for (const r of (data ?? []) as { agent_id: string; entries: number }[]) by.set(r.agent_id, (by.get(r.agent_id) ?? 0) + Number(r.entries))
-  for (const t of extras) by.set(t.agent_id, (by.get(t.agent_id) ?? 0) + t.count)
+  // Weekly rows are a second view of the same posts already counted in the month, so they don't add entries.
+  for (const t of extras) if (!t.kind.endsWith('@w')) by.set(t.agent_id, (by.get(t.agent_id) ?? 0) + t.count)
   return [...by].map(([agent_id, entries]) => ({ agent_id, entries }))
 }
 
