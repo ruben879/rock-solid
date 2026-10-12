@@ -50,3 +50,9 @@ export const IList = ({ size }: P) => (
 export const ICards = ({ size }: P) => (
   <svg {...base(size)}><rect x="6" y="3" width="12" height="16" rx="2.5" /><path d="M4 7v12a2 2 0 0 0 2 2h9" /></svg>
 )
+export const IChevL = ({ size }: P) => (
+  <svg {...base(size)}><path d="M15 5l-7 7 7 7" /></svg>
+)
+export const IChevR = ({ size }: P) => (
+  <svg {...base(size)}><path d="M9 5l7 7-7 7" /></svg>
+)

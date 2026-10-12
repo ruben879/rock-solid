@@ -7,7 +7,7 @@ import {
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Sheet, Signal, store, useToast } from '../ui'
-import { ICard, ICards, ICheck, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
+import { ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -195,8 +195,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   // List or one-at-a-time cards. Each person picks; the phone remembers.
   const [view, setViewMode] = useState<'list' | 'cards'>(() => (store.get<string>('rs-view', 'list') === 'cards' ? 'cards' : 'list'))
   const pickView = (v: 'list' | 'cards') => { setViewMode(v); store.set('rs-view', v) }
-  const [skipped, setSkipped] = useState<string[]>([])
-  const swipeX = useRef<number | null>(null)
+  // Stack: which card is showing, plus the live drag so the card follows your finger.
+  const [pos, setPos] = useState(0)
+  const [enter, setEnter] = useState<'next' | 'prev'>('next')
+  const [drag, setDrag] = useState(0)
+  const touch = useRef<{ x: number; y: number; dir: 'h' | 'v' | null } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
   const pendingCheck = useRef<boolean[] | null>(null)
 
@@ -332,19 +335,46 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           <button aria-pressed={view === 'cards'} onClick={() => pickView('cards')}><ICards size={18} /> Stack</button>
         </div>
         {view === 'cards' ? (() => {
-          // Skipped people go to the back of the stack for now.
-          const deck = [...todo.filter((c) => !skipped.includes(c.id)), ...skipped.map((id) => todo.find((c) => c.id === id)).filter(Boolean) as Contact[]]
-          const c = deck[0]
+          // Swipe left for the next person, right to go back. When someone is done they drop out and the next slides in.
+          const n = todo.length
+          const i = Math.min(pos, n - 1)
+          const c = todo[i]
           if (!c) return null
           const k = sug(c)
           const name = c.first_name || fullName(c)
-          const skipIt = () => deck.length > 1 && setSkipped([...skipped.filter((id) => id !== c.id), c.id])
+          const go = (d: 1 | -1) => {
+            const j = i + d
+            if (j < 0 || j >= n) return
+            setEnter(d > 0 ? 'next' : 'prev')
+            setPos(j)
+          }
+          // Past the first or last card, the card only gives a little.
+          const shown = (i === 0 && drag > 0) || (i === n - 1 && drag < 0) ? drag / 4 : drag
           return (
             <div className="deck">
-              <p className="togo">{todo.length} to go</p>
-              <article key={c.id} className={`pcard ${deck.length > 1 ? 'stacked' : ''}`}
-                onTouchStart={(e) => { swipeX.current = e.touches[0].clientX }}
-                onTouchEnd={(e) => { const s = swipeX.current; swipeX.current = null; if (s !== null && e.changedTouches[0].clientX - s < -70) skipIt() }}>
+              <div className="togo">
+                <button className="iconbtn" aria-label="Previous person" disabled={i === 0} onClick={() => go(-1)}><IChevL /></button>
+                <span>{i + 1} of {n}</span>
+                <button className="iconbtn" aria-label="Next person" disabled={i === n - 1} onClick={() => go(1)}><IChevR /></button>
+              </div>
+              <article key={c.id} className={`pcard ${n - i > 1 ? 'stacked' : ''} in-${enter} ${drag ? 'dragging' : ''}`}
+                style={shown ? { transform: `translateX(${shown}px) rotate(${shown / 40}deg)` } : undefined}
+                onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dir: null } }}
+                onTouchMove={(e) => {
+                  const t = touch.current
+                  if (!t) return
+                  const dx = e.touches[0].clientX - t.x
+                  const dy = e.touches[0].clientY - t.y
+                  if (!t.dir && Math.abs(dx) + Math.abs(dy) > 8) t.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
+                  if (t.dir === 'h') setDrag(dx)
+                }}
+                onTouchEnd={() => {
+                  const d = drag
+                  touch.current = null
+                  setDrag(0)
+                  if (d < -60) go(1)
+                  else if (d > 60) go(-1)
+                }}>
                 <div className="pc-top">
                   <div className="pc-row">
                     <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span>
@@ -379,9 +409,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
               </article>
               {!readOnly && (
                 <div className="pc-foot">
-                  {deck.length > 1 && <button className="btn lg" onClick={skipIt}>Skip for now</button>}
                   <button className="btn primary lg" onClick={() => setLogFor(c)}><ICheck size={18} /> Already did it</button>
                 </div>
+              )}
+              {n > 1 && n <= 20 && (
+                <div className="dots" aria-hidden="true">{todo.map((p, j) => <span key={p.id} className={j === i ? 'on' : ''} />)}</div>
               )}
             </div>
           )
