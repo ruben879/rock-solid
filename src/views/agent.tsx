@@ -200,6 +200,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const [pos, setPos] = useState(0)
   const [enter, setEnter] = useState<'next' | 'prev'>('next')
   const [drag, setDrag] = useState(0)
+  // Show "Swipe left or right" until someone has swiped a few times.
+  const [swipes, setSwipes] = useState(() => store.get<number>('rs-swipes', 0))
   const touch = useRef<{ x: number; y: number; dir: 'h' | 'v' | null } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
   const pendingCheck = useRef<boolean[] | null>(null)
@@ -348,10 +350,13 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
             <div className="deck">
               <div className="togo">
                 <button className="iconbtn" aria-label="Previous person" disabled={i === 0} onClick={() => go(-1)}><IChevL /></button>
-                <span>{i + 1} of {n}</span>
+                <span>{i + 1} of {n}{swipes < 3 && n > 1 && <small className="swipehint">Swipe left or right</small>}</span>
                 <button className="iconbtn" aria-label="Next person" disabled={i === n - 1} onClick={() => go(1)}><IChevR /></button>
               </div>
-              <article key={c.id} className={`pcard ${n - i > 1 ? 'stacked' : ''} in-${enter} ${drag ? 'dragging' : ''}`}
+              <div className={`pile backs-${Math.min(2, n - i - 1)}`}>
+              {Math.min(2, n - i - 1) >= 2 && <div className="pback b2" aria-hidden="true" />}
+              {Math.min(2, n - i - 1) >= 1 && <div className="pback b1" aria-hidden="true" />}
+              <article key={c.id} className={`pcard in-${enter} ${drag ? 'dragging' : ''}`}
                 style={shown ? { transform: `translateX(${shown}px) rotate(${shown / 40}deg)` } : undefined}
                 onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dir: null } }}
                 onTouchMove={(e) => {
@@ -366,6 +371,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                   const d = drag
                   touch.current = null
                   setDrag(0)
+                  if (Math.abs(d) > 60) { const k = swipes + 1; setSwipes(k); store.set('rs-swipes', k) }
                   if (d < -60) go(1)
                   else if (d > 60) go(-1)
                 }}>
@@ -401,6 +407,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                   )}
                 </div>
               </article>
+              </div>
               {!readOnly && (
                 <div className="pc-foot">
                   <button className="btn primary lg" onClick={() => setLogFor(c)}><ICheck size={18} /> Already did it</button>
