@@ -378,7 +378,6 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                 <div className="pc-top">
                   <div className="pc-row">
                     <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span>
-                    <span className="note">{TIER_NAMES[c.tier === 'C' || c.tier === 'D' ? 'B' : c.tier]}</span>
                     <span style={{ flex: 1 }} />
                     <Signal bars={signal(c, personalBy, agent.tier_days)} plain />
                     {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
