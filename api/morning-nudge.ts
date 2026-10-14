@@ -87,7 +87,7 @@ export default async function handler(req: Req, res: Res) {
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          JSON.stringify({ title: "Let's get to stacking those rocks", body, url: '/', tag: `rs-nudge-${t.ymd}` }),
+          JSON.stringify({ title: "Let's get to stacking those rocks", body, url: '/', tag: `rs-nudge-${t.ymd}`, ...(n ? { badge: n } : {}) }),
         )
         sent++
       } catch (e) {

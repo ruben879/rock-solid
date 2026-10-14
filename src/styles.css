@@ -444,3 +444,7 @@ body:has(.sheet) .toast { bottom: auto; top: calc(14px + env(safe-area-inset-top
 @media (prefers-color-scheme: dark) {
   .pback { box-shadow: 0 -1px 0 color-mix(in srgb, var(--gold) 50%, transparent), 0 6px 18px rgba(0, 0, 0, .35); }
 }
+
+/* Bubble on the Today tab: people still open today. */
+.navic { position: relative; display: inline-flex; }
+.bubble { position: absolute; top: -6px; right: -12px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--urgent); color: #fff; font: 600 11.5px/19px var(--font); text-align: center; box-shadow: 0 0 0 2px var(--surface); }

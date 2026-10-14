@@ -68,6 +68,8 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {}
   try { d = e.data ? e.data.json() : {} } catch { d = { body: e.data && e.data.text() } }
+  // The morning nudge also puts today's count on the app icon.
+  if (typeof d.badge === 'number' && self.navigator.setAppBadge) self.navigator.setAppBadge(d.badge).catch(() => {})
   e.waitUntil(
     self.registration.showNotification(d.title || 'Rock Solid', {
       body: d.body || '',

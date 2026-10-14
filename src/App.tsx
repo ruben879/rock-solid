@@ -132,6 +132,13 @@ function Signed({ session }: { session: Session }) {
   const [teamView, setTeamView] = useState<TeamView>('agents')
   const [viewing, setViewing] = useState<Profile | null>(null)
   const [menu, setMenu] = useState(false)
+  // How many people are still open on Today (sent by the Today screen).
+  const [openCount, setOpenCount] = useState(() => store.get<number>('rs-open', 0))
+  useEffect(() => {
+    const on = (e: Event) => { const n = (e as CustomEvent<number>).detail; setOpenCount(n); store.set('rs-open', n) }
+    window.addEventListener('rs-open', on)
+    return () => window.removeEventListener('rs-open', on)
+  }, [])
 
   const [loadErr, setLoadErr] = useState('')
   const loadProfile = useCallback(async () => {
@@ -206,7 +213,9 @@ function Signed({ session }: { session: Session }) {
       <nav className="bottom" aria-label="Main">
         <div className="wrap">
           {tabs.map(([k, l, icon]) => (
-            <button key={k} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)}>{icon}{l}</button>
+            <button key={k} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)} aria-label={k === 'week' && openCount > 0 && !viewing ? `${l}, ${openCount} open` : undefined}>
+              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}</span>{l}
+            </button>
           ))}
         </div>
       </nav>

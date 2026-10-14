@@ -285,6 +285,16 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     )
   }
 
+  // A bubble with how many people are still open today: on the app icon (when the phone allows it) and on the Today tab.
+  const open = readOnly ? -1 : todo.length
+  useEffect(() => {
+    if (open < 0) return
+    window.dispatchEvent(new CustomEvent('rs-open', { detail: open }))
+    const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
+    if (open > 0) nav.setAppBadge?.(open).catch(() => {})
+    else nav.clearAppBadge?.().catch(() => {})
+  }, [open])
+
   const first = (agent.full_name || agent.email).split(' ')[0]
   const caughtUp = rows.length === 0 || (todo.length === 0 && b.waiting === 0)
   return (
