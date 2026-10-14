@@ -4,7 +4,7 @@ import { configured, supabase } from './supabase'
 import * as api from './lib/data'
 import { startSync } from './lib/offline'
 import type { Brokerage, Profile } from './lib/model'
-import { OfflineBar, PullToRefresh, Sheet, ToastProvider, store } from './ui'
+import { OfflineBar, PullToRefresh, Sheet, ToastProvider, store, useToast } from './ui'
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { Reminders } from './views/reminders'
@@ -63,6 +63,45 @@ function Shell({ children, right, wide }: { children: ReactNode; right?: ReactNo
   )
 }
 
+/** Set or change a password, so signing in doesn't need an emailed code. */
+function PasswordSetup({ email, bare, onDone }: { email: string; bare?: boolean; onDone?: () => void }) {
+  const toast = useToast()
+  const [pw, setPw] = useState('')
+  const [busy, setBusy] = useState(false)
+  const has = store.get<boolean>('rs-has-pw', false)
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    if (pw.length < 8) return toast('Use at least 8 characters.')
+    setBusy(true)
+    const { error } = await supabase.auth.updateUser({ password: pw })
+    setBusy(false)
+    if (error) return toast(error.message)
+    store.set('rs-has-pw', true)
+    setPw('')
+    toast('Password saved. Next time, sign in with it instead of a code.')
+    onDone?.()
+  }
+  const form = (
+    <form className="stack" onSubmit={save} style={{ gap: 8 }}>
+      {/* The email lets the phone's password manager save the login together. */}
+      <input type="email" autoComplete="username" value={email} readOnly hidden />
+      <input type="password" aria-label="New password" placeholder={has ? 'New password' : 'Pick a password (8+ characters)'} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn primary" style={{ flex: 1 }} disabled={busy || !pw}>{busy ? 'Saving…' : 'Save password'}</button>
+        {bare && <button type="button" className="btn ghost" style={{ flex: 1 }} onClick={onDone}>Not now</button>}
+      </div>
+    </form>
+  )
+  if (bare) return form
+  return (
+    <div className="card stack" style={{ background: 'var(--bg)', boxShadow: 'none', marginTop: 14 }}>
+      <h3>{has ? 'Password' : 'Sign in without a code'}</h3>
+      <p className="note">{has ? 'You can sign in with your password. Change it here anytime.' : 'Set a password and your phone or computer can fill it in for you next time.'}</p>
+      {form}
+    </div>
+  )
+}
+
 function Notice({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="card stack" style={{ marginTop: 24 }}>
@@ -77,8 +116,10 @@ function SignIn() {
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'verifying' | 'error'>('idle')
   const [error, setError] = useState('')
   const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
   async function submit(e: FormEvent) {
     e.preventDefault()
+    if (password) return signInPw()
     setStatus('sending')
     const { error } = await supabase.auth.signInWithOtp({ email: email.trim().toLowerCase(), options: { emailRedirectTo: window.location.origin } })
     setError('')
@@ -87,6 +128,15 @@ function SignIn() {
       setStatus('error')
     } else setStatus('sent')
   }
+  async function signInPw() {
+    setStatus('sending')
+    setError('')
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
+    if (error) {
+      setError(/invalid/i.test(error.message) ? "That password didn't match. Try again, or leave it blank and we'll email you a code." : error.message)
+      setStatus('error')
+    } else store.set('rs-has-pw', true)
+  }
   async function verify(e: FormEvent) {
     e.preventDefault()
     setStatus('verifying')
@@ -94,6 +144,9 @@ function SignIn() {
     if (error) {
       setError('That code didn’t work. Check the newest email and try again, or send a new one.')
       setStatus('sent')
+    } else if (!store.get('rs-has-pw', false)) {
+      store.set('rs-offer-pw', true)
+      window.dispatchEvent(new Event('rs-offer-pw'))
     }
   }
   if (status === 'sent' || status === 'verifying')
@@ -110,9 +163,10 @@ function SignIn() {
   return (
     <form className="signin stack" onSubmit={submit}>
       <h2 style={{ margin: 0 }}>Welcome to Rock Solid</h2>
-      <p className="muted">Enter your work email and we'll send you a code. No password needed.</p>
-      <input type="email" aria-label="Email" placeholder="you@clearrockrealty.com" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-      <button className="btn primary lg block" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send my code'}</button>
+      <p className="muted">Enter your work email. If you've set a password, use it here. If not, leave it blank and we'll email you a code.</p>
+      <input type="email" aria-label="Email" placeholder="you@clearrockrealty.com" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <input type="password" aria-label="Password" placeholder="Password (if you have one)" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <button className="btn primary lg block" disabled={status === 'sending'}>{status === 'sending' ? (password ? 'Signing in…' : 'Sending…') : password ? 'Sign in' : 'Email me a code'}</button>
       {status === 'error' && <p className="error">{error}</p>}
     </form>
   )
@@ -132,6 +186,12 @@ function Signed({ session }: { session: Session }) {
   const [teamView, setTeamView] = useState<TeamView>('agents')
   const [viewing, setViewing] = useState<Profile | null>(null)
   const [menu, setMenu] = useState(false)
+  const [offerPw, setOfferPw] = useState(() => store.get<boolean>('rs-offer-pw', false))
+  useEffect(() => {
+    const on = () => setOfferPw(true)
+    window.addEventListener('rs-offer-pw', on)
+    return () => window.removeEventListener('rs-offer-pw', on)
+  }, [])
   // How many people are still open on Today (sent by the Today screen).
   const [openCount, setOpenCount] = useState(() => store.get<number>('rs-open', 0))
   useEffect(() => {
@@ -219,10 +279,18 @@ function Signed({ session }: { session: Session }) {
           ))}
         </div>
       </nav>
+      {offerPw && !menu && (
+        <Sheet label="Skip the code next time" onClose={() => { setOfferPw(false); store.set('rs-offer-pw', false) }}>
+          <h3>Skip the code next time?</h3>
+          <p className="note">Set a password and your phone or computer can fill it in for you (Face ID on iPhone). You can always still sign in with a code.</p>
+          <PasswordSetup email={me.email} bare onDone={() => { setOfferPw(false); store.set('rs-offer-pw', false) }} />
+        </Sheet>
+      )}
       {menu && (
         <Sheet label="Account" onClose={() => setMenu(false)}>
           <h3>{me.full_name || me.email}</h3>
           <p className="note">{me.email} · {me.role === 'broker' ? 'Broker' : me.role === 'coach' ? 'Coach' : 'Agent'} · {brokerage?.name ?? 'Clear Rock Realty'}</p>
+          <PasswordSetup email={me.email} />
           <Reminders me={me} />
           <div className="menu" style={{ marginTop: 12 }}>
             <button onClick={signOut}>Sign out</button>
