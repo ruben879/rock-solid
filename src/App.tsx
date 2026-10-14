@@ -188,6 +188,11 @@ function Signed({ session }: { session: Session }) {
   const [menu, setMenu] = useState(false)
   const [offerPw, setOfferPw] = useState(() => store.get<boolean>('rs-offer-pw', false))
   useEffect(() => {
+    const acct = () => setMenu(true)
+    window.addEventListener('rs-open-account', acct)
+    return () => window.removeEventListener('rs-open-account', acct)
+  }, [])
+  useEffect(() => {
     const on = () => setOfferPw(true)
     window.addEventListener('rs-offer-pw', on)
     return () => window.removeEventListener('rs-offer-pw', on)
@@ -293,6 +298,7 @@ function Signed({ session }: { session: Session }) {
           <PasswordSetup email={me.email} />
           <Reminders me={me} />
           <div className="menu" style={{ marginTop: 12 }}>
+            <button onClick={() => { setMenu(false); go('week'); setTimeout(() => window.dispatchEvent(new Event('rs-start-show')), 150) }}>Getting started guide</button>
             <button onClick={signOut}>Sign out</button>
             <button onClick={() => setMenu(false)}>Close</button>
           </div>
