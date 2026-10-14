@@ -1126,7 +1126,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   }
 
   const first = monthStart()
-  const pad = (first.getDay() + 6) % 7
+  const pad = first.getDay() // Sunday first
   const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   return (
     <section>
@@ -1145,7 +1145,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
       <div className="grp">{today().toLocaleDateString('en-US', { month: 'long' })}: {monthDays} of {today().getDate()} days</div>
       <div className="card">
         <div className="cal">
-          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((x, i) => <div key={i} className="h">{x}</div>)}
+          {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x, i) => <div key={i} className="h">{x}</div>)}
           {Array.from({ length: pad }, (_, i) => <div key={`p${i}`} />)}
           {Array.from({ length: dim }, (_, i) => {
             const d = new Date(first.getFullYear(), first.getMonth(), i + 1, 12)
