@@ -34,6 +34,11 @@ export function GettingStarted({ contacts, agent, onGo }: { contacts: Contact[];
   const untagged = contacts.filter((c) => c.tier === 'U').length
   const steps: Step[] = [
     {
+      key: 'goals', title: 'Set your goals first', done: !!agent.plan && Object.keys(agent.plan).length > 0,
+      body: <p>On <b>Progress</b>, fill in your plan for the year (take-home goal, average price). It tells you how many people you need in your database, and with <b>Set my goals from my plan</b> checked, how many to reach each day.</p>,
+      action: { label: 'Go to Progress', run: () => go('activity') },
+    },
+    {
       key: 'people', title: 'Bring in your people', done: contacts.length > 0,
       body: (
         <>
@@ -80,11 +85,6 @@ export function GettingStarted({ contacts, agent, onGo }: { contacts: Contact[];
           action: isPhone() ? { label: 'Turn on reminders', run: account } : undefined,
         } as Step]
       : []),
-    {
-      key: 'goals', title: 'Set your goals', done: !!agent.plan && Object.keys(agent.plan).length > 0,
-      body: <p>On <b>Progress</b>, fill in your plan for the year (take-home goal, average price) and check <b>Set my goals from my plan</b>. Or just type how many touches a day you want.</p>,
-      action: { label: 'Go to Progress', run: () => go('activity') },
-    },
   ]
   const doneCount = steps.filter((s) => s.done).length
   const allDone = doneCount === steps.length
