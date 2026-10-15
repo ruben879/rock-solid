@@ -10,7 +10,7 @@ import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { Reminders } from './views/reminders'
 import { ICard, IChart, IHeart, IHome, IPeople, ITeam } from './icons'
 import { Together } from './views/together'
-import { myInvites } from './lib/together'
+import { myInvites, unread } from './lib/together'
 
 // A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
 {
@@ -224,17 +224,32 @@ function Signed({ session }: { session: Session }) {
     return () => window.removeEventListener('rs-open', on)
   }, [])
 
-  // A dot on Together when someone has invited you to a challenge.
+  // Bubble on Together: new posts from others since you last looked, plus waiting invites.
   const [invites, setInvites] = useState(0)
+  const [fresh, setFresh] = useState(0)
   useEffect(() => {
-    const check = () => { if (navigator.onLine) myInvites().then((v) => setInvites(v.length), () => {}) }
+    const uid = session.user.id
+    const check = () => {
+      if (!navigator.onLine) return
+      myInvites().then((v) => setInvites(v.length), () => {})
+      unread(uid).then((m) => setFresh(Object.values(m).reduce((a, b) => a + b, 0)), () => {})
+    }
     check()
     const on = (e: Event) => setInvites((e as CustomEvent<number>).detail)
     const vis = () => document.visibilityState === 'visible' && check()
     window.addEventListener('rs-invites', on)
+    window.addEventListener('rs-seen', check)
     document.addEventListener('visibilitychange', vis)
-    return () => { window.removeEventListener('rs-invites', on); document.removeEventListener('visibilitychange', vis) }
-  }, [])
+    // Live: recount when anyone posts in a challenge you're in.
+    const ch = supabase.channel('together-badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'challenge_posts' }, () => check())
+      .subscribe()
+    const t = setInterval(check, 120000)
+    return () => {
+      window.removeEventListener('rs-invites', on); window.removeEventListener('rs-seen', check)
+      document.removeEventListener('visibilitychange', vis); supabase.removeChannel(ch); clearInterval(t)
+    }
+  }, [session.user.id])
 
   const [loadErr, setLoadErr] = useState('')
   const loadProfile = useCallback(async () => {
@@ -318,7 +333,7 @@ function Signed({ session }: { session: Session }) {
         <div className="wrap">
           {tabs.map(([k, l, icon]) => (
             <button key={k} className={k === 'week' ? 'center' : undefined} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)} aria-label={k === 'week' && openCount > 0 && !viewing ? `${l}, ${openCount} open` : undefined}>
-              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}{k === 'together' && invites > 0 && <span className="dot" aria-label={`${invites} invite${invites === 1 ? '' : 's'}`} />}</span>{l}
+              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}{k === 'together' && fresh > 0 && <span className="bubble">{fresh > 99 ? '99+' : fresh}</span>}{k === 'together' && !fresh && invites > 0 && <span className="dot" aria-label={`${invites} invite${invites === 1 ? '' : 's'}`} />}</span>{l}
             </button>
           ))}
         </div>

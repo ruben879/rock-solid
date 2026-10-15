@@ -82,6 +82,34 @@ export async function loadRoom(c: Challenge) {
   return { people, progress, posts, kudos }
 }
 
+// ---------- What's new: posts from others since you last opened each challenge (kept on this phone) ----------
+const seenKey = (cid: string) => `rs-seen-${cid}`
+function lastSeen(cid: string) {
+  try {
+    const v = localStorage.getItem(seenKey(cid))
+    if (v) return JSON.parse(v) as string
+    const now = new Date().toISOString() // First time on this phone: start fresh, not with every old post.
+    localStorage.setItem(seenKey(cid), JSON.stringify(now))
+    return now
+  } catch { return new Date().toISOString() }
+}
+export function markSeen(cid: string) {
+  try { localStorage.setItem(seenKey(cid), JSON.stringify(new Date().toISOString())) } catch { /* storage off */ }
+  window.dispatchEvent(new Event('rs-seen'))
+}
+/** New posts per challenge from other people since you last looked. */
+export async function unread(userId: string): Promise<Record<string, number>> {
+  const ids = await supabase.from('challenge_members').select('challenge_id').eq('user_id', userId)
+  if (ids.error || !ids.data.length) return {}
+  const seen = Object.fromEntries((ids.data as { challenge_id: string }[]).map((x) => [x.challenge_id, lastSeen(x.challenge_id)]))
+  const oldest = Object.values(seen).sort()[0]
+  const r = await supabase.from('challenge_posts').select('challenge_id, created_at').in('challenge_id', Object.keys(seen)).neq('user_id', userId).gt('created_at', oldest).limit(500)
+  if (r.error) return {}
+  const out: Record<string, number> = {}
+  for (const p of r.data as { challenge_id: string; created_at: string }[]) if (p.created_at > seen[p.challenge_id]) out[p.challenge_id] = (out[p.challenge_id] ?? 0) + 1
+  return out
+}
+
 // ---------- In-app invites (people in your brokerage) ----------
 export interface Invite { challenge_id: string; name: string; code: string; starts_on: string; ends_on: string; invited_by: string; members: number }
 export async function myInvites(): Promise<Invite[]> {

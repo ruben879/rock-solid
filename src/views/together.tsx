@@ -34,6 +34,7 @@ export function Together({ me }: { me: Profile }) {
   const [starting, setStarting] = useState(false)
   const [joinCode, setJoinCode] = useState<string | null>(() => store.get<string | null>('rs-join', null))
   const [invites, setInvites] = useState<tg.Invite[]>([])
+  const [news, setNews] = useState<Record<string, number>>({})
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +45,7 @@ export function Together({ me }: { me: Profile }) {
       }))
       setList(rows)
       setErr('')
+      setNews(await tg.unread(me.id))
       const inv = await tg.myInvites()
       setInvites(inv)
       window.dispatchEvent(new CustomEvent('rs-invites', { detail: inv.length }))
@@ -83,7 +85,7 @@ export function Together({ me }: { me: Profile }) {
               <p>No challenges yet. Start one and invite a few people, or join one with a link someone sent you.</p>
             </div>
           )}
-          {active.map((x) => <ChallengeCard key={x.c.id} me={me} {...x} onOpen={() => setOpenId(x.c.id)} />)}
+          {active.map((x) => <ChallengeCard key={x.c.id} me={me} {...x} fresh={news[x.c.id] ?? 0} onOpen={() => setOpenId(x.c.id)} />)}
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button className="btn primary lg" style={{ flex: 1, whiteSpace: "nowrap" }} onClick={() => setStarting(true)}><IPlus size={18} /> New challenge</button>
             <button className="btn lg" style={{ flex: 1, whiteSpace: "nowrap" }} onClick={() => setJoinCode('')}>Join with a link</button>
@@ -105,7 +107,7 @@ export function Together({ me }: { me: Profile }) {
   )
 }
 
-function ChallengeCard({ me, c, members, progress, onOpen }: { me: Profile; c: Challenge; members: number; progress: DayCount[]; onOpen: () => void }) {
+function ChallengeCard({ me, c, members, progress, fresh = 0, onOpen }: { me: Profile; c: Challenge; members: number; progress: DayCount[]; fresh?: number; onOpen: () => void }) {
   const mine = tg.current(c, progress, me.id)
   const s = tg.streak(c, progress, me.id)
   const done = c.ends_on < ymd(today())
@@ -115,6 +117,7 @@ function ChallengeCard({ me, c, members, progress, onOpen }: { me: Profile; c: C
         <span className="tpill">{c.kind === 'cards' ? `🔥 ${s}` : `${mine} of ${c.target}`}</span>
       </div>
       <p>{c.kind === 'cards' ? 'Card a Day' : `${c.target} ${tg.noun(c)} ${tg.per(c.period)}`} · {done ? `ended ${fmt(c.ends_on)}` : `ends ${fmt(c.ends_on)}`} · {members} in</p>
+      {fresh > 0 && <span className="newtag">{fresh} new</span>}
     </button>
   )
 }
@@ -127,7 +130,7 @@ function Room({ me, c, onBack }: { me: Profile; c: Challenge; onBack: () => void
   const [inviting, setInviting] = useState(false)
   const [menu, setMenu] = useState(false)
   const load = useCallback(async () => {
-    try { setRoom(await tg.loadRoom(c)) } catch (e) { toast((e as Error).message) }
+    try { setRoom(await tg.loadRoom(c)); tg.markSeen(c.id) } catch (e) { toast((e as Error).message) }
   }, [c, toast])
   useEffect(() => {
     load()
