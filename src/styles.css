@@ -466,3 +466,42 @@ body:has(.sheet) .toast { bottom: auto; top: calc(14px + env(safe-area-inset-top
 
 .okcheck { display: flex; align-items: center; gap: 8px; background: var(--text-soft); color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 15px; }
 .okcheck b { font-weight: 600; }
+
+/* ---------- Bottom bar: Today in the middle, bigger and gold ---------- */
+nav.bottom button.center { position: relative; color: var(--ink); font-weight: 600; }
+nav.bottom button.center .navic { width: 62px; height: 62px; margin-top: -30px; border-radius: 50%; background: var(--gold); color: #1a2238; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(176, 124, 28, .35), 0 0 0 5px var(--surface); }
+nav.bottom button.center[aria-current="page"] .navic { box-shadow: 0 6px 16px rgba(176, 124, 28, .45), 0 0 0 5px var(--surface), 0 0 0 7px color-mix(in srgb, var(--gold) 50%, transparent); }
+nav.bottom button.center[aria-current="page"] { color: var(--ink); }
+nav.bottom button.center .bubble { top: -2px; right: -4px; }
+.teambtn { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--surface); color: var(--navy); border-radius: 999px; padding: 7px 12px; font: 600 14px var(--font); cursor: pointer; }
+.teambtn.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+@media (prefers-color-scheme: dark) { .teambtn.on { color: #0f1526; } }
+
+/* ---------- Together ---------- */
+.tcard { width: 100%; text-align: left; background: var(--surface); border: 0; border-radius: var(--r); padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(20, 32, 58, .06); font: inherit; color: inherit; cursor: pointer; display: block; }
+.tcard .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tcard b { font-size: 18px; font-weight: 600; }
+.tcard p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.tpill { flex: none; font-size: 13px; font-weight: 600; padding: 5px 10px; border-radius: 999px; background: var(--gold-soft); color: var(--card); }
+.roomhdr { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.crew { display: flex; gap: 14px; overflow-x: auto; padding: 16px 2px 10px; scrollbar-width: none; }
+.mem { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 60px; }
+.memav { position: relative; }
+.streakb { position: absolute; right: -10px; bottom: -6px; background: var(--surface); border-radius: 999px; padding: 1px 6px; font: 600 11px var(--font); color: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+.memn { font-size: 12.5px; color: var(--muted); max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memp { font-size: 12px; font-weight: 600; color: var(--muted); }
+.memp.hit { color: var(--good); }
+.tav { display: inline-grid; place-items: center; flex: none; border-radius: 50%; color: #fff; font-weight: 600; }
+.composer { display: flex; gap: 8px; margin: 6px 0 4px; }
+.composer input { flex: 1; border-radius: 999px; padding-left: 16px; }
+.feed { display: flex; flex-direction: column; }
+.post { display: flex; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.post .ph { font-size: 15px; display: flex; align-items: baseline; gap: 2px; }
+.post .ph b { font-weight: 600; }
+.pdel { margin-left: auto; font-size: 13px; color: var(--muted); }
+.pbody { font-size: 15.5px; margin-top: 2px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.post .auto { background: var(--gold-soft); color: var(--gold-ink); border-radius: 14px; padding: 9px 12px; margin-top: 6px; font-size: 14.5px; }
+.kudo { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; border: 1.5px solid var(--line); border-radius: 999px; padding: 4px 12px; font: 500 13px var(--font); color: var(--ink); background: var(--surface); cursor: pointer; }
+.kudo.on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-ink); }
+.kudo:disabled { cursor: default; opacity: .7; }
+.tlink { margin-top: 14px; border: 1.5px dashed var(--gold); background: var(--gold-soft); color: var(--gold-ink); border-radius: 14px; padding: 12px 14px; font-weight: 500; overflow-wrap: anywhere; }

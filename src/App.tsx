@@ -8,7 +8,17 @@ import { OfflineBar, PullToRefresh, Sheet, ToastProvider, store, useToast } from
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { Reminders } from './views/reminders'
-import { ICard, IChart, IHome, IPeople, ITeam } from './icons'
+import { ICard, IChart, IHeart, IHome, IPeople, ITeam } from './icons'
+import { Together } from './views/together'
+
+// A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
+{
+  const m = typeof location !== 'undefined' ? location.pathname.match(/^\/j\/([A-Za-z0-9]{4,12})\/?$/) : null
+  if (m) {
+    store.set('rs-join', m[1].toUpperCase())
+    history.replaceState(null, '', '/')
+  }
+}
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -172,17 +182,25 @@ function SignIn() {
   )
 }
 
-type Tab = AgentTab | 'team'
+type Tab = AgentTab | 'team' | 'together'
 type TeamView = 'agents' | 'invite' | 'draw'
 
 function Signed({ session }: { session: Session }) {
   const [me, setMe] = useState<Profile | null | undefined>(undefined)
   const [brokerage, setBrokerage] = useState<Brokerage | null>(null)
   const [team, setTeam] = useState<Profile[]>([])
-  const [tab, setTab] = useState<Tab>(() => {
-    const t = store.get<string>('rs-tab', 'week')
-    return (['week', 'cards', 'activity', 'db', 'team'].includes(t) ? t : 'week') as Tab
-  })
+  // Always open on Today (or Together when someone tapped a challenge link).
+  const [tab, setTab] = useState<Tab>(() => (store.get<string | null>('rs-join', null) ? 'together' : 'week'))
+  // Coming back after a while also lands on Today.
+  useEffect(() => {
+    let hiddenAt = 0
+    const on = () => {
+      if (document.visibilityState === 'hidden') hiddenAt = Date.now()
+      else if (hiddenAt && Date.now() - hiddenAt > 10 * 60_000) { setTab('week'); window.scrollTo({ top: 0 }) }
+    }
+    document.addEventListener('visibilitychange', on)
+    return () => document.removeEventListener('visibilitychange', on)
+  }, [])
   const [teamView, setTeamView] = useState<TeamView>('agents')
   const [viewing, setViewing] = useState<Profile | null>(null)
   const [menu, setMenu] = useState(false)
@@ -234,29 +252,37 @@ function Signed({ session }: { session: Session }) {
     )
 
   const leads = me.role !== 'agent'
+  // Today sits in the middle, bigger and gold. Team (for the broker and coaches) is the button at the top.
   const tabs: [Tab, string, ReactNode][] = [
-    ['week', 'Today', <IHome key="h" />],
     ['cards', 'Cards', <ICard key="c" />],
     ['db', 'People', <IPeople key="p" />],
+    ['week', 'Today', <IHome key="h" size={28} />],
+    ['together', 'Together', <IHeart key="g" />],
     ['activity', 'Progress', <IChart key="a" />],
-    ...(leads && !viewing ? [['team', me.role === 'broker' ? 'Team' : 'My agents', <ITeam key="t" />] as [Tab, string, ReactNode]] : []),
   ]
-  const current = tabs.some(([k]) => k === tab) ? tab : 'week'
-  const go = (t: Tab) => { setTab(t); store.set('rs-tab', t); window.scrollTo({ top: 0 }) }
+  const allowed = [...tabs.map(([k]) => k), ...(leads && !viewing ? (['team'] as Tab[]) : [])]
+  const current = allowed.includes(tab) && !(viewing && tab === 'together') ? tab : 'week'
+  const go = (t: Tab) => { setTab(t); window.scrollTo({ top: 0 }) }
   const subject = viewing ?? me
   const initial = (me.full_name || me.email).trim()[0]?.toUpperCase() ?? '?'
 
   return (
     <>
       <OfflineBar />
-      <Shell wide={current === 'team'} right={<button className="me" aria-label="Account" onClick={() => setMenu(true)}>{initial}</button>}>
+      <Shell wide={current === 'team'} right={
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {leads && !viewing && <button className={`teambtn ${current === 'team' ? 'on' : ''}`} onClick={() => go('team')}><ITeam size={18} /> {me.role === 'broker' ? 'Team' : 'My agents'}</button>}
+          <button className="me" aria-label="Account" onClick={() => setMenu(true)}>{initial}</button>
+        </span>
+      }>
         {viewing && (
           <div className="viewing">
             <span>Looking at <b>{viewing.full_name || viewing.email}</b></span>
             <button className="btn" onClick={() => { setViewing(null); go('team') }}>Done</button>
           </div>
         )}
-        {current !== 'team' && (
+        {current === 'together' && <Together me={me} />}
+        {current !== 'team' && current !== 'together' && (
           <AgentWorkspace key={subject.id} me={me} agent={subject} brokerage={brokerage} tab={current as AgentTab} readOnly={!!viewing} onProfileChange={loadProfile} onGo={(t) => go(t)} />
         )}
         {current === 'team' && (
@@ -278,7 +304,7 @@ function Signed({ session }: { session: Session }) {
       <nav className="bottom" aria-label="Main">
         <div className="wrap">
           {tabs.map(([k, l, icon]) => (
-            <button key={k} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)} aria-label={k === 'week' && openCount > 0 && !viewing ? `${l}, ${openCount} open` : undefined}>
+            <button key={k} className={k === 'week' ? 'center' : undefined} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)} aria-label={k === 'week' && openCount > 0 && !viewing ? `${l}, ${openCount} open` : undefined}>
               <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}</span>{l}
             </button>
           ))}
