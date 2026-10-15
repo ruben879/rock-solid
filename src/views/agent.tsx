@@ -1283,13 +1283,14 @@ function Extras({ ctx }: { ctx: Ctx }) {
   const ws = ymd(weekStart())
   const isWeek = (k: string) => !!EXTRAS.find((x) => x.k === k)?.week
   const val = (k: string) => (isWeek(k) ? data.tallies.find((x) => x.kind === api.weekKind(k) && x.month === ws) : data.tallies.find((x) => x.kind === k && x.month === ms))?.count ?? 0
-  async function plusOne(k: string, l: string) {
+  async function bump(k: string, l: string, d: 1 | -1) {
     const before = val(k)
+    if (before + d < 0) return
     const set = (n: number) => (isWeek(k) ? api.setWeekly(ctx.me, ctx.data.tallies, k, n) : api.setTally(ctx.me, k, n))
     try {
-      await set(before + 1)
+      await set(before + d)
       await ctx.reload()
-      toast(`${l} added.`, { label: 'Undo', run: async () => { await set(before); await ctx.reload() } })
+      toast(d > 0 ? `${l} added.` : `Took one ${l.toLowerCase()} off.`, { label: 'Undo', run: async () => { await set(before); await ctx.reload() } })
     } catch (e) {
       toast(`That didn't save: ${(e as Error).message}`)
     }
@@ -1308,8 +1309,9 @@ function Extras({ ctx }: { ctx: Ctx }) {
             return (
               <div key={x.k} className="xrow">
                 <button className="xname" disabled={readOnly} onClick={() => setOpen(x)} aria-label={`${x.l}: ${n}. Tap to change.`}>{x.l}</button>
+                {!readOnly && n > 0 && <button className="xplus xminus" aria-label={`Take one ${x.l} off`} onClick={() => (x.reach ? setOpen(x) : bump(x.k, x.l, -1))}>−</button>}
                 <b className={n ? 'did' : ''}>{n}</b>
-                {!readOnly && <button className="xplus" aria-label={`Add ${x.l}`} onClick={() => (x.reach ? setOpen(x) : plusOne(x.k, x.l))}><IPlus size={18} /></button>}
+                {!readOnly && <button className="xplus" aria-label={`Add ${x.l}`} onClick={() => (x.reach ? setOpen(x) : bump(x.k, x.l, 1))}><IPlus size={18} /></button>}
               </div>
             )
           })}
@@ -1330,6 +1332,12 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
   const who = picked.filter((c) => reachable(c, x.reach))
   const skipped = picked.length - who.length
   const all = [...TIERS, 'U' as Tier].every((t) => tiers.includes(t))
+  // This month's sends of this kind, so a mistaken one can be undone.
+  const ms = ymd(monthStart())
+  const sends = x.reach ? [...ctx.data.touches.filter((t) => t.is_group && t.kind === x.reach && t.occurred_on >= ms)
+    .reduce((m, t) => { const k = `${t.occurred_on}|${t.note ?? ''}`; m.set(k, { day: t.occurred_on, note: t.note, n: (m.get(k)?.n ?? 0) + 1 }); return m }, new Map<string, { day: string; note: string | null; n: number }>())
+    .values()].sort((a, b) => b.day.localeCompare(a.day)) : []
+  const [undoing, setUndoing] = useState<{ day: string; note: string | null; n: number } | null>(null)
   async function run(fn: () => Promise<void>, msg: string) {
     setBusy(true)
     try { await fn(); await ctx.reload(); toast(msg); onClose() } catch (e) { toast(`That didn't save: ${(e as Error).message}`); setBusy(false) }
@@ -1352,6 +1360,26 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
             {who.length ? `Log it for ${who.length} people` : picked.length ? `No one picked has ${x.reach === 'email' ? 'an email' : 'an address'}` : 'Pick who got it'}
           </button>
           {skipped > 0 && <p className="note" style={{ margin: 0 }}>Only people with {x.reach === 'email' ? 'an email' : 'a mailing address'} get credit. {skipped} without one {skipped === 1 ? 'is' : 'are'} skipped.</p>}
+        </div>
+      )}
+      {sends.length > 0 && (
+        <div className="field" style={{ marginTop: 20 }}>
+          <span>Sent this month. Logged one by mistake? Undo it.</span>
+          {sends.map((s) => (
+            <div key={`${s.day}${s.note}`} className="sendrow">
+              <span style={{ flex: 1 }}><b>{fmt(s.day)}</b> <span className="note">· {s.n} {s.n === 1 ? 'person' : 'people'}</span></span>
+              <button className="btn" disabled={busy} onClick={() => setUndoing(s)}>Undo</button>
+            </div>
+          ))}
+          {undoing && (
+            <div className="warn" style={{ marginTop: 8 }}>
+              Undo the {fmt(undoing.day)} {x.l.toLowerCase()}? {undoing.n} {undoing.n === 1 ? 'person loses' : 'people lose'} that credit, and this month's count goes down by one.
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button className="btn" disabled={busy} onClick={() => run(async () => { await api.undoGroupSend(ctx.me, x.reach as TouchKind, undoing.day, undoing.note); await api.setTally(ctx.me, x.k, Math.max(0, current - 1)) }, `${x.l} from ${fmt(undoing.day)} undone.`)}>Yes, undo it</button>
+                <button className="btn ghost" onClick={() => setUndoing(null)}>Keep it</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div className="field" style={{ marginTop: 20 }}>

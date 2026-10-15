@@ -171,6 +171,14 @@ export async function groupTouch(me: Profile, contacts: Contact[], kind: TouchKi
   await exec(me.id, ops)
 }
 
+/** Undo a whole group send (an email newsletter or mailout logged for many people on one day). */
+export async function undoGroupSend(me: Profile, kind: TouchKind, day: string, note: string | null) {
+  needOnline()
+  let q = supabase.from('touches').delete().eq('agent_id', me.id).eq('is_group', true).eq('kind', kind).eq('occurred_on', day)
+  q = note === null ? q.is('note', null) : q.eq('note', note)
+  check(await q)
+}
+
 export async function skipToNextWeek(c: Contact) {
   await exec(c.agent_id, [{ t: 'update', table: 'contacts', id: c.id, fields: { skip_until: ymd(addDays(weekStart(), 7)) } }])
 }
