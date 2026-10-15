@@ -85,6 +85,13 @@ function useBatch(ctx: Ctx) {
     let ids = saved.ids.filter((id) => byId.has(id))
     let round = saved.round
     let cleared = false
+    // If the daily goal went down, trim today's list to fit (people already reached stay).
+    if (ids.length > size && round <= 1) {
+      const reached = ids.filter((id) => touchedThisWeek.has(id))
+      const open = ids.filter((id) => !touchedThisWeek.has(id))
+      const keep = new Set([...reached, ...open].slice(0, Math.max(size, reached.length)))
+      ids = ids.filter((id) => keep.has(id))
+    }
     const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(ex), want, agent.id)
     if (ids.length === 0) {
       // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
@@ -309,7 +316,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   // Dotted rocks: the extra daily touches your plan needs once your database reaches its size.
   const plan = planNumbers(agent.plan)
   const ghosts = !readOnly && agent.plan?.auto_goals !== 0 && data.contacts.length > 0 && data.contacts.length < plan.dbNeeded && b.round <= 1
-    ? Math.max(0, Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent)) - rows.length) : 0
+    ? Math.max(0, Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent)) - Math.max(b.size, rows.length)) : 0
 
   const first = (agent.full_name || agent.email).split(' ')[0]
   const caughtUp = rows.length === 0 || (todo.length === 0 && b.waiting === 0)
