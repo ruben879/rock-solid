@@ -10,6 +10,7 @@ import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { Reminders } from './views/reminders'
 import { ICard, IChart, IHeart, IHome, IPeople, ITeam } from './icons'
 import { Together } from './views/together'
+import { myInvites } from './lib/together'
 
 // A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
 {
@@ -223,6 +224,18 @@ function Signed({ session }: { session: Session }) {
     return () => window.removeEventListener('rs-open', on)
   }, [])
 
+  // A dot on Together when someone has invited you to a challenge.
+  const [invites, setInvites] = useState(0)
+  useEffect(() => {
+    const check = () => { if (navigator.onLine) myInvites().then((v) => setInvites(v.length), () => {}) }
+    check()
+    const on = (e: Event) => setInvites((e as CustomEvent<number>).detail)
+    const vis = () => document.visibilityState === 'visible' && check()
+    window.addEventListener('rs-invites', on)
+    document.addEventListener('visibilitychange', vis)
+    return () => { window.removeEventListener('rs-invites', on); document.removeEventListener('visibilitychange', vis) }
+  }, [])
+
   const [loadErr, setLoadErr] = useState('')
   const loadProfile = useCallback(async () => {
     try {
@@ -305,7 +318,7 @@ function Signed({ session }: { session: Session }) {
         <div className="wrap">
           {tabs.map(([k, l, icon]) => (
             <button key={k} className={k === 'week' ? 'center' : undefined} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)} aria-label={k === 'week' && openCount > 0 && !viewing ? `${l}, ${openCount} open` : undefined}>
-              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}</span>{l}
+              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}{k === 'together' && invites > 0 && <span className="dot" aria-label={`${invites} invite${invites === 1 ? '' : 's'}`} />}</span>{l}
             </button>
           ))}
         </div>

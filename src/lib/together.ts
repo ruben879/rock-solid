@@ -82,6 +82,28 @@ export async function loadRoom(c: Challenge) {
   return { people, progress, posts, kudos }
 }
 
+// ---------- In-app invites (people in your brokerage) ----------
+export interface Invite { challenge_id: string; name: string; code: string; starts_on: string; ends_on: string; invited_by: string; members: number }
+export async function myInvites(): Promise<Invite[]> {
+  const r = await supabase.rpc('my_invites')
+  if (r.error) return [] // Before the invites SQL is run: no invites, no error.
+  return r.data as Invite[]
+}
+export async function brokeragePeople(): Promise<Person[]> {
+  return check(await supabase.rpc('brokerage_people')) as Person[]
+}
+export async function invited(challengeId: string): Promise<string[]> {
+  const r = await supabase.from('challenge_invites').select('user_id').eq('challenge_id', challengeId)
+  return r.error ? [] : (r.data as { user_id: string }[]).map((x) => x.user_id)
+}
+export async function invite(challengeId: string, userId: string, me: string) {
+  const r = await supabase.from('challenge_invites').insert({ challenge_id: challengeId, user_id: userId, invited_by: me })
+  if (r.error && !/duplicate/i.test(r.error.message)) throw new Error(/challenge_invites/.test(r.error.message) ? 'In-app invites need the invites SQL (0010) run in Supabase first.' : r.error.message)
+}
+export async function declineInvite(challengeId: string, userId: string) {
+  await supabase.from('challenge_invites').delete().eq('challenge_id', challengeId).eq('user_id', userId)
+}
+
 export async function say(challengeId: string, userId: string, body: string) {
   check(await supabase.from('challenge_posts').insert({ challenge_id: challengeId, user_id: userId, body }))
 }

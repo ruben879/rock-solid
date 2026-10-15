@@ -505,3 +505,9 @@ nav.bottom button.center .bubble { top: -2px; right: -4px; }
 .kudo.on { background: var(--gold-soft); border-color: var(--gold); color: var(--gold-ink); }
 .kudo:disabled { cursor: default; opacity: .7; }
 .tlink { margin-top: 14px; border: 1.5px dashed var(--gold); background: var(--gold-soft); color: var(--gold-ink); border-radius: 14px; padding: 12px 14px; font-weight: 500; overflow-wrap: anywhere; }
+
+.tcard.invited { border: 1.5px solid var(--gold); background: var(--gold-soft); cursor: default; }
+.invlist { display: flex; flex-direction: column; margin-top: 6px; }
+.invrow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.invrow:last-child { border-bottom: 0; }
+nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--urgent); box-shadow: 0 0 0 2px var(--surface); }

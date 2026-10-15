@@ -33,6 +33,7 @@ export function Together({ me }: { me: Profile }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [joinCode, setJoinCode] = useState<string | null>(() => store.get<string | null>('rs-join', null))
+  const [invites, setInvites] = useState<tg.Invite[]>([])
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +44,9 @@ export function Together({ me }: { me: Profile }) {
       }))
       setList(rows)
       setErr('')
+      const inv = await tg.myInvites()
+      setInvites(inv)
+      window.dispatchEvent(new CustomEvent('rs-invites', { detail: inv.length }))
     } catch (e) {
       setErr((e as Error).message)
       setList([])
@@ -63,15 +67,26 @@ export function Together({ me }: { me: Profile }) {
       {err && <p className="error">{err}</p>}
       {list === null ? <p className="muted">Loading…</p> : (
         <>
-          {active.length === 0 && !err && (
+          {invites.map((v) => (
+            <div key={v.challenge_id} className="tcard invited">
+              <p className="note" style={{ margin: 0 }}>{v.invited_by} invited you</p>
+              <div className="row"><b>{v.name}</b></div>
+              <p>{v.members} in · {fmt(v.starts_on)} to {fmt(v.ends_on)}</p>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button className="btn gold" style={{ flex: 1 }} onClick={async () => { try { const id = await tg.join(v.code); toast("You're in!"); await load(); setOpenId(id) } catch (e) { toast((e as Error).message) } }}>Join</button>
+                <button className="btn" style={{ flex: 1 }} onClick={async () => { await tg.declineInvite(v.challenge_id, me.id); load() }}>No thanks</button>
+              </div>
+            </div>
+          ))}
+          {active.length === 0 && invites.length === 0 && !err && (
             <div className="card empty" style={{ marginBottom: 12 }}>
               <p>No challenges yet. Start one and invite a few people, or join one with a link someone sent you.</p>
             </div>
           )}
           {active.map((x) => <ChallengeCard key={x.c.id} me={me} {...x} onOpen={() => setOpenId(x.c.id)} />)}
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-            <button className="btn primary lg" style={{ flex: 1 }} onClick={() => setStarting(true)}><IPlus size={18} /> New challenge</button>
-            <button className="btn lg" style={{ flex: 1 }} onClick={() => setJoinCode('')}>Join with a link</button>
+            <button className="btn primary lg" style={{ flex: 1, whiteSpace: "nowrap" }} onClick={() => setStarting(true)}><IPlus size={18} /> New challenge</button>
+            <button className="btn lg" style={{ flex: 1, whiteSpace: "nowrap" }} onClick={() => setJoinCode('')}>Join with a link</button>
           </div>
           {past.length > 0 && (
             <details className="more" style={{ marginTop: 20 }}>
@@ -221,7 +236,7 @@ function Room({ me, c, onBack }: { me: Profile; c: Challenge; onBack: () => void
         })}
       </div>
 
-      {inviting && <InviteSheet c={c} onClose={() => setInviting(false)} />}
+      {inviting && <InviteSheet c={c} me={me} members={(room?.people ?? []).map((p) => p.user_id)} onClose={() => setInviting(false)} />}
       {menu && (
         <Sheet label="Challenge options" onClose={() => setMenu(false)}>
           <h3>{c.name}</h3>
@@ -240,13 +255,23 @@ function Room({ me, c, onBack }: { me: Profile; c: Challenge; onBack: () => void
   )
 }
 
-function InviteSheet({ c, onClose }: { c: Challenge; onClose: () => void }) {
+function InviteSheet({ c, me, members, onClose }: { c: Challenge; me: Profile; members: string[]; onClose: () => void }) {
   const toast = useToast()
   const link = tg.joinLink(c)
-  const msg = `Join my "${c.name}" challenge on Rock Solid: ${link}`
+  const msg = `Join my "${c.name}" challenge on Rock Solid: ${link}\n\nAlready have the app? Open Together, tap Join with a link, and enter code ${c.code}.`
+  const [people, setPeople] = useState<Person[] | null>(null)
+  const [sent, setSent] = useState<string[]>([])
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    Promise.all([tg.brokeragePeople(), tg.invited(c.id)]).then(([p, inv]) => { setPeople(p); setSent(inv) }, () => setPeople([]))
+  }, [c.id])
+  const shown = (people ?? []).filter((p) => !members.includes(p.user_id) && p.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
+  async function ask(p: Person) {
+    try { await tg.invite(c.id, p.user_id, me.id); setSent([...sent, p.user_id]); toast(`${firstName(p.name)} is invited. It's waiting on their Together tab.`) } catch (e) { toast((e as Error).message) }
+  }
   const share = async () => {
     const nav = navigator as Navigator & { share?: (d: { title?: string; text?: string; url?: string }) => Promise<void> }
-    if (nav.share) { try { await nav.share({ title: c.name, text: `Join my "${c.name}" challenge on Rock Solid`, url: link }) } catch { /* closed */ } }
+    if (nav.share) { try { await nav.share({ title: c.name, text: `Join my "${c.name}" challenge on Rock Solid. Already have the app? Open Together, tap Join with a link, and enter code ${c.code}.`, url: link }) } catch { /* closed */ } }
     else location.href = `sms:?&body=${encodeURIComponent(msg)}`
   }
   return (
@@ -259,6 +284,23 @@ function InviteSheet({ c, onClose }: { c: Challenge; onClose: () => void }) {
         <button className="btn lg" style={{ flex: 1 }} onClick={() => navigator.clipboard?.writeText(link).then(() => toast('Link copied.'), () => toast("Copying isn't available here."))}>Copy link</button>
       </div>
       <p className="note" style={{ marginTop: 10, textAlign: 'center' }}>Code: <b>{c.code}</b></p>
+      {people && people.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="grp" style={{ marginTop: 0 }}>Invite someone at your brokerage</div>
+          <p className="note" style={{ marginTop: -6 }}>It shows up on their Together tab. One tap to join.</p>
+          <input aria-label="Search people" placeholder="Search by name" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%', marginTop: 8 }} />
+          <div className="invlist">
+            {shown.map((p) => (
+              <div key={p.user_id} className="invrow">
+                <Avatar id={p.user_id} name={p.name} size={30} />
+                <span style={{ flex: 1 }}>{p.name}</span>
+                {sent.includes(p.user_id) ? <span className="note">Invited ✓</span> : <button className="btn" onClick={() => ask(p)}>Invite</button>}
+              </div>
+            ))}
+            {shown.length === 0 && <p className="note">Everyone's already in.</p>}
+          </div>
+        </div>
+      )}
     </Sheet>
   )
 }
@@ -278,7 +320,10 @@ function JoinSheet({ code: initial, onClose, onJoined }: { code: string; onClose
     <Sheet label="Join a challenge" onClose={onClose}>
       <h3>Join a challenge</h3>
       <p className="note">Paste the link someone sent you, or type its 6-letter code.</p>
-      <input aria-label="Link or code" placeholder="Link or code" value={code} autoCapitalize="characters" onChange={(e) => setCode(e.target.value)} style={{ marginTop: 10, width: '100%' }} />
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <input aria-label="Link or code" placeholder="Link or code" value={code} autoCapitalize="characters" onChange={(e) => setCode(e.target.value)} style={{ flex: 1 }} />
+        {navigator.clipboard?.readText && <button type="button" className="btn" onClick={() => navigator.clipboard.readText().then((t) => setCode(t.trim()), () => {})}>Paste</button>}
+      </div>
       {info && (
         <div className="card" style={{ marginTop: 12, background: 'var(--bg)', boxShadow: 'none' }}>
           <b>{info.name}</b>
