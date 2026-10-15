@@ -1027,6 +1027,20 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
   const matches = q ? data.contacts.filter((c) => fullName(c).toLowerCase().includes(q) && fullName(c).toLowerCase() !== q).slice(0, 5) : []
   const who = name.trim().split(' ')[0] || 'them'
   const total = 4 - start
+  // Last card to someone, so you can check before you write.
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim()
+  const lastCard = (n: string) => data.cards.filter((c) => norm(c.recipient_name) === norm(n)).sort((a, b) => b.sent_on.localeCompare(a.sent_on))[0]
+  const prior = q ? lastCard(name) : undefined
+  const check = known || prior ? (
+    prior ? (
+      <div className={dup && agent.card_rule ? 'warn' : 'okcheck'} style={{ marginTop: 10 }}>
+        Last card to {who}: <b>{fmt(prior.sent_on)}</b>{prior.occasion ? ` (${prior.occasion})` : ''}.
+        {dup && agent.card_rule ? ` A new one counts as a touch, and toward Card a Day again after ${fmt(addDays(parse(dup.sent_on), 365))}.` : ''}
+      </div>
+    ) : (
+      <div className="okcheck" style={{ marginTop: 10 }}><ICheck size={16} /><span style={{ flex: 1 }}>No card to {who} in the last year. Good to go.</span></div>
+    )
+  ) : null
 
   async function submit() {
     setBusy(true)
@@ -1052,8 +1066,12 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
           <p className="q">Who did you write a card to?</p>
           <input aria-label="Name" autoComplete="off" placeholder="Start typing a name" value={name} onChange={(e) => setName(e.target.value)} style={{ width: '100%' }} />
           {matches.length > 0 && (
-            <div className="sugs">{matches.map((c) => <button type="button" key={c.id} onClick={() => { setName(fullName(c)); setStep(1) }}>{fullName(c)}</button>)}</div>
+            <div className="sugs">{matches.map((c) => {
+              const lc = lastCard(fullName(c))
+              return <button type="button" key={c.id} onClick={() => setName(fullName(c))}>{fullName(c)}<span className="note" style={{ marginLeft: 8 }}>{lc ? `card ${fmt(lc.sent_on)}` : 'no card yet'}</span></button>
+            })}</div>
           )}
+          {check}
           {q && !known && (
             <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><IPlus size={18} /> Add "{name.trim()}" to my people</button>
           )}
@@ -1062,6 +1080,7 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
       )}
       {step === 1 && (
         <>
+          {start === 1 && check}
           <p className="q">Who is {who} to you?</p>
           <div className="big-opts">{RELS.map((r) => <button key={r} aria-pressed={rel === r} onClick={() => { setRel(r); setStep(2) }}>{r}</button>)}</div>
         </>

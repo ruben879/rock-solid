@@ -463,3 +463,6 @@ body:has(.sheet) .toast { bottom: auto; top: calc(14px + env(safe-area-inset-top
 .gsteps li.done b { color: var(--muted); text-decoration: line-through; font-weight: 500; }
 .stepbody { color: var(--muted); font-size: 15px; display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .stepbody b { color: var(--ink); font-weight: 600; }
+
+.okcheck { display: flex; align-items: center; gap: 8px; background: var(--text-soft); color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 15px; }
+.okcheck b { font-weight: 600; }
