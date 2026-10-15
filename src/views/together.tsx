@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import type { Profile } from '../lib/model'
 import { addDays, fmt, monthStart, today, ymd } from '../lib/dates'
 import * as tg from '../lib/together'
+import { supabase } from '../supabase'
 import type { Challenge, DayCount, Period, Person, Post } from '../lib/together'
 import { Sheet, store, useToast } from '../ui'
 import { IChevL, IMore, IPlus } from '../icons'
@@ -115,9 +116,16 @@ function Room({ me, c, onBack }: { me: Profile; c: Challenge; onBack: () => void
   }, [c, toast])
   useEffect(() => {
     load()
+    // Live: new posts and kudos show up the moment they happen. The 30-second check is a backup.
+    const ch = supabase.channel(`room-${c.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'challenge_posts', filter: `challenge_id=eq.${c.id}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'challenge_kudos' }, () => load())
+      .subscribe()
     const t = setInterval(load, 30000)
-    return () => clearInterval(t)
-  }, [load])
+    const back = () => document.visibilityState === 'visible' && load()
+    document.addEventListener('visibilitychange', back)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); supabase.removeChannel(ch) }
+  }, [load, c.id])
 
   const names = useMemo(() => new Map((room?.people ?? []).map((p) => [p.user_id, p.name])), [room])
   const people = [...(room?.people ?? [])].sort((a, b) => (a.user_id === me.id ? -1 : b.user_id === me.id ? 1 : a.name.localeCompare(b.name)))

@@ -202,3 +202,9 @@ drop trigger if exists touches_challenge_post on public.touches;
 create trigger touches_challenge_post after insert or delete on public.touches for each row execute function public.challenge_autopost();
 drop trigger if exists cards_challenge_post on public.cards;
 create trigger cards_challenge_post after insert or delete on public.cards for each row execute function public.challenge_autopost();
+
+-- Live updates in the challenge feed.
+do $$ begin
+  begin alter publication supabase_realtime add table public.challenge_posts; exception when others then null; end;
+  begin alter publication supabase_realtime add table public.challenge_kudos; exception when others then null; end;
+end $$;
