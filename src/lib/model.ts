@@ -223,6 +223,21 @@ export function suggestKind(c: Contact, touches: Touch[], slot = 0): 'call' | 't
   return tied[0]
 }
 
+// ---------- Daily goal from the people you actually have ----------
+/** One-on-one touches a year your people need: A's every 14 days, B's every 30 (or whatever your tier days are). */
+export function yearlyTouches(contacts: Contact[], p: Profile | null) {
+  return contacts.reduce((s, c) => s + 365 / tierDays(p, c.tier), 0)
+}
+/** Touches a workday (260 a year) to keep everyone in your database on schedule. */
+export function dailyFromPeople(contacts: Contact[], p: Profile | null) {
+  return contacts.length ? Math.min(30, Math.max(1, Math.ceil(yearlyTouches(contacts, p) / 260))) : 0
+}
+/** The daily goal a bigger database would need: the same mix of A's and B's, scaled to `people`. */
+export function dailyForPeople(people: number, contacts: Contact[], p: Profile | null) {
+  const avg = contacts.length ? yearlyTouches(contacts, p) / contacts.length : 365 / tierDays(p, 'B')
+  return Math.min(30, Math.max(1, Math.ceil((people * avg) / 260)))
+}
+
 // ---------- Rolling 12-month thermometer ----------
 export type Heat = 'hot' | 'warm' | 'cold' | 'new'
 export const HEAT_NAME: Record<Heat, string> = { hot: 'On pace', warm: 'Behind', cold: 'Urgent', new: 'New' }

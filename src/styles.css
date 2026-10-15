@@ -517,3 +517,8 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .xminus { font: 600 22px/1 var(--font); color: var(--muted); }
 .sendrow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .sendrow:last-of-type { border-bottom: 0; }
+
+/* Dotted rocks: room to grow */
+.rock.ghost .rk-ghost { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 3 3; opacity: .55; }
+.rock.ghost .rk-ground { fill: transparent; }
+.ghostnote { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }

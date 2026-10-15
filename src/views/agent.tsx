@@ -3,7 +3,7 @@ import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
-  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
+  HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
@@ -24,9 +24,19 @@ interface Ctx {
 
 export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: Brokerage | null; tab: AgentTab; readOnly: boolean; onProfileChange?: () => void; onGo?: (t: AgentTab) => void }) {
   const { data, error, reload } = useAgentData1(props.agent.id)
+  // The daily goal follows the people you actually have (unless you've set your own number).
+  const auto = props.agent.plan?.auto_goals !== 0
+  const fromPeople = data ? dailyFromPeople(data.contacts, props.agent) : 0
+  const own = !props.readOnly && props.agent.id === props.me.id
+  useEffect(() => {
+    // Keep the saved goal in step, so Team views and the morning nudge use the same number.
+    if (own && auto && fromPeople && props.agent.daily_goal !== fromPeople)
+      api.updateMyProfile(props.me, { daily_goal: fromPeople, weekly_goal: fromPeople * 5 }).catch(() => {})
+  }, [own, auto, fromPeople, props.agent.daily_goal, props.me])
   if (error) return <p className="error" style={{ marginTop: 24 }}>Couldn't load your list: {error}. Pull down to refresh.</p>
   if (!data) return <p className="muted" style={{ marginTop: 24 }}>Loading…</p>
-  const ctx: Ctx = { ...props, data, reload, goal: props.brokerage?.settings?.touch_goal ?? 36 }
+  const agent = auto && fromPeople ? { ...props.agent, daily_goal: fromPeople, weekly_goal: fromPeople * 5 } : props.agent
+  const ctx: Ctx = { ...props, agent, data, reload, goal: props.brokerage?.settings?.touch_goal ?? 36 }
   return (
     <>
       {props.tab === 'week' && <Today ctx={ctx} onGo={props.onGo} />}
@@ -296,6 +306,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     else nav.clearAppBadge?.().catch(() => {})
   }, [open])
 
+  // Dotted rocks: the extra daily touches your plan needs once your database reaches its size.
+  const plan = planNumbers(agent.plan)
+  const ghosts = !readOnly && agent.plan?.auto_goals !== 0 && data.contacts.length > 0 && data.contacts.length < plan.dbNeeded && b.round <= 1
+    ? Math.max(0, Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent)) - rows.length) : 0
+
   const first = (agent.full_name || agent.email).split(' ')[0]
   const caughtUp = rows.length === 0 || (todo.length === 0 && b.waiting === 0)
   return (
@@ -304,10 +319,12 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       <h2 className="hello">{readOnly ? `${first}'s list` : `${greeting()}, ${first}`}</h2>
       {!readOnly && <GettingStarted contacts={data.contacts} agent={agent} onGo={onGo} />}
       {rows.length > 0 && (
-        <div className="stones" role="img" aria-label={`${done} of ${rows.length} done`}>
+        <div className="stones" role="img" aria-label={`${done} of ${rows.length} done${ghosts ? `, ${ghosts} more as you add people` : ''}`}>
           {rows.map((c, i) => <Rock key={c.id} i={i} on={i < done} />)}
+          {Array.from({ length: ghosts }, (_, i) => <Rock key={`g${i}`} i={rows.length + i} on={false} ghost />)}
         </div>
       )}
+      {ghosts > 0 && <p className="ghostnote">Dotted rocks fill in as you grow to {plan.dbNeeded} people.</p>}
       <div className="todayrow">
         {rows.length > 0 ? <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round})` : ''}</p> : <span />}
         {!readOnly && <button className="recpill" onClick={() => setRecording(true)}><IPlus size={18} /> Record a touch</button>}
@@ -1469,8 +1486,11 @@ export function goalsFromPlan(plan: Record<string, number> | undefined, have: nu
 
 function MyGoals({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
   const { agent, me, data } = ctx
-  const auto = !!agent.plan?.auto_goals
+  const auto = agent.plan?.auto_goals !== 0
   const g = goalsFromPlan(agent.plan, data.contacts.length)
+  const have = data.contacts.length
+  const need = planNumbers(agent.plan).dbNeeded
+  const atPlan = dailyForPeople(need, data.contacts, agent)
   const [day, setDay] = useState(agent.daily_goal)
   const toast = useToast()
   async function save(f: Partial<Profile>) {
@@ -1487,12 +1507,13 @@ function MyGoals({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => v
         <input type="checkbox" style={{ width: 22, height: 22 }} checked={auto}
           onChange={(e) => {
             const on = e.target.checked
+            const d = dailyFromPeople(data.contacts, agent) || g.daily
             save(on
-              ? { plan: { ...(agent.plan ?? {}), auto_goals: 1 }, daily_goal: g.daily, weekly_goal: g.weekly }
+              ? { plan: { ...(agent.plan ?? {}), auto_goals: 1 }, daily_goal: d, weekly_goal: d * 5 }
               : { plan: { ...(agent.plan ?? {}), auto_goals: 0 } })
-            if (on) setDay(g.daily)
+            if (on) setDay(d)
           }} />
-        Set my goals from my plan
+        Set my daily goal from my people
       </label>
       {auto ? (
         <>
@@ -1500,7 +1521,12 @@ function MyGoals({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => v
             <div className="stat"><div className="n">{agent.daily_goal}</div><div className="l">touches a day</div></div>
             <div className="stat"><div className="n">{agent.weekly_goal}</div><div className="l">touches a week</div></div>
           </div>
-          <p className="note">Based on {g.people} people and {PERSONAL_TOUCHES} one-on-one touches each a year (the calls, texts, cards and pop-bys in the 36). Emails and newsletters cover the rest. These update when you change your plan.</p>
+          <p className="note">
+            {have
+              ? `Based on your ${have} people: A's every ${tierDays(agent, 'A')} days, everyone else every ${tierDays(agent, 'B')}. It goes up as you add people and tag more A's.`
+              : 'Add your people and this sets itself from them.'}
+            {have > 0 && have < need ? ` Your plan calls for ${need} people, which would be about ${atPlan} a day. Those show as dotted rocks on Today.` : ''}
+          </p>
         </>
       ) : (
         <>
@@ -1510,7 +1536,7 @@ function MyGoals({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => v
             </label>
             <div className="field"><span>Touches a week</span><div style={{ fontSize: 20, fontWeight: 600, padding: '9px 2px' }}>{Math.max(1, day || 1) * 5}</div></div>
           </div>
-          <p className="note">A week is 5 workdays, so your weekly goal is your daily goal times 5. Your plan suggests {g.daily} a day.</p>
+          <p className="note">A week is 5 workdays, so your weekly goal is your daily goal times 5. Your {have} people need about {dailyFromPeople(data.contacts, agent) || g.daily} a day to stay on schedule.</p>
         </>
       )}
     </div>
@@ -1557,9 +1583,9 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const have = data.contacts.length
   async function save(next: typeof p) {
     // Keep the "set goals from my plan" choice as it is now, and refresh those goals when it's on.
-    const plan = { ...next, auto_goals: agent.plan?.auto_goals ?? 0 }
-    const extra = plan.auto_goals ? (({ daily, weekly }) => ({ daily_goal: daily, weekly_goal: weekly }))(goalsFromPlan(plan, have)) : {}
-    await api.updateMyProfile(ctx.me, { plan, ...extra })
+    // Keep the goal choice as it is; with automatic goals, the daily number follows your people (set on its own).
+    const plan = { ...next, auto_goals: agent.plan?.auto_goals ?? 1 }
+    await api.updateMyProfile(ctx.me, { plan })
     onProfileChange?.()
   }
   const num = (k: keyof typeof p, label: string, kind: 'money' | 'decimal') => {
@@ -1591,7 +1617,7 @@ function MyPlan({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       </div>
       <p className="note">
         {have >= dbNeeded ? 'You have enough people for this plan. ' : `Add ${dbNeeded - have} more people to support this plan. `}
-        That's about {goalsFromPlan(p, have).weekly} one-on-one touches a week ({goalsFromPlan(p, have).daily} a workday), with emails and newsletters covering the rest of the 36.
+        At that size, keeping everyone on schedule is about {dailyForPeople(dbNeeded, data.contacts, agent)} one-on-one touches a workday, with emails and newsletters covering the rest of the 36.
       </p>
     </div>
   )

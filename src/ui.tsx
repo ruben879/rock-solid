@@ -254,12 +254,12 @@ const ROCKS: [string, string, string][] = [
   ['4,24 9,14 19,9 31,8 40,12 45,20 42,28 30,30 11,30', '9,14 19,9 31,8 40,12 32,17 17,18', '40,12 45,20 42,28 34,25 32,17'],
   ['6,27 7,19 12,12 21,7 32,7 41,12 44,21 41,28 18,30', '12,12 21,7 32,7 41,12 31,16 18,16', '41,12 44,21 41,28 34,24 31,16'],
 ]
-export function Rock({ i, on }: { i: number; on: boolean }) {
+export function Rock({ i, on, ghost }: { i: number; on: boolean; ghost?: boolean }) {
   const [body, top, side] = ROCKS[i % ROCKS.length]
   const id = `rk${i}`
   const flip = i % 2 ? 'translate(48 0) scale(-1 1)' : undefined
   return (
-    <svg className={`rock ${on ? 'on' : ''}`} viewBox="0 0 48 34" aria-hidden="true">
+    <svg className={`rock ${on ? 'on' : ''} ${ghost ? 'ghost' : ''}`} viewBox="0 0 48 34" aria-hidden="true">
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0.25" y2="1">
           <stop offset="0" className="rk-top" />
@@ -268,9 +268,15 @@ export function Rock({ i, on }: { i: number; on: boolean }) {
       </defs>
       <ellipse cx="24" cy="31.5" rx="19" ry="2.3" className="rk-ground" />
       <g transform={flip} strokeLinejoin="round">
-        <polygon points={body} fill={`url(#${id})`} stroke={`url(#${id})`} strokeWidth="2.5" />
-        <polygon points={top} className="rk-lit" />
-        <polygon points={side} className="rk-dark" />
+        {ghost ? (
+          <polygon points={body} className="rk-ghost" />
+        ) : (
+          <>
+            <polygon points={body} fill={`url(#${id})`} stroke={`url(#${id})`} strokeWidth="2.5" />
+            <polygon points={top} className="rk-lit" />
+            <polygon points={side} className="rk-dark" />
+          </>
+        )}
       </g>
     </svg>
   )
