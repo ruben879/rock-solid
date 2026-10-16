@@ -522,3 +522,38 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .rock.ghost .rk-ghost { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 3 3; opacity: .55; }
 .rock.ghost .rk-ground { fill: transparent; }
 .ghostnote { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+
+/* ---------- Progress, at a glance ---------- */
+.eyebrow { display: block; font-size: 12.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.pweek { display: flex; align-items: center; gap: 18px; margin-top: 12px; }
+.pring { width: 96px; height: 96px; flex: none; transform: rotate(-90deg); }
+.pr-track { fill: none; stroke: var(--line); stroke-width: 11; }
+.pr-fill { fill: none; stroke: var(--gold); stroke-width: 11; stroke-linecap: round; transition: stroke-dasharray .5s ease; }
+.pw-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pw-text .big { font-size: 34px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; }
+.pw-text .big span { font-size: 18px; color: var(--muted); font-weight: 500; }
+.pw-sub { color: var(--muted); font-size: 14.5px; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.psec { margin-top: 12px; }
+.psec-h { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.psec-h b { font-size: 24px; font-weight: 600; }
+.pbar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; margin-bottom: 14px; }
+.pbar i { display: block; height: 100%; background: var(--navy); border-radius: 99px; }
+.health, .mix { display: flex; height: 14px; border-radius: 99px; overflow: hidden; gap: 2px; background: var(--line); }
+.health i, .mix i { display: block; height: 100%; }
+.h-on { background: var(--good); } .h-slip { background: var(--behind); } .h-over { background: var(--urgent); } .h-none { background: color-mix(in srgb, var(--muted) 35%, transparent); }
+.mix .k-call, .legend i.k-call { background: var(--call); } .mix .k-text, .legend i.k-text { background: var(--text); } .mix .k-card, .legend i.k-card { background: var(--card); }
+.mix .k-facetoface, .legend i.k-facetoface { background: #7a5ab8; } .mix .k-popby, .legend i.k-popby { background: #0f7a8a; }
+.legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin-top: 10px; font-size: 14px; color: var(--muted); }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend b { color: var(--ink); font-weight: 600; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+.xgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.xgrid b { color: var(--muted); font-weight: 600; margin-right: 2px; }
+.xgrid .did b { color: var(--ink); }
+
+.pgauge { background: var(--bg); border-radius: 14px; padding: 12px 14px; margin: 10px 0 4px; }
+.pg-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.spill { font-size: 13.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: #fff; }
+.spill.s-on { background: var(--good); } .spill.s-slip { background: var(--behind); color: #1a2238; } .spill.s-over { background: var(--urgent); } .spill.s-none { background: var(--line); color: var(--muted); }
+.pg-line { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.pg-line b { color: var(--ink); font-weight: 600; }

@@ -781,6 +781,41 @@ function NoteSheet({ ctx, t, c, onClose, onUndo }: { ctx: Ctx; t: Touch; c: Cont
 const longDate = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 const monthDay = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
 
+/** How it's going with one person: same status as the Progress page, when you last reached them, when they're due, and the mix. */
+function PersonGauge({ ctx, c }: { ctx: Ctx; c: Contact }) {
+  const mine = ctx.data.touches.filter((t) => t.contact_id === c.id && !t.is_group)
+  const personal = useMemo(() => touchCounts(mine), [mine])
+  const bars = signal(c, personal, ctx.agent.tier_days)
+  const status = bars >= 3 ? ['on', 'On schedule'] : bars === 2 ? ['slip', 'Slipping'] : bars === 1 ? ['over', 'Overdue'] : ['none', 'Not reached yet']
+  const last = mine.map((t) => t.occurred_on).sort().at(-1)
+  const every = tierDays(ctx.agent, c.tier)
+  const due = last ? addDays(parse(last), every) : null
+  const ago = last ? daysBetween(parse(last), today()) : 0
+  const since = ymd(addDays(today(), -365))
+  const kinds: TouchKind[] = ['call', 'text', 'card', 'facetoface', 'popby']
+  const year = mine.filter((t) => t.occurred_on >= since)
+  const mix = kinds.map((k) => [k, year.filter((t) => t.kind === k).length] as const).filter(([, n]) => n > 0)
+  return (
+    <div className="pgauge">
+      <div className="pg-top">
+        <span className={`spill s-${status[0]}`}>{status[1]}</span>
+        <Signal bars={bars} plain />
+      </div>
+      <p className="pg-line">
+        {last ? <>Last one-on-one <b>{ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`}</b> · {due && due < today() ? <>was due <b>{fmt(due)}</b></> : <>next due <b>{due ? fmt(due) : ''}</b></>}</> : <>No one-on-one touch yet. They come up every {every} days.</>}
+      </p>
+      {year.length > 0 && (
+        <>
+          <div className="mix" style={{ height: 10, marginTop: 8 }}>{mix.map(([k, n]) => <i key={k} className={`k-${k}`} style={{ flex: n }} />)}</div>
+          <div className="legend" style={{ marginTop: 6, fontSize: 13 }}>
+            {mix.map(([k, n]) => <span key={k}><i className={`k-${k}`} /> <b>{n}</b> {k === 'facetoface' ? 'face to face' : `${KIND_LABEL[k].toLowerCase()}${n === 1 ? '' : 's'}`}</span>)}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
   const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
   const [noteOn, setNoteOn] = useState<Touch | null>(null)
@@ -804,6 +839,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         <Meter c={live} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
         <span className="note">touches in the last 12 months</span>
       </div>
+      <PersonGauge ctx={ctx} c={live} />
 
       <div className="facts">
         {live.phone && (
@@ -1419,47 +1455,87 @@ function ExtraSheet({ ctx, x, current, onClose }: { ctx: Ctx; x: (typeof EXTRAS)
 }
 
 function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
-  const { data, agent, readOnly, brokerage } = ctx
-  const toast = useToast()
+  const { data, agent, readOnly } = ctx
   const ms = ymd(monthStart())
-  const month = data.touches.filter((t) => !t.is_group && t.occurred_on >= ms)
-  const goals = { call: 21, text: 21, card: 7, ...(brokerage?.settings?.monthly_goals ?? {}) }
-  const count = (k: TouchKind) => month.filter((t) => t.kind === k).length
   const g = goalState(ctx)
+  const m = momentum(ctx)
+
+  // This week: the one number to beat.
+  const wk = Math.min(1, g.week / Math.max(1, agent.weekly_goal))
+  const R = 42
+  const C = 2 * Math.PI * R
+
+  // Your people: how many there are vs. the plan, and how well they're being kept up with.
+  const personal = useMemo(() => touchCounts(data.touches.filter((t) => !t.is_group)), [data.touches])
+  const plan = planNumbers(agent.plan)
+  const have = data.contacts.length
+  const buckets = { on: 0, slip: 0, over: 0, none: 0 }
+  for (const c of data.contacts) {
+    const s = signal(c, personal, agent.tier_days)
+    if (s >= 3) buckets.on++
+    else if (s === 2) buckets.slip++
+    else if (s === 1) buckets.over++
+    else buckets.none++
+  }
+  const pct = (n: number) => (have ? `${(n / have) * 100}%` : '0%')
+
+  // This month: every one-on-one touch, by kind, plus the extras.
+  const month = data.touches.filter((t) => !t.is_group && t.occurred_on >= ms)
+  const kinds: TouchKind[] = ['call', 'text', 'card', 'facetoface', 'popby']
+  const byKind = kinds.map((k) => [k, month.filter((t) => t.kind === k).length] as const)
+  const extras = EXTRAS.map((x) => [x.l, data.tallies.find((t) => t.kind === x.k && t.month === ms)?.count ?? 0] as const)
+  const entries = month.length + extras.reduce((s, [, n]) => s + n, 0)
 
   return (
     <section>
-      <h2 style={{ marginTop: 14 }}>{today().toLocaleDateString('en-US', { month: 'long' })}</h2>
-      <p className="sub">Everything you log on Today and Cards adds up here on its own.</p>
-      <Momentum ctx={ctx} />
-      <div style={{ height: 14 }} />
-      <div className="card bigbars">
-        {(['call', 'text', 'card'] as const).map((k) => {
-          const n = count(k)
-          const goal = goals[k] ?? 1
-          const p = Math.min(100, Math.round((n / goal) * 100))
-          return (
-            <div key={k} className={`bigbar k-${k}`}>
-              <div className="row1"><span className={`kind k-${k}`}>{KIND_ICON[k]} {KIND_LABEL[k]}s</span><b>{n} of {goal}</b></div>
-              <div className="track"><div className="fill" style={{ width: `${p}%` }} /></div>
-            </div>
-          )
-        })}
-        <p className="note">Pop-bys this month: {count('popby')} · Face to face: {count('facetoface')}</p>
-      </div>
-      <div className="stats" style={{ marginTop: 12, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-        <div className="stat"><div className="n">{g.today} of {agent.daily_goal}</div><div className="l">today</div></div>
-        <div className="stat"><div className="n">{g.week} of {agent.weekly_goal}</div><div className="l">this week</div></div>
+      <h2 style={{ marginTop: 14 }}>Progress</h2>
+
+      <div className="card pweek">
+        <svg viewBox="0 0 100 100" className="pring" aria-hidden>
+          <circle cx="50" cy="50" r={R} className="pr-track" />
+          <circle cx="50" cy="50" r={R} className="pr-fill" style={{ strokeDasharray: `${C * Math.max(0.02, wk)} ${C}` }} />
+        </svg>
+        <div className="pw-text">
+          <span className="eyebrow">This week</span>
+          <b className="big">{g.week} <span>of {agent.weekly_goal}</span></b>
+          <span className="pw-sub">{g.today} of {agent.daily_goal} today{m.streak >= 2 ? <> · <IFlame size={14} /> {m.streak}-day streak</> : ''}</span>
+        </div>
       </div>
 
-      <div className="card tally" style={{ padding: '4px 16px', marginTop: 12 }}>
-        {EXTRAS.map((t) => (
-          <div key={t.k} className="tl"><span>{t.l}</span><span className="v">{data.tallies.find((x) => x.kind === t.k && x.month === ymd(monthStart()))?.count ?? 0}</span></div>
-        ))}
+      <div className="card psec">
+        <div className="psec-h"><span className="eyebrow">Your people</span><b>{have}{plan.dbNeeded > have ? <span className="note"> of {plan.dbNeeded} for your plan</span> : ''}</b></div>
+        {plan.dbNeeded > have && <div className="pbar"><i style={{ width: `${Math.min(100, (have / plan.dbNeeded) * 100)}%` }} /></div>}
+        <div className="health" role="img" aria-label={`${buckets.on} on schedule, ${buckets.slip} slipping, ${buckets.over} overdue, ${buckets.none} not reached yet`}>
+          <i className="h-on" style={{ width: pct(buckets.on) }} />
+          <i className="h-slip" style={{ width: pct(buckets.slip) }} />
+          <i className="h-over" style={{ width: pct(buckets.over) }} />
+          <i className="h-none" style={{ width: pct(buckets.none) }} />
+        </div>
+        <div className="legend">
+          <span><i className="h-on" /> <b>{buckets.on}</b> on schedule</span>
+          <span><i className="h-slip" /> <b>{buckets.slip}</b> slipping</span>
+          <span><i className="h-over" /> <b>{buckets.over}</b> overdue</span>
+          <span><i className="h-none" /> <b>{buckets.none}</b> not reached yet</span>
+        </div>
       </div>
-      <p className="note" style={{ marginTop: 8 }}>This month's totals. Add these from the bottom of Today. Each one is also an entry in the monthly drawing.</p>
+
+      <div className="card psec">
+        <div className="psec-h"><span className="eyebrow">{today().toLocaleDateString('en-US', { month: 'long' })}</span><b>{month.length} <span className="note">one-on-one touches</span></b></div>
+        <div className="mix" role="img" aria-label={byKind.map(([k, n]) => `${n} ${KIND_LABEL[k]}`).join(', ')}>
+          {byKind.map(([k, n]) => n > 0 && <i key={k} className={`k-${k}`} style={{ flex: n }} />)}
+          {month.length === 0 && <i style={{ flex: 1, background: 'var(--line)' }} />}
+        </div>
+        <div className="legend">
+          {byKind.map(([k, n]) => <span key={k}><i className={`k-${k}`} /> <b>{n}</b> {k === 'facetoface' ? 'face to face' : `${KIND_LABEL[k].toLowerCase()}${n === 1 ? '' : 's'}`}</span>)}
+        </div>
+        <div className="xgrid">
+          {extras.map(([l, n]) => <span key={l} className={n ? 'did' : ''}><b>{n}</b> {l}</span>)}
+        </div>
+        <p className="note" style={{ margin: '10px 0 0' }}><b>{entries}</b> drawing entries so far this month.</p>
+      </div>
+
       {!readOnly && (
-        <details className="more" style={{ marginTop: 0 }}>
+        <details className="more" style={{ marginTop: 6 }}>
           <summary>My daily and weekly goals</summary>
           <MyGoals ctx={ctx} onProfileChange={onProfileChange} />
         </details>
