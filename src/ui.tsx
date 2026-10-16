@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type TouchEvent as RTouch } from 'react'
 import type { Contact, Heat } from './lib/model'
 import { HEAT_ICON, HEAT_NAME, heat, score, target, windowDays } from './lib/model'
 import { fmt } from './lib/dates'
@@ -41,9 +41,36 @@ export function Sheet({ label, onClose, children }: { label: string; onClose: ()
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
+  // Swipe down to close: drag the sheet from its top (or anywhere when it's scrolled to the top).
+  const panel = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ y: number; t: number; on: boolean; d: number } | null>(null)
+  const [dy, setDy] = useState(0)
+  const [leaving, setLeaving] = useState(false)
+  const start = (e: RTouch) => {
+    const el = panel.current
+    const tag = (e.target as Element).closest('input, textarea, select, [contenteditable]')
+    drag.current = !tag && el && el.scrollTop <= 0 ? { y: e.touches[0].clientY, t: Date.now(), on: false, d: 0 } : null
+  }
+  const move = (e: RTouch) => {
+    const d = drag.current
+    if (!d) return
+    const dist = e.touches[0].clientY - d.y
+    if (!d.on && dist > 8) d.on = true
+    if (d.on) { d.d = Math.max(0, dist); setDy(d.d) }
+  }
+  const end = () => {
+    const d = drag.current
+    drag.current = null
+    if (!d?.on) return
+    const fast = d.d / Math.max(1, Date.now() - d.t) > 0.6
+    if (d.d > 110 || (fast && d.d > 40)) { setLeaving(true); setTimeout(onClose, 180) } else setDy(0)
+  }
   return (
-    <div className="sheet" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="in" role="dialog" aria-label={label}>
+    <div className="sheet" onClick={(e) => e.target === e.currentTarget && onClose()} style={dy || leaving ? { background: `rgba(15, 21, 38, ${leaving ? 0 : Math.max(0.1, 0.45 - dy / 800)})` } : undefined}>
+      <div ref={panel} className={`in ${dy && !leaving ? 'dragging' : ''} ${leaving ? 'leaving' : ''}`} role="dialog" aria-label={label}
+        style={dy && !leaving ? { transform: `translateY(${dy}px)` } : undefined}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end} onTouchCancel={end}>
+        <div className="grab" aria-hidden="true" />
         {children}
       </div>
     </div>

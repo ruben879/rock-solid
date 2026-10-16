@@ -666,3 +666,16 @@ nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
 .furow p { margin: 8px 0 0; color: var(--ink); }
 .btn.fuset { margin-top: 12px; color: #7a5ab8; border-color: color-mix(in srgb, #7a5ab8 40%, var(--line)); }
 @media (prefers-color-scheme: dark) { .btn.fuset { color: #b9a2ec; } }
+
+/* Sheets: a little handle on top, swipe down to close. */
+.sheet .in { position: relative; transition: transform .2s ease; overscroll-behavior: contain; }
+.sheet .in.dragging { transition: none; }
+.sheet .in.leaving { transform: translateY(110%); }
+.sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: -12px auto 10px; }
+.sheet { transition: background .18s; }
+.morning.cheer { z-index: 61; }
+.cheer-ic { font-size: 54px; line-height: 1; margin-bottom: 14px; }
+.viewing .btn.gold { white-space: nowrap; }
+/* Leave room above every sheet so there's always somewhere to tap (or swipe) to close it. */
+.sheet { padding-top: calc(env(safe-area-inset-top, 0px) + 64px); }
+.sheet .in { max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 76px); }

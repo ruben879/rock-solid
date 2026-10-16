@@ -10,7 +10,7 @@ const nameOf = (p: Profile) => p.full_name || p.email
 // ======================================================================
 // My agents (coach) / All agents (broker)
 // ======================================================================
-export function AgentsOverview({ me, team, brokerage, onOpen }: { me: Profile; team: Profile[]; brokerage: Brokerage | null; onOpen: (p: Profile) => void }) {
+export function AgentsOverview({ me, team, brokerage, onOpen, onCheer }: { me: Profile; team: Profile[]; brokerage: Brokerage | null; onOpen: (p: Profile) => void; onCheer?: (p: Profile) => void }) {
   const isBroker = me.role === 'broker'
   const [coachFilter, setCoachFilter] = useState('')
   const coaches = team.filter((p) => p.role === 'coach' || p.role === 'broker')
@@ -58,7 +58,10 @@ export function AgentsOverview({ me, team, brokerage, onOpen }: { me: Profile; t
                 </div>
                 {s.contacts > 0 && <HeatStack parts={s.heat} />}
                 <span className="note" style={{ color: flag.c }}>{flag.t}</span>
-                <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => onOpen(p)}>Open tracker</button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn" onClick={() => onOpen(p)}>Open tracker</button>
+                  {onCheer && p.id !== me.id && <button className="btn gold" onClick={() => onCheer(p)}>👏 Encourage</button>}
+                </div>
               </div>
             )
           })}

@@ -12,6 +12,7 @@ import { IChart, IHome, IPeople, ITeam, ITrophy } from './icons'
 import { myInvites, unread } from './lib/together'
 import { HomeScreenTip } from './views/start'
 import { MorningNoteEditor, MorningScreen } from './views/morning'
+import { CheerScreen, CheerSheet } from './views/cheer'
 
 // A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
 {
@@ -212,6 +213,7 @@ function Signed({ session }: { session: Session }) {
   }, [])
   const [teamView, setTeamView] = useState<TeamView>('agents')
   const [viewing, setViewing] = useState<Profile | null>(null)
+  const [cheering, setCheering] = useState<Profile | null>(null)
   const [menu, setMenu] = useState(false)
   const [offerPw, setOfferPw] = useState(() => store.get<boolean>('rs-offer-pw', false))
   useEffect(() => {
@@ -334,7 +336,10 @@ function Signed({ session }: { session: Session }) {
         {viewing && (
           <div className="viewing">
             <span>Looking at <b>{viewing.full_name || viewing.email}</b></span>
-            <button className="btn" onClick={() => { setViewing(null); go('team') }}>Done</button>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button className="btn gold" onClick={() => setCheering(viewing)}>👏 Encourage</button>
+              <button className="btn" onClick={() => { setViewing(null); go('team') }}>Done</button>
+            </span>
           </div>
         )}
         {current !== 'team' && (
@@ -349,7 +354,7 @@ function Signed({ session }: { session: Session }) {
                 ))}
               </div>
             )}
-            {(me.role !== 'broker' || teamView === 'agents') && <AgentsOverview me={me} team={team} brokerage={brokerage} onOpen={(p) => { setViewing(p); go('week') }} />}
+            {(me.role !== 'broker' || teamView === 'agents') && <AgentsOverview me={me} team={team} brokerage={brokerage} onOpen={(p) => { setViewing(p); go('week') }} onCheer={setCheering} />}
             {me.role === 'broker' && teamView === 'invite' && <TeamAdmin me={me} team={team} onChange={loadProfile} />}
             {me.role === 'broker' && teamView === 'draw' && <DrawingView me={me} team={team} brokerage={brokerage} />}
             {me.role === 'broker' && teamView === 'note' && <MorningNoteEditor me={me} brokerage={brokerage} onSaved={loadProfile} />}
@@ -367,7 +372,9 @@ function Signed({ session }: { session: Session }) {
         </div>
       </nav>
       {!viewing && <HomeScreenTip />}
+      {cheering && <CheerSheet me={me} to={cheering} onClose={() => setCheering(null)} />}
       {!viewing && !store.get<string | null>('rs-join', null) && <MorningScreen key={brokerage?.settings?.morning_note?.id ?? 'day'} me={me} brokerage={brokerage} />}
+      {!viewing && <CheerScreen me={me} />}
       {offerPw && !menu && (
         <Sheet label="Skip the code next time" onClose={() => { setOfferPw(false); store.set('rs-offer-pw', false) }}>
           <h3>Skip the code next time?</h3>

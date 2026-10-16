@@ -932,7 +932,6 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 22 }}>{fullName(live)}</h3>
         <span className={`ttag ${live.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{live.tier === 'U' ? '?' : live.tier === 'A' ? 'A' : 'B'}</span>
-        <span className="note">{TIER_NAMES[live.tier === 'C' || live.tier === 'D' ? 'B' : live.tier]}</span>
       </div>
       {!ctx.readOnly && (
         <div className="qlog" role="group" aria-label="Log a touch">
