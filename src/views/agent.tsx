@@ -799,19 +799,25 @@ function PersonGauge({ ctx, c }: { ctx: Ctx; c: Contact }) {
   const since = ymd(addDays(today(), -365))
   const kinds: TouchKind[] = ['call', 'text', 'card', 'facetoface', 'popby']
   const year = mine.filter((t) => t.occurred_on >= since)
+  // Toward the yearly goal, group sends count too (same as before).
+  const all12 = ctx.data.touches.filter((t) => t.contact_id === c.id && t.occurred_on >= since).length
   const mix = kinds.map((k) => [k, year.filter((t) => t.kind === k).length] as const).filter(([, n]) => n > 0)
   return (
     <div className="pgauge">
       <div className="pg-top">
         <span className={`spill s-${status[0]}`}>{status[1]}</span>
-        <Signal bars={bars} plain />
+        <Signal bars={bars} tone />
       </div>
       <p className="pg-line">
         {last ? <>Last one-on-one <b>{ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`}</b> · {due && due < today() ? <>was due <b>{fmt(due)}</b></> : <>next due <b>{due ? fmt(due) : ''}</b></>}</> : <>No one-on-one touch yet. They come up every {every} days.</>}
       </p>
+      <div className="pg36">
+        <span><b>{all12}</b> of {ctx.goal} touches in the last 12 months</span>
+        <div className="m36"><i style={{ width: `${Math.min(100, (all12 / ctx.goal) * 100)}%` }} /></div>
+      </div>
       {year.length > 0 && (
         <>
-          <div className="mix" style={{ height: 10, marginTop: 8 }}>{mix.map(([k, n]) => <i key={k} className={`k-${k}`} style={{ flex: n }} />)}</div>
+          <div className="mix" style={{ height: 10, marginTop: 10 }}>{mix.map(([k, n]) => <i key={k} className={`k-${k}`} style={{ flex: n }} />)}</div>
           <div className="legend" style={{ marginTop: 6, fontSize: 13 }}>
             {mix.map(([k, n]) => <span key={k}><i className={`k-${k}`} /> <b>{n}</b> {k === 'facetoface' ? 'face to face' : `${KIND_LABEL[k].toLowerCase()}${n === 1 ? '' : 's'}`}</span>)}
           </div>
@@ -823,11 +829,34 @@ function PersonGauge({ ctx, c }: { ctx: Ctx; c: Contact }) {
 
 function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
   const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
-  const [noteOn, setNoteOn] = useState<Touch | null>(null)
-  const byContact = useMemo(() => touchCounts(ctx.data.touches), [ctx.data.touches])
-  const history = ctx.data.touches
-    .filter((t) => t.contact_id === live.id)
+  const toast = useToast()
+  const [noteOn, setNoteOn] = useState<{ t: Touch; fresh?: boolean } | null>(null)
+  const [info, setInfo] = useState<Touch | null>(null)
+  // The phone keeps about a year. Older touches with this person load from the server when you open them.
+  const [older, setOlder] = useState<{ touches: Touch[]; cards: Card[] }>({ touches: [], cards: [] })
+  useEffect(() => {
+    if (!navigator.onLine) return
+    api.loadContactHistory(live.id).then(setOlder, () => {})
+  }, [live.id])
+  const recent = ctx.data.touches.filter((t) => t.contact_id === live.id)
+  const ids = new Set(recent.map((t) => t.id))
+  const history = [...recent, ...older.touches.filter((t) => !ids.has(t.id))]
     .sort((a, b) => b.occurred_on.localeCompare(a.occurred_on) || (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  const allCards = [...ctx.data.cards, ...older.cards]
+  const cardFor = (t: Touch) => t.kind === 'card' && t.note?.startsWith('Card a Day: ')
+    ? allCards.find((k) => k.sent_on === t.occurred_on && k.recipient_name === t.note!.slice('Card a Day: '.length))
+    : undefined
+  async function quick(kind: TouchKind) {
+    try {
+      const t = await api.logTouch(ctx.me, live.id, kind, '')
+      await ctx.reload()
+      setNoteOn({ t, fresh: true })
+    } catch (e) { toast(`That didn't save: ${(e as Error).message}`) }
+  }
+  async function undo(t: Touch) {
+    setNoteOn(null)
+    try { await api.deleteTouch(t, ctx.data.touches, ctx.data.cards); await ctx.reload(); toast('Undone.') } catch (e) { toast(`Couldn't undo: ${(e as Error).message}`) }
+  }
   const where = live.address || live.city ? [live.address, [live.city, live.state].filter(Boolean).join(', '), live.zip].filter(Boolean).join(' ') : ''
   const dates: [string, string | null | undefined][] = [
     ['Birthday', live.birthday], ['Home anniversary', live.home_anniversary], ['Wedding anniversary', live.wedding_anniversary],
@@ -840,10 +869,13 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         <span className={`ttag ${live.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{live.tier === 'U' ? '?' : live.tier === 'A' ? 'A' : 'B'}</span>
         <span className="note">{TIER_NAMES[live.tier === 'C' || live.tier === 'D' ? 'B' : live.tier]}</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 4px', flexWrap: 'wrap' }}>
-        <Meter c={live} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
-        <span className="note">touches in the last 12 months</span>
-      </div>
+      {!ctx.readOnly && (
+        <div className="qlog" role="group" aria-label="Log a touch">
+          {(['call', 'text', 'card', 'popby', 'facetoface'] as TouchKind[]).map((k) => (
+            <button key={k} className={`k-${k}`} onClick={() => quick(k)}>{KIND_ICON[k]}<span>{k === 'facetoface' ? 'Face to face' : KIND_LABEL[k]}</span></button>
+          ))}
+        </div>
+      )}
       <PersonGauge ctx={ctx} c={live} />
 
       <div className="facts">
@@ -864,19 +896,18 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         <div className="hist">
           {history.map((t) => {
             const canNote = !ctx.readOnly && !t.is_group && !(t.kind === 'card' && t.note?.startsWith('Card a Day: '))
-            const inner = (
-              <>
+            const k = cardFor(t)
+            const sub = k ? [k.occasion, k.note].filter(Boolean).join(' · ') : t.note && t.note !== 'Group touch' ? t.note : ''
+            return (
+              <button key={t.id} className="hrow tap" onClick={() => (canNote ? setNoteOn({ t }) : setInfo(t))}>
                 <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <b>{touchLabel(t)}</b>
-                  {t.note && t.note !== 'Group touch' ? <small>{t.note}</small> : canNote ? <small className="addnote">+ Add a note</small> : null}
+                  {sub ? <small className="clip">{sub}</small> : canNote ? <small className="addnote">+ Add a note</small> : null}
                 </span>
                 <span className="note" style={{ whiteSpace: 'nowrap' }}>{longDate(t.occurred_on)}</span>
-              </>
+              </button>
             )
-            return canNote
-              ? <button key={t.id} className="hrow tap" onClick={() => setNoteOn(t)}>{inner}</button>
-              : <div key={t.id} className="hrow">{inner}</div>
           })}
         </div>
       )}
@@ -885,7 +916,24 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         {!ctx.readOnly && <button className="btn primary" style={{ flex: 1 }} onClick={onEdit}>Edit details</button>}
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>Close</button>
       </div>
-      {noteOn && <NoteSheet ctx={ctx} t={noteOn} c={live} onClose={() => setNoteOn(null)} />}
+      {noteOn && <NoteSheet ctx={ctx} t={noteOn.t} c={live} onClose={() => setNoteOn(null)} onUndo={noteOn.fresh ? () => undo(noteOn.t) : undefined} />}
+      {info && (
+        <Sheet label="Touch details" onClose={() => setInfo(null)}>
+          <h3>{touchLabel(info)}</h3>
+          <p className="note">{longDate(info.occurred_on)}</p>
+          {(() => {
+            const k = cardFor(info)
+            if (k) return (
+              <div className="facts" style={{ marginTop: 8 }}>
+                <div><span>Card a Day</span><b>{k.occasion || 'Card'}{k.relationship ? ` · ${k.relationship}` : ''}</b></div>
+                <div><span>Notes</span><b style={{ fontWeight: 400, whiteSpace: 'pre-wrap' }}>{k.note || 'No notes on this card.'}</b></div>
+              </div>
+            )
+            return <p style={{ whiteSpace: 'pre-wrap' }}>{info.is_group ? 'Sent to a group, so there are no notes for just this person.' : info.note || 'No notes on this one.'}</p>
+          })()}
+          <button className="btn block" style={{ marginTop: 12 }} onClick={() => setInfo(null)}>Close</button>
+        </Sheet>
+      )}
     </Sheet>
   )
 }
@@ -1778,11 +1826,33 @@ function Meter({ c, byContact, goal, agent }: { c: Contact; byContact: Map<strin
   )
 }
 
+type PSort = 'cold' | 'warm' | 'az' | 'new'
+const PSORTS: [PSort, string, string][] = [
+  ['cold', 'Coldest first', 'Fewest bars at the top. Who needs you most.'],
+  ['warm', 'Warmest first', "The people you're closest with right now."],
+  ['az', 'A to Z', 'By name, with letter headings.'],
+  ['new', 'Recently added', 'Newest people first.'],
+]
+type PTier = 'all' | 'A' | 'B' | 'U'
+const tierOf = (c: Contact): 'A' | 'B' | 'U' => (c.tier === 'A' ? 'A' : c.tier === 'U' ? 'U' : 'B')
+const initialsOf = (c: Contact) => `${c.first_name?.[0] ?? ''}${c.last_name?.[0] ?? ''}`.toUpperCase() || '?'
+const talked = (d: string | undefined) => {
+  if (!d) return 'Not reached yet'
+  const n = daysBetween(parse(d), today())
+  return n <= 0 ? 'Talked today' : n === 1 ? 'Talked yesterday' : `Last talked ${n} days ago`
+}
+
 function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
   const { data, agent, readOnly } = ctx
+  // Bars come from one-on-one touches only (group sends don't count toward the status).
+  const personal = useMemo(() => touchCounts(data.touches.filter((t) => !t.is_group)), [data.touches])
   const byContact = useMemo(() => touchCounts(data.touches), [data.touches])
   const [q, setQ] = useState('')
-  const [hf, setHf] = useState<Heat | '' | 'tag'>('')
+  const [tier, setTier] = useState<PTier>('all')
+  const [sort, setSortState] = useState<PSort>(() => store.get<PSort>('rs-psort', 'cold'))
+  const setSort = (v: PSort) => { setSortState(v); store.set('rs-psort', v) }
+  const [sorting, setSorting] = useState(false)
+  const [tools, setTools] = useState(false)
   const [edit, setEdit] = useState<Contact | null | 'new'>(null)
   const [view, setView] = useState<Contact | null>(null)
   const [addName, setAddName] = useState<string | null>(null)
@@ -1793,18 +1863,26 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
     store.set('rs-go', null)
     return !ctx.readOnly
   })
-  const [shown, setShown] = useState(60)
+  const [shown, setShown] = useState(80)
 
-  const heats = new Map(data.contacts.map((c) => [c.id, heat(c, byContact, ctx.goal, agent.tier_days)]))
-  const counts: Record<Heat, number> = { hot: 0, warm: 0, cold: 0, new: 0 }
-  for (const h of heats.values()) counts[h]++
+  const lastOf = (c: Contact) => (personal.get(c.id) ?? []).reduce((m, d) => (d > m ? d : m), '')
+  const barsOf = new Map(data.contacts.map((c) => [c.id, signal(c, personal, agent.tier_days)]))
   const untagged = data.contacts.filter((c) => c.tier === 'U').length
-  // Typing a name searches everyone, and the matches show right under the search box.
   const term = q.trim().toLowerCase()
   const searching = !!term
+  const byName = (a: Contact, b: Contact) => fullName(a).localeCompare(fullName(b))
   const list = data.contacts
-    .filter((c) => (searching ? fullName(c).toLowerCase().includes(term) || (c.phone ?? '').replace(/\D/g, '').includes(term.replace(/\D/g, '') || '~') : !hf || (hf === 'tag' ? c.tier === 'U' : heats.get(c.id) === hf)))
-    .sort((a, b) => (!searching && hf && hf !== 'tag' ? score(a, byContact) - score(b, byContact) : 0) || fullName(a).localeCompare(fullName(b)))
+    .filter((c) => (searching
+      ? fullName(c).toLowerCase().includes(term) || (c.phone ?? '').replace(/\D/g, '').includes(term.replace(/\D/g, '') || '~')
+      : tier === 'all' || tierOf(c) === tier))
+    .sort((a, b) => {
+      if (searching || sort === 'az') return byName(a, b)
+      if (sort === 'new') return (b.added_on ?? '').localeCompare(a.added_on ?? '') || byName(a, b)
+      const d = (barsOf.get(a.id) ?? 0) - (barsOf.get(b.id) ?? 0)
+      const older = lastOf(a).localeCompare(lastOf(b))
+      return (sort === 'cold' ? d || older : -d || -older) || byName(a, b)
+    })
+  const letter = (c: Contact) => (fullName(c)[0] ?? '#').toUpperCase()
 
   async function setDays(t: Tier, v: number) {
     await api.updateMyProfile(ctx.me, { tier_days: { ...agent.tier_days, [t]: Math.max(1, v || 1) } })
@@ -1813,51 +1891,77 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
 
   return (
     <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 14 }}>
-        <h2 style={{ margin: 0 }}>People</h2>
-        {!readOnly && <button className="btn primary" onClick={() => setEdit('new')}><IPlus size={18} /> Add</button>}
+      <div className="ptitle">
+        <h2>People<small>{data.contacts.length}</small></h2>
+        {!readOnly && (
+          <span style={{ display: 'flex', gap: 8 }}>
+            <button className="btn iconly" aria-label="More tools" onClick={() => setTools(true)}><IMore /></button>
+            <button className="btn primary" onClick={() => setEdit('new')}><IPlus size={18} /> Add</button>
+          </span>
+        )}
       </div>
-      <p className="sub" style={{ marginTop: 4 }}>{data.contacts.length} people. Tap anyone to see or change their details.</p>
 
       <div className="search"><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-      {!searching && <div className="chips" style={{ margin: '12px 0' }}>
-        <button aria-pressed={!hf} onClick={() => setHf('')}>Everyone</button>
-        {untagged > 0 && <button aria-pressed={hf === 'tag'} onClick={() => setHf(hf === 'tag' ? '' : 'tag')}>Needs a tag ({untagged})</button>}
-        {(['cold', 'warm', 'hot', ...(counts.new ? ['new'] : [])] as Heat[]).map((h) => (
-          <button key={h} aria-pressed={hf === h} onClick={() => setHf(hf === h ? '' : h)}>{HEAT_NAME[h]} ({counts[h]})</button>
-        ))}
-      </div>}
+      {!searching && (
+        <div className="pfilter">
+          <div className="seg mini" role="group" aria-label="Show">
+            {([['all', 'All'], ['A', 'A'], ['B', 'B'], ...(untagged ? [['U', 'Tag']] : [])] as [PTier, string][]).map(([k, l]) => (
+              <button key={k} aria-pressed={tier === k} onClick={() => setTier(k)}>{l}{k === 'U' && <b className="cnt">{untagged}</b>}</button>
+            ))}
+          </div>
+          <button className="sortbtn" onClick={() => setSorting(true)}><span aria-hidden>⇅</span> {PSORTS.find(([k]) => k === sort)?.[1]}</button>
+        </div>
+      )}
       {searching && <div style={{ height: 12 }} />}
 
       {data.contacts.length === 0 ? (
         <div className="card empty">
-          <p>No one here yet. Add people one at a time, or bring in a spreadsheet under More tools.</p>
+          <p>No one here yet. Tap Add, or bring in a spreadsheet with the ⋯ button.</p>
         </div>
       ) : list.length === 0 ? (
-        <div className="card empty"><p>No one by that name yet.</p></div>
+        <div className="card empty"><p>{searching ? 'No one by that name yet.' : 'No one here yet.'}</p></div>
       ) : (
         <div className="plist">
-          {list.slice(0, shown).map((c) => (
-            <button key={c.id} className="prow" onClick={() => setView(c)}>
-              <span className="nm">
-                <b>{fullName(c)}</b>
-                <small>{c.tier === 'U' ? 'Needs a tag (?)' : c.tier === 'A' ? 'A' : 'B'}{c.last_touch_on ? ` · last touch ${fmt(c.last_touch_on)}` : ''}</small>
-              </span>
-              <Meter c={c} byContact={byContact} goal={ctx.goal} agent={ctx.agent} />
-            </button>
-          ))}
+          {list.slice(0, shown).map((c, i, arr) => {
+            const head = sort === 'az' && !searching && (i === 0 || letter(arr[i - 1]) !== letter(c))
+            const t = tierOf(c)
+            return (
+              <div key={c.id}>
+                {head && <div className="phead">{letter(c)}</div>}
+                <button className="prow" onClick={() => setView(c)}>
+                  <span className={`pav t-${t}`}>{t === 'U' ? '?' : initialsOf(c)}</span>
+                  <span className="nm">
+                    <b>{fullName(c)}</b>
+                    <small>{t === 'U' ? 'Needs a tag' : talked(lastOf(c) || undefined)}</small>
+                  </span>
+                  <Signal bars={barsOf.get(c.id) ?? 0} tone />
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
-      {list.length > shown && <button className="btn block" style={{ marginTop: 12 }} onClick={() => setShown(shown + 100)}>Show more ({list.length - shown})</button>}
+      {list.length > shown && <button className="btn block" style={{ marginTop: 12 }} onClick={() => setShown(shown + 150)}>Show more ({list.length - shown})</button>}
       {!readOnly && q.trim() && !data.contacts.some((c) => fullName(c).toLowerCase() === q.trim().toLowerCase()) && (
         <button className="btn" style={{ marginTop: 12 }} onClick={() => setAddName(q.trim())}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
       )}
-      <p className="note" style={{ marginTop: 12 }}>The bar shows touches in the last 12 months out of {ctx.goal}. Red means it's been a long time since you reached out.</p>
 
-      {!readOnly && (
-        <details className="more">
-          <summary>More tools</summary>
-          <div className="stack">
+      {sorting && (
+        <Sheet label="Sort by" onClose={() => setSorting(false)}>
+          <h3>Sort by</h3>
+          <div className="stack" style={{ marginTop: 10, gap: 8 }}>
+            {PSORTS.map(([k, l, d]) => (
+              <button key={k} className={`sortopt ${sort === k ? 'on' : ''}`} onClick={() => { setSort(k); setSorting(false); window.scrollTo({ top: 0 }) }}>
+                <span><b>{l}</b><small>{d}</small></span>{sort === k && <ICheck size={18} />}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+      {tools && (
+        <Sheet label="More tools" onClose={() => setTools(false)}>
+          <h3>More tools</h3>
+          <div className="stack" style={{ marginTop: 10 }}>
             <div className="card stack">
               <h3>Download my people</h3>
               <p className="note">A CSV file of everyone here, with their tier, touches this year and last touch. Opens in Excel, Google Sheets or Numbers.</p>
@@ -1866,7 +1970,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
             <div className="card stack">
               <h3>Bring in a spreadsheet</h3>
               <p className="note">A CSV file, like a BoldTrail export. People already here are skipped.</p>
-              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => setImporting(true)}>Import CSV</button>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setImporting(true) }}>Import CSV</button>
             </div>
             <div className="card stack">
               <h3>How often each tier comes up</h3>
@@ -1880,7 +1984,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
               ))}
             </div>
           </div>
-        </details>
+        </Sheet>
       )}
       {edit && <EditSheet ctx={ctx} c={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
       {addName !== null && <EditSheet ctx={ctx} c={null} prefill={{ name: addName }} onClose={() => setAddName(null)} />}

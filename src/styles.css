@@ -615,3 +615,43 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .morning .btn.gold { color: #1a2238; }
 .chatbtn { position: relative; gap: 8px; }
 .chatbtn .cbubble { min-width: 22px; height: 22px; border-radius: 999px; background: var(--urgent); color: #fff; font: 600 12.5px/22px var(--font); text-align: center; padding: 0 6px; margin-left: 2px; }
+
+/* ---------- People ---------- */
+.ptitle { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 14px 0 12px; }
+.ptitle h2 { margin: 0; }
+.ptitle h2 small { font-size: 16px; color: var(--muted); font-weight: 500; margin-left: 8px; }
+.btn.iconly { width: 44px; padding: 0; }
+.pfilter { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0; }
+.seg.mini { margin: 0; }
+.seg.mini button { padding: 6px 12px; font-size: 14px; flex: none; }
+.seg .cnt { display: inline-block; min-width: 18px; height: 18px; border-radius: 9px; background: var(--urgent); color: #fff; font: 600 11px/18px var(--font); text-align: center; margin-left: 5px; padding: 0 4px; }
+.sortbtn { display: inline-flex; align-items: center; gap: 6px; font: 600 14px var(--font); color: var(--navy); background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
+.phead { font: 600 12px var(--font); letter-spacing: .05em; color: var(--muted); padding: 10px 16px 6px; background: color-mix(in srgb, var(--bg) 60%, var(--surface)); border-bottom: 1px solid var(--line); }
+.prow { padding: 11px 14px; }
+.prow .nm small { font-size: 13px; }
+.pav { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; font: 600 14px var(--font); }
+.pav.t-A { background: var(--navy); color: #fff; }
+.pav.t-B { background: color-mix(in srgb, var(--navy) 12%, var(--surface)); color: var(--navy); }
+.pav.t-U { border: 1.5px dashed var(--line); color: var(--muted); background: transparent; }
+@media (prefers-color-scheme: dark) { .pav.t-A { color: #0f1526; } }
+.signal.t-on i.on { background: var(--good); }
+.signal.t-slip i.on { background: var(--behind); }
+.signal.t-over i.on { background: var(--urgent); }
+.sortopt { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; padding: 12px 14px; font: inherit; color: var(--ink); cursor: pointer; }
+.sortopt.on { border-color: var(--navy); background: color-mix(in srgb, var(--navy) 6%, var(--surface)); color: var(--navy); }
+.sortopt b { display: block; font-weight: 600; color: var(--ink); }
+.sortopt small { color: var(--muted); font-size: 13px; }
+.qlog { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0 4px; }
+.qlog button { display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--bg); border: 0; border-radius: 14px; padding: 10px 2px; font: 500 12px var(--font); color: var(--ink); cursor: pointer; text-align: center; line-height: 1.15; }
+.qlog button svg { color: var(--navy); }
+.qlog button:active { transform: scale(.96); }
+.pg36 { margin-top: 12px; font-size: 14px; color: var(--muted); }
+.pg36 b { color: var(--ink); font-weight: 600; }
+.m36 { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.m36 i { display: block; height: 100%; border-radius: 999px; background: var(--navy); }
+.hrow small.clip { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Bottom bar: the open tab sits on a soft pill so it's easy to see where you are. */
+nav.bottom button:not(.center) .navic { padding: 4px 18px; border-radius: 999px; transition: background .15s; }
+nav.bottom button[aria-current="page"]:not(.center) .navic { background: color-mix(in srgb, var(--navy) 13%, transparent); box-shadow: 0 2px 8px rgba(30, 58, 110, .12); }
+nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }

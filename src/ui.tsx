@@ -166,10 +166,12 @@ export const store = {
 
 // ---------- Signal bars ----------
 const SIGNAL_WORD = ['Not reached yet', 'Gone cold', 'Getting cold', 'Cooling off', 'Warm', 'Strong']
-export function Signal({ bars, plain }: { bars: number; plain?: boolean }) {
+export function Signal({ bars, plain, tone }: { bars: number; plain?: boolean; tone?: boolean }) {
   const h = bars >= 4 ? 'hot' : bars >= 2 ? 'warm' : bars === 1 ? 'cold' : 'new'
+  // tone: colored like the status pills (3+ bars on schedule, 2 slipping, 1 overdue).
+  const t = bars >= 3 ? 'on' : bars === 2 ? 'slip' : bars === 1 ? 'over' : 'none'
   return (
-    <span className={`signal ${plain ? 'plain' : `h-${h}`}`} role="img" aria-label={`Signal ${bars} of 5: ${SIGNAL_WORD[bars]}`}>
+    <span className={`signal ${tone ? `t-${t}` : plain ? 'plain' : `h-${h}`}`} role="img" aria-label={`Signal ${bars} of 5: ${SIGNAL_WORD[bars]}`}>
       {[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= bars ? 'on' : ''} style={{ height: `${4 + i * 3}px` }} />)}
     </span>
   )

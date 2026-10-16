@@ -82,6 +82,16 @@ export async function loadAgentData(agentIds: string[]): Promise<AgentData> {
   return { contacts, touches, cards, tallies }
 }
 
+/** Everything ever logged with one person (the app only keeps the last year or so on the phone). */
+export async function loadContactHistory(contactId: string): Promise<{ touches: Touch[]; cards: Card[] }> {
+  const [t, k] = await Promise.all([
+    supabase.from('touches').select('id, agent_id, contact_id, kind, is_group, note, occurred_on, created_at').eq('contact_id', contactId).order('occurred_on', { ascending: false }).limit(1000),
+    supabase.from('cards').select('*').eq('contact_id', contactId).order('sent_on', { ascending: false }).limit(500),
+  ])
+  if (t.error) throw new Error(t.error.message)
+  return { touches: (t.data ?? []) as Touch[], cards: (k.data ?? []) as Card[] }
+}
+
 /**
  * Loads an agent's data. Shows the copy saved on the phone right away, sends any changes made offline,
  * then refreshes from the server. Offline, it keeps working from the saved copy.
