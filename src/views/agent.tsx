@@ -1091,7 +1091,9 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
   const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim()
   const lastCard = (n: string) => data.cards.filter((c) => norm(c.recipient_name) === norm(n)).sort((a, b) => b.sent_on.localeCompare(a.sent_on))[0]
   const prior = q ? lastCard(name) : undefined
-  const check = known || prior ? (
+  // Check anyone typed with a first and last name, in your people or not.
+  const fullTyped = name.trim().split(/\s+/).length >= 2
+  const check = known || prior || fullTyped ? (
     prior ? (
       <div className={dup && agent.card_rule ? 'warn' : 'okcheck'} style={{ marginTop: 10 }}>
         Last card to {who}: <b>{fmt(prior.sent_on)}</b>{prior.occasion ? ` (${prior.occasion})` : ''}.
@@ -1133,7 +1135,10 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
           )}
           {check}
           {q && !known && (
-            <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><IPlus size={18} /> Add "{name.trim()}" to my people</button>
+            <>
+              <p className="note" style={{ marginTop: 10 }}>Not in your people? No problem. Tap Next and the card logs by name.</p>
+              <button type="button" className="btn" style={{ marginTop: 6 }} onClick={() => setAdding(true)}><IPlus size={18} /> Or add "{name.trim()}" to my people</button>
+            </>
           )}
           <button className="btn primary lg block" style={{ marginTop: 14 }} disabled={!name.trim()}>Next</button>
         </form>
