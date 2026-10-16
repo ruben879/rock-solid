@@ -266,6 +266,13 @@ export async function updateMyProfile(me: Profile, fields: Partial<Pick<Profile,
 }
 
 // ---------- Broker actions ----------
+export async function saveBrokerageSettings(b: Brokerage, patch: Partial<Brokerage['settings']>) {
+  needOnline()
+  const { data, error } = await supabase.from('brokerages').select('settings').eq('id', b.id).single()
+  if (error) throw new Error(error.message)
+  check(await supabase.from('brokerages').update({ settings: { ...(data?.settings ?? {}), ...patch } }).eq('id', b.id))
+}
+
 export interface Invite {
   email: string
   full_name: string | null

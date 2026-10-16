@@ -12,6 +12,7 @@ export interface Brokerage {
     touch_goal?: number
     touch_mix?: Record<string, number>
     monthly_goals?: { call?: number; text?: number; card?: number }
+    morning_note?: { id: string; text: string; from: string; starts: string; ends: string } | null
   }
 }
 

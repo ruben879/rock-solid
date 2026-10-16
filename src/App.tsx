@@ -11,6 +11,7 @@ import { Reminders } from './views/reminders'
 import { IChart, IHome, IPeople, ITeam, ITrophy } from './icons'
 import { myInvites, unread } from './lib/together'
 import { HomeScreenTip } from './views/start'
+import { MorningNoteEditor, MorningScreen } from './views/morning'
 
 // A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
 {
@@ -190,7 +191,7 @@ function SignIn() {
 }
 
 type Tab = AgentTab | 'team'
-type TeamView = 'agents' | 'invite' | 'draw'
+type TeamView = 'agents' | 'invite' | 'draw' | 'note'
 
 function Signed({ session }: { session: Session }) {
   const [me, setMe] = useState<Profile | null | undefined>(undefined)
@@ -334,7 +335,7 @@ function Signed({ session }: { session: Session }) {
           <>
             {me.role === 'broker' && (
               <div className="seg" role="group" aria-label="Team views">
-                {([['agents', 'Agents'], ['invite', 'Invite'], ['draw', 'Drawing']] as [TeamView, string][]).map(([k, l]) => (
+                {([['agents', 'Agents'], ['invite', 'Invite'], ['draw', 'Drawing'], ['note', 'Message']] as [TeamView, string][]).map(([k, l]) => (
                   <button key={k} aria-pressed={teamView === k} onClick={() => setTeamView(k)}>{l}</button>
                 ))}
               </div>
@@ -342,6 +343,7 @@ function Signed({ session }: { session: Session }) {
             {(me.role !== 'broker' || teamView === 'agents') && <AgentsOverview me={me} team={team} brokerage={brokerage} onOpen={(p) => { setViewing(p); go('week') }} />}
             {me.role === 'broker' && teamView === 'invite' && <TeamAdmin me={me} team={team} onChange={loadProfile} />}
             {me.role === 'broker' && teamView === 'draw' && <DrawingView me={me} team={team} brokerage={brokerage} />}
+            {me.role === 'broker' && teamView === 'note' && <MorningNoteEditor me={me} brokerage={brokerage} onSaved={loadProfile} />}
           </>
         )}
       </Shell>
@@ -356,6 +358,7 @@ function Signed({ session }: { session: Session }) {
         </div>
       </nav>
       {!viewing && <HomeScreenTip />}
+      {!viewing && !store.get<string | null>('rs-join', null) && <MorningScreen key={brokerage?.settings?.morning_note?.id ?? 'day'} me={me} brokerage={brokerage} />}
       {offerPw && !menu && (
         <Sheet label="Skip the code next time" onClose={() => { setOfferPw(false); store.set('rs-offer-pw', false) }}>
           <h3>Skip the code next time?</h3>

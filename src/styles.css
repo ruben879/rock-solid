@@ -592,3 +592,24 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .mine .mini { display: flex; align-items: center; gap: 14px; }
 .mine .ring { width: 58px; height: 58px; flex: none; color: var(--ink); }
 .mine .chhist i { background: var(--bg); }
+
+/* ---------- Good-morning screen ---------- */
+.morning { position: fixed; inset: 0; z-index: 60; background: radial-gradient(120% 80% at 50% 0%, #2a4f8f 0%, #1e3a6e 45%, #13264a 100%); color: #fff; display: flex; align-items: center; justify-content: center; padding: 24px 22px calc(24px + env(safe-area-inset-bottom, 0px)); animation: mIn .35s ease both; overflow-y: auto; }
+.morning.out { animation: mOut .22s ease both; }
+@keyframes mIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mOut { to { opacity: 0; transform: scale(1.02); } }
+.mwrap { width: 100%; max-width: 420px; text-align: center; animation: mUp .5s .05s ease both; }
+@keyframes mUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.mdate { margin: 0; color: rgba(255,255,255,.7); font-size: 15px; }
+.morning h1 { margin: 6px 0 22px; font-size: 32px; line-height: 1.15; font-weight: 600; letter-spacing: -.01em; color: #fff; }
+.mrocks { display: flex; justify-content: center; align-items: flex-end; gap: 6px; margin-bottom: 26px; }
+.mrocks .rock { width: 52px; height: auto; }
+.mrocks .rock:nth-child(2) { width: 70px; }
+.mquote { margin: 0 0 26px; padding: 0; }
+.mquote p { margin: 0; font-size: 23px; line-height: 1.4; font-weight: 500; color: #fff; }
+.mquote cite { display: block; margin-top: 12px; font-style: normal; font-size: 14px; color: var(--gold); font-weight: 600; letter-spacing: .02em; }
+.mquote.note-from { background: rgba(255,255,255,.08); border: 1px solid rgba(201,162,74,.5); border-radius: 18px; padding: 20px 18px; }
+.mquote.note-from cite { font-size: 15px; }
+.mgoal { margin: 0 0 18px; color: rgba(255,255,255,.8); font-size: 16px; }
+.mgoal b { color: #fff; font-weight: 600; }
+.morning .btn.gold { color: #1a2238; }
