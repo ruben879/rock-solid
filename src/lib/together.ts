@@ -36,7 +36,7 @@ export const COUNTABLE: [string, string, string][] = [
 
 const friendly = (m: string) =>
   /challenge|relation|function/i.test(m) && /does not exist|not find|could not/i.test(m)
-    ? 'Together needs the challenges SQL (0009) run in Supabase first.'
+    ? 'Team challenges need the challenges SQL (0009) run in Supabase first.'
     : m
 function check<T>(r: { data: T; error: { message: string } | null }): T {
   if (r.error) throw new Error(friendly(r.error.message))
@@ -201,4 +201,50 @@ export function noun(c: Challenge) {
   if (c.kind === 'cards') return 'cards'
   const names = c.counts.map((k) => COUNTABLE.find((x) => x[0] === k)?.[2] ?? k)
   return names.length <= 2 ? names.join(' or ') : `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`
+}
+
+// ---------- Pinning: each person picks the challenge that sits at the top of their Challenges tab ----------
+/** 'cad' is your own Card a Day. Saved to your account (after the 0011 SQL) and on this phone. */
+const PIN_KEY = 'rs-pin'
+export function localPin(): string {
+  try { return JSON.parse(localStorage.getItem(PIN_KEY) ?? '"cad"') as string } catch { return 'cad' }
+}
+export async function loadPin(userId: string): Promise<string> {
+  const r = await supabase.from('profiles').select('pinned_challenge').eq('id', userId).maybeSingle()
+  if (r.error || !r.data) return localPin() // Before the SQL is run, the pin lives on this phone.
+  const v = (r.data as { pinned_challenge: string | null }).pinned_challenge ?? 'cad'
+  try { localStorage.setItem(PIN_KEY, JSON.stringify(v)) } catch { /* storage off */ }
+  return v
+}
+export async function savePin(userId: string, id: string) {
+  try { localStorage.setItem(PIN_KEY, JSON.stringify(id)) } catch { /* storage off */ }
+  await supabase.from('profiles').update({ pinned_challenge: id }).eq('id', userId)
+}
+
+/** Days left in this period, counting today (used to put the most urgent challenge first). */
+export function daysLeft(p: Period) {
+  const t = today()
+  if (p === 'day') return 1
+  if (p === 'week') return 7 - Math.round((t.getTime() - weekStart(t).getTime()) / 86400000)
+  return new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate() - t.getDate() + 1
+}
+
+/** Your last few periods, oldest first: did you hit the goal, and a short label. The last one is now. */
+export function history(c: Challenge, rows: DayCount[], userId: string, n = 6) {
+  const sums = new Map<string, number>()
+  for (const r of rows) if (r.user_id === userId) sums.set(periodKey(r.day, c.period), (sums.get(periodKey(r.day, c.period)) ?? 0) + r.n)
+  const out: { label: string; n: number; hit: boolean; now: boolean }[] = []
+  let d = today()
+  for (let i = 0; i < n; i++) {
+    if (c.period === 'day') while (isWeekend(d)) d = addDays(d, -1)
+    const k = periodKey(ymd(d), c.period)
+    const got = sums.get(k) ?? 0
+    const label = i === 0 ? 'Now'
+      : c.period === 'day' ? d.toLocaleDateString('en-US', { weekday: 'short' })
+      : c.period === 'week' ? `${weekStart(d).getMonth() + 1}/${weekStart(d).getDate()}`
+      : d.toLocaleDateString('en-US', { month: 'short' })
+    out.unshift({ label, n: got, hit: got >= c.target, now: i === 0 })
+    d = c.period === 'day' ? addDays(d, -1) : c.period === 'week' ? addDays(weekStart(d), -1) : new Date(d.getFullYear(), d.getMonth(), 0, 12)
+  }
+  return out
 }

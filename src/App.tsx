@@ -8,8 +8,7 @@ import { OfflineBar, PullToRefresh, Sheet, ToastProvider, store, useToast } from
 import { AgentWorkspace, type AgentTab } from './views/agent'
 import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { Reminders } from './views/reminders'
-import { ICard, IChart, IHeart, IHome, IPeople, ITeam } from './icons'
-import { Together } from './views/together'
+import { IChart, IHome, IPeople, ITeam, ITrophy } from './icons'
 import { myInvites, unread } from './lib/together'
 
 // A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
@@ -183,15 +182,15 @@ function SignIn() {
   )
 }
 
-type Tab = AgentTab | 'team' | 'together'
+type Tab = AgentTab | 'team'
 type TeamView = 'agents' | 'invite' | 'draw'
 
 function Signed({ session }: { session: Session }) {
   const [me, setMe] = useState<Profile | null | undefined>(undefined)
   const [brokerage, setBrokerage] = useState<Brokerage | null>(null)
   const [team, setTeam] = useState<Profile[]>([])
-  // Always open on Today (or Together when someone tapped a challenge link).
-  const [tab, setTab] = useState<Tab>(() => (store.get<string | null>('rs-join', null) ? 'together' : 'week'))
+  // Always open on Today (or Challenges when someone tapped a challenge link).
+  const [tab, setTab] = useState<Tab>(() => (store.get<string | null>('rs-join', null) ? 'cards' : 'week'))
   // Coming back after a while also lands on Today.
   useEffect(() => {
     let hiddenAt = 0
@@ -224,7 +223,7 @@ function Signed({ session }: { session: Session }) {
     return () => window.removeEventListener('rs-open', on)
   }, [])
 
-  // Bubble on Together: new posts from others since you last looked, plus waiting invites.
+  // Bubble on Challenges: new posts from others since you last looked, plus waiting invites.
   const [invites, setInvites] = useState(0)
   const [fresh, setFresh] = useState(0)
   useEffect(() => {
@@ -280,16 +279,14 @@ function Signed({ session }: { session: Session }) {
     )
 
   const leads = me.role !== 'agent'
-  // Today sits in the middle, bigger and gold. Team (for the broker and coaches) is the button at the top.
+  // Three tabs: Today sits in the middle, bigger and gold. Progress and Team (broker and coaches) are buttons at the top.
   const tabs: [Tab, string, ReactNode][] = [
-    ['cards', 'Cards', <ICard key="c" />],
     ['db', 'People', <IPeople key="p" />],
     ['week', 'Today', <IHome key="h" size={28} />],
-    ['together', 'Together', <IHeart key="g" />],
-    ['activity', 'Progress', <IChart key="a" />],
+    ['cards', 'Challenges', <ITrophy key="c" />],
   ]
-  const allowed = [...tabs.map(([k]) => k), ...(leads && !viewing ? (['team'] as Tab[]) : [])]
-  const current = allowed.includes(tab) && !(viewing && tab === 'together') ? tab : 'week'
+  const allowed = [...tabs.map(([k]) => k), 'activity' as Tab, ...(leads && !viewing ? (['team'] as Tab[]) : [])]
+  const current = allowed.includes(tab) ? tab : 'week'
   const go = (t: Tab) => { setTab(t); window.scrollTo({ top: 0 }) }
   const subject = viewing ?? me
   const initial = (me.full_name || me.email).trim()[0]?.toUpperCase() ?? '?'
@@ -300,6 +297,7 @@ function Signed({ session }: { session: Session }) {
       <Shell wide={current === 'team'} right={
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {leads && !viewing && <button className={`teambtn ${current === 'team' ? 'on' : ''}`} onClick={() => go('team')}><ITeam size={18} /> {me.role === 'broker' ? 'Team' : 'My agents'}</button>}
+          <button className={`progbtn ${current === 'activity' ? 'on' : ''}`} aria-label="Progress" aria-current={current === 'activity' ? 'page' : undefined} onClick={() => go('activity')}><IChart size={20} /></button>
           <button className="me" aria-label="Account" onClick={() => setMenu(true)}>{initial}</button>
         </span>
       }>
@@ -309,8 +307,7 @@ function Signed({ session }: { session: Session }) {
             <button className="btn" onClick={() => { setViewing(null); go('team') }}>Done</button>
           </div>
         )}
-        {current === 'together' && <Together me={me} />}
-        {current !== 'team' && current !== 'together' && (
+        {current !== 'team' && (
           <AgentWorkspace key={subject.id} me={me} agent={subject} brokerage={brokerage} tab={current as AgentTab} readOnly={!!viewing} onProfileChange={loadProfile} onGo={(t) => go(t)} />
         )}
         {current === 'team' && (
@@ -333,7 +330,7 @@ function Signed({ session }: { session: Session }) {
         <div className="wrap">
           {tabs.map(([k, l, icon]) => (
             <button key={k} className={k === 'week' ? 'center' : undefined} aria-current={current === k ? 'page' : undefined} onClick={() => go(k)} aria-label={k === 'week' && openCount > 0 && !viewing ? `${l}, ${openCount} open` : undefined}>
-              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}{k === 'together' && fresh > 0 && <span className="bubble">{fresh > 99 ? '99+' : fresh}</span>}{k === 'together' && !fresh && invites > 0 && <span className="dot" aria-label={`${invites} invite${invites === 1 ? '' : 's'}`} />}</span>{l}
+              <span className="navic">{icon}{k === 'week' && openCount > 0 && !viewing && <span className="bubble">{openCount > 99 ? '99+' : openCount}</span>}{k === 'cards' && !viewing && fresh > 0 && <span className="bubble">{fresh > 99 ? '99+' : fresh}</span>}{k === 'cards' && !viewing && !fresh && invites > 0 && <span className="dot" aria-label={`${invites} invite${invites === 1 ? '' : 's'}`} />}</span>{l}
             </button>
           ))}
         </div>

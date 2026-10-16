@@ -557,3 +557,38 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .spill.s-on { background: var(--good); } .spill.s-slip { background: var(--behind); color: #1a2238; } .spill.s-over { background: var(--urgent); } .spill.s-none { background: var(--line); color: var(--muted); }
 .pg-line { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
 .pg-line b { color: var(--ink); font-weight: 600; }
+
+/* ---------- Challenges tab ---------- */
+.progbtn { width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface); color: var(--navy); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.progbtn.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+@media (prefers-color-scheme: dark) { .progbtn.on { color: #0f1526; } }
+.chcard { display: block; width: 100%; text-align: left; background: var(--surface); border-radius: var(--r); padding: 14px 16px; box-shadow: 0 1px 2px rgba(20, 32, 58, .06); margin-bottom: 12px; cursor: pointer; border: 2px solid transparent; color: var(--ink); }
+.chcard.big { border-color: var(--gold); padding: 16px; }
+.chcard .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chtag { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chtag .newtag { margin-top: 0; text-transform: none; letter-spacing: 0; }
+.chname { font-size: 18px; font-weight: 600; min-width: 0; }
+.chstreak { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.chstreak b { font-size: 30px; font-weight: 600; line-height: 1.1; }
+.chstreak span { color: var(--muted); font-size: 14px; }
+.chstreak.sm b { font-size: 22px; }
+.chstreak.sm span { font-size: 13px; }
+.banked { font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--gold-soft); color: var(--gold-ink); white-space: nowrap; }
+.chweek { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 12px 0; }
+.chweek div { text-align: center; font-size: 11px; color: var(--muted); }
+.chweek i { display: block; height: 28px; border-radius: 9px; margin-top: 3px; background: var(--bg); }
+.chweek i.on { background: var(--card); }
+.chweek i.cov { background: color-mix(in srgb, var(--card) 35%, var(--surface)); }
+.chweek i.t { outline: 2px solid var(--navy); outline-offset: 1px; }
+.chbar { height: 10px; border-radius: 999px; background: var(--bg); overflow: hidden; margin: 10px 0 8px; }
+.chbar i { display: block; height: 100%; border-radius: 999px; }
+.chhist { display: flex; gap: 6px; margin: 12px 0 2px; }
+.chhist div { flex: 1; text-align: center; font-size: 10.5px; color: var(--muted); }
+.chhist i { display: block; height: 26px; border-radius: 8px; margin-bottom: 3px; background: var(--bg); }
+.pinbtn { width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.pinbtn:hover { background: var(--bg); color: var(--navy); }
+.pinned { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--gold-ink); flex: none; }
+.mine { margin-bottom: 12px; }
+.mine .mini { display: flex; align-items: center; gap: 14px; }
+.mine .ring { width: 58px; height: 58px; flex: none; color: var(--ink); }
+.mine .chhist i { background: var(--bg); }

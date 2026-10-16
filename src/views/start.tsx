@@ -35,7 +35,7 @@ export function GettingStarted({ contacts, agent, onGo }: { contacts: Contact[];
   const steps: Step[] = [
     {
       key: 'goals', title: 'Set your goals first', done: !!agent.plan && Object.keys(agent.plan).length > 0,
-      body: <p>On <b>Progress</b>, fill in your plan for the year (take-home goal, average price). It tells you how many people you need in your database, and with <b>Set my goals from my plan</b> checked, how many to reach each day.</p>,
+      body: <p>Tap <b>Progress</b> (the graph icon at the top, next to your initial) and fill in your plan for the year (take-home goal, average price). It tells you how many people you need in your database, and with <b>Set my goals from my plan</b> checked, how many to reach each day.</p>,
       action: { label: 'Go to Progress', run: () => go('activity') },
     },
     {

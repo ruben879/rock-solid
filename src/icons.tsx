@@ -59,3 +59,9 @@ export const IChevR = ({ size }: P) => (
 export const IHeart = ({ size }: P) => (
   <svg {...base(size)}><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z" /></svg>
 )
+export const IPin = ({ size }: P) => (
+  <svg {...base(size)}><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3-1-5zM12 14v6" /></svg>
+)
+export const ITrophy = ({ size }: P) => (
+  <svg {...base(size)}><path d="M7 4h10v4a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 13v3M8 20h8M9.5 16h5l.5 4h-6z" /></svg>
+)

@@ -8,6 +8,7 @@ import {
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
 import { GettingStarted } from './start'
+import { Together, type CadInfo } from './together'
 import { ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
@@ -40,7 +41,11 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
   return (
     <>
       {props.tab === 'week' && <Today ctx={ctx} onGo={props.onGo} />}
-      {props.tab === 'cards' && <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />}
+      {props.tab === 'cards' && (props.readOnly
+        ? <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />
+        : <Together me={props.me} cad={cadInfo(data.cards)}
+            renderCad={(back, feed) => <CardADay ctx={ctx} onProfileChange={props.onProfileChange} onBack={back} extra={feed} />}
+            renderLog={(kinds, close) => <ChallengeLog ctx={ctx} kinds={kinds} onClose={close} />} />)}
       {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
       {props.tab === 'db' && <People ctx={ctx} onProfileChange={props.onProfileChange} />}
     </>
@@ -664,7 +669,7 @@ function Momentum({ ctx }: { ctx: Ctx }) {
 }
 
 /** Record any touch from the top of Today: pick (or add) the person, pick what you did. */
-function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; onLog: (c: Contact, kind: TouchKind, note: string) => void }) {
+function RecordSheet({ ctx, onClose, onLog, kinds }: { ctx: Ctx; onClose: () => void; onLog: (c: Contact, kind: TouchKind, note: string) => void; kinds?: TouchKind[] }) {
   const toast = useToast()
   const [q, setQ] = useState('')
   const [who, setWho] = useState<Contact | null>(null)
@@ -684,19 +689,19 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
   if (adding && !who)
     return (
       <EditSheet ctx={ctx} c={null} prefill={{ name: q }} saveLabel="Save and continue" onClose={() => setAdding(false)}
-        onSaved={(c) => { setWho(c); setAdding(false); toast(`${c.first_name} added to your people.`) }} />
+        onSaved={(c) => { setAdding(false); toast(`${c.first_name} added to your people.`); if (kinds?.length === 1) onLog(c, kinds[0], ''); else setWho(c) }} />
     )
   const ready = !!who
   return (
     <Sheet label="Record a touch" onClose={onClose}>
-      <h3>Record a touch</h3>
+      <h3>{kinds?.length === 1 ? `Log a ${KIND_LABEL[kinds[0]].toLowerCase()}` : 'Record a touch'}</h3>
       {!ready ? (
         <div className="stack" style={{ marginTop: 12 }}>
           <div className="search"><ISearch size={20} /><input autoFocus aria-label="Who did you talk to?" placeholder="Who did you talk to?" value={q} onChange={(e) => { setQ(e.target.value); setAdding(false) }} /></div>
           {matches.length > 0 && (
             <div className="sugs" style={{ marginTop: -4 }}>
               {matches.map((c) => (
-                <button key={c.id} onClick={() => setWho(c)}>{fullName(c)}{c.phone ? <span className="note"> · {c.phone}</span> : null}</button>
+                <button key={c.id} onClick={() => (kinds?.length === 1 ? onLog(c, kinds[0], '') : setWho(c))}>{fullName(c)}{c.phone ? <span className="note"> · {c.phone}</span> : null}</button>
               ))}
             </div>
           )}
@@ -713,7 +718,7 @@ function RecordSheet({ ctx, onClose, onLog }: { ctx: Ctx; onClose: () => void; o
           </div>
           <p className="q" style={{ margin: '16px 0 0', fontSize: 18 }}>What did you do?</p>
           <div className="opts">
-            {(['call', 'text', 'facetoface', 'popby', 'card'] as TouchKind[]).map((k) => (
+            {(['call', 'text', 'facetoface', 'popby', 'card'] as TouchKind[]).filter((k) => !kinds || kinds.includes(k)).map((k) => (
               <button key={k} className={`opt k-${k}`} disabled={busy} onClick={() => pick(k)}>{KIND_ICON[k]}{DID_LABEL[k]}</button>
             ))}
           </div>
@@ -1176,7 +1181,48 @@ function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: str
   )
 }
 
-function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => void }) {
+/** Card a Day at a glance for the Challenges tab. */
+function cadInfo(cards: Card[]): CadInfo {
+  const cov = cardCoverage(cards)
+  const tk = ymd(today())
+  let streak = 0
+  for (let d = today(); ; d = addDays(d, -1)) {
+    if (cov.has(ymd(d))) streak++
+    else if (ymd(d) === tk) continue
+    else break
+  }
+  const sun = addDays(today(), -today().getDay())
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const k = ymd(addDays(sun, i))
+    return cov.written.has(k) ? 'on' : cov.covered.has(k) ? 'cov' : ''
+  }) as CadInfo['week']
+  return {
+    streak, week, todayIdx: today().getDay(),
+    banked: [...cov.covered.keys()].filter((k) => k > tk).length,
+    done: cov.has(tk), covered: !cov.written.has(tk) && cov.covered.has(tk),
+  }
+}
+
+/** Log a touch from inside a challenge: the same person picker as Record a touch, showing only what counts. */
+function ChallengeLog({ ctx, kinds, onClose }: { ctx: Ctx; kinds: string[]; onClose: () => void }) {
+  const toast = useToast()
+  async function log(c: Contact, kind: TouchKind) {
+    onClose()
+    try {
+      const t = await api.logTouch(ctx.me, c.id, kind, '')
+      await ctx.reload()
+      toast(`${KIND_LABEL[kind]} recorded for ${c.first_name}.`, {
+        label: 'Undo',
+        run: async () => { try { await api.deleteTouch(t, ctx.data.touches, ctx.data.cards); await ctx.reload(); toast('Undone.') } catch (e) { toast(`Couldn't undo: ${(e as Error).message}`) } },
+      })
+    } catch (e) {
+      toast(`That didn't save: ${(e as Error).message}`)
+    }
+  }
+  return <RecordSheet ctx={ctx} kinds={kinds as TouchKind[]} onClose={onClose} onLog={(c, k) => log(c, k)} />
+}
+
+function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfileChange?: () => void; onBack?: () => void; extra?: ReactNode }) {
   const { data, agent, readOnly } = ctx
   const [cele, setCele] = useState(false)
   const counting = data.cards.filter((c) => c.counts_for_challenge)
@@ -1216,7 +1262,12 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
   const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   return (
     <section>
-      <h2 style={{ marginTop: 14 }}>Card a Day Challenge</h2>
+      {onBack ? (
+        <div className="roomhdr">
+          <button className="iconbtn" aria-label="Back to challenges" onClick={onBack}><IChevL /></button>
+          <h2 style={{ margin: 0, fontSize: 21, flex: 1 }}>Card a Day</h2>
+        </div>
+      ) : <h2 style={{ marginTop: 14 }}>Card a Day Challenge</h2>}
       <div className="streak" style={{ margin: '10px 0 4px' }}>
         <b>{streak}</b><span>day streak</span>
       </div>
@@ -1268,6 +1319,7 @@ function CardADay({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
           </label>
         )}
       </details>
+      {extra}
       {dayOpen && <CardDaySheet day={dayOpen} cov={cov} onClose={() => setDayOpen(null)} />}
       {cele && <Celebrate eyebrow="Card a Day" title="Card a Day: done!" sub="Today's card is written and logged." onClose={() => setCele(false)} />}
     </section>
