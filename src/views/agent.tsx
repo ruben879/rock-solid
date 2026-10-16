@@ -861,6 +861,8 @@ function FollowUpSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact; onClose: () 
   const [on, setOn] = useState(c.follow_up_on ?? ymd(addDays(t, 7)))
   const [note, setNote] = useState(c.follow_up_note ?? '')
   const [busy, setBusy] = useState(false)
+  // A different example each time, so it's clear this can be anything.
+  const [hint] = useState(() => ['Ask how the move went.', 'Follow up on their credit repair progress.', 'Check in on their preapproval status.'][Math.floor(Math.random() * 3)])
   async function save() {
     setBusy(true)
     try {
@@ -881,7 +883,7 @@ function FollowUpSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact; onClose: () 
         <input type="date" value={on} min={ymd(t)} onChange={(e) => e.target.value && setOn(e.target.value)} />
       </label>
       <label className="field" style={{ marginTop: 12 }}><span>What's it about?</span>
-        <textarea rows={3} placeholder="Check on the dispute letters. Ask how the move went." value={note} onChange={(e) => setNote(e.target.value)} />
+        <textarea rows={3} placeholder={hint} value={note} onChange={(e) => setNote(e.target.value)} />
       </label>
       <button className="btn gold lg block" style={{ marginTop: 14 }} disabled={busy} onClick={save}>{busy ? 'Saving…' : `Follow up ${fmt(on)}`}</button>
       <button className="btn ghost block" style={{ marginTop: 6 }} onClick={onClose}>Cancel</button>
