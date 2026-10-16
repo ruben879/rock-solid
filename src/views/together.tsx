@@ -5,7 +5,7 @@ import * as tg from '../lib/together'
 import { supabase } from '../supabase'
 import type { Challenge, DayCount, Period, Person, Post } from '../lib/together'
 import { Sheet, store, useToast } from '../ui'
-import { IChevL, IMore, IPin, IPlus } from '../icons'
+import { IChevL, IMore, IPin, IPlus, IText } from '../icons'
 
 const COLORS = ['#2f6bd8', '#13806a', '#b07c1c', '#7a5ab8', '#c8401c', '#1e3a6e', '#0f7a8a', '#a2456e']
 const colorOf = (id: string) => COLORS[[...id].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 7) % COLORS.length]
@@ -84,16 +84,17 @@ export function Together({ me, cad, renderCad, renderLog }: {
 
   const back = () => { setOpenId(null); load() }
   if (openId === 'cad') return <>{renderCad(back, teamCards ? <Room me={me} c={teamCards.c} embedded onBack={back} renderLog={renderLog} /> : null)}</>
-  const open = list?.find((x) => x.c.id === openId)?.c
-  if (open) return <Room me={me} c={open} onBack={back} renderLog={renderLog} pinned={pinned === open.id} onPin={() => setPin(open.id)} />
+  const chatOnly = openId?.startsWith('chat:') ?? false
+  const open = list?.find((x) => x.c.id === (chatOnly ? openId!.slice(5) : openId))?.c
+  if (open) return <Room me={me} c={open} onBack={back} renderLog={renderLog} pinned={pinned === open.id} onPin={() => setPin(open.id)} chatOnly={chatOnly || (open.kind === 'cards' && open.id === teamCards?.c.id)} />
 
   // Pinned first. Then the most urgent: goals not hit yet, with the least time left.
   const urgency = (x: Row) => (x.c.kind === 'cards' ? 50 : tg.current(x.c, x.progress, me.id) >= x.c.target ? 100 : tg.daysLeft(x.c.period))
   const rest = [...others].sort((a, b) => urgency(a) - urgency(b))
   const top = rest.find((x) => x.c.id === pinned)
   const below = rest.filter((x) => x !== top)
-  const cadCard = (big: boolean) => <CadCard key="cad" cad={cad} big={big} team={teamCards} fresh={teamCards ? news[teamCards.c.id] ?? 0 : 0} onOpen={() => setOpenId('cad')} onPin={big ? undefined : () => setPin('cad')} />
-  const card = (x: Row, big: boolean) => <ChallengeCard key={x.c.id} me={me} {...x} big={big} fresh={news[x.c.id] ?? 0} onOpen={() => setOpenId(x.c.id)} onPin={big ? undefined : () => setPin(x.c.id)} />
+  const cadCard = (big: boolean) => <CadCard key="cad" cad={cad} big={big} team={teamCards} fresh={teamCards ? news[teamCards.c.id] ?? 0 : 0} onOpen={() => setOpenId('cad')} onChat={teamCards ? () => setOpenId(teamCards.c.id) : undefined} onPin={big ? undefined : () => setPin('cad')} />
+  const card = (x: Row, big: boolean) => <ChallengeCard key={x.c.id} me={me} {...x} big={big} fresh={news[x.c.id] ?? 0} onOpen={() => setOpenId(x.c.id)} onChat={x.members > 1 ? () => setOpenId(`chat:${x.c.id}`) : undefined} onPin={big ? undefined : () => setPin(x.c.id)} />
 
   return (
     <section>
@@ -144,11 +145,20 @@ function PinBtn({ onPin }: { onPin?: () => void }) {
   return <button className="pinbtn" aria-label="Pin to top" onClick={(e) => { e.stopPropagation(); onPin() }}><IPin size={16} /></button>
 }
 
-function CadCard({ cad, big, team, fresh, onOpen, onPin }: { cad: CadInfo; big: boolean; team?: Row; fresh: number; onOpen: () => void; onPin?: () => void }) {
+/** Opens the challenge's group chat, with a red count when there's something new. */
+function ChatBtn({ fresh, onChat, block }: { fresh: number; onChat: () => void; block?: boolean }) {
+  return (
+    <button className={`btn chatbtn ${block ? 'lg block' : ''}`} aria-label={`Open group chat${fresh ? `, ${fresh} new` : ''}`} onClick={(e) => { e.stopPropagation(); onChat() }}>
+      <IText size={18} /> Group chat{fresh > 0 && <span className="cbubble">{fresh > 99 ? '99+' : fresh}</span>}
+    </button>
+  )
+}
+
+function CadCard({ cad, big, team, fresh, onOpen, onChat, onPin }: { cad: CadInfo; big: boolean; team?: Row; fresh: number; onOpen: () => void; onChat?: () => void; onPin?: () => void }) {
   return (
     <Tap className={`chcard ${big ? 'big' : ''}`} onOpen={onOpen} label="Card a Day">
       <div className="row">
-        <span className="chtag">Card a Day{team ? ` · with ${team.members - 1} ${team.members - 1 === 1 ? 'agent' : 'agents'}` : ''}{fresh > 0 && <span className="newtag">{fresh} new</span>}</span>
+        <span className="chtag">Card a Day{team ? ` · with ${team.members - 1} ${team.members - 1 === 1 ? 'agent' : 'agents'}` : ''}</span>
         <PinBtn onPin={onPin} />
       </div>
       <div className="row" style={{ marginTop: 4 }}>
@@ -163,6 +173,7 @@ function CadCard({ cad, big, team, fresh, onOpen, onPin }: { cad: CadInfo; big: 
           <button className="btn gold lg block" onClick={(e) => { e.stopPropagation(); onOpen() }}>{cad.done ? 'Write another card' : 'Write a card'}</button>
         </>
       )}
+      {onChat && <div style={{ marginTop: big ? 10 : 12 }}><ChatBtn fresh={fresh} onChat={onChat} block={big} /></div>}
     </Tap>
   )
 }
@@ -171,7 +182,7 @@ const PERIOD_TAG: Record<Period, string> = { day: 'Today', week: 'This week', mo
 const KIND_COLOR: Record<string, string> = { call: 'var(--call)', text: 'var(--text)', card: 'var(--card)', popby: '#7a5ab8', facetoface: '#0f7a8a' }
 const colorFor = (c: Challenge) => (c.kind === 'cards' ? 'var(--card)' : KIND_COLOR[c.counts[0]] ?? 'var(--navy)')
 
-function ChallengeCard({ me, c, members, progress, big = false, fresh = 0, onOpen, onPin }: Row & { me: Profile; big?: boolean; fresh?: number; onOpen: () => void; onPin?: () => void }) {
+function ChallengeCard({ me, c, members, progress, big = false, fresh = 0, onOpen, onChat, onPin }: Row & { me: Profile; big?: boolean; fresh?: number; onOpen: () => void; onChat?: () => void; onPin?: () => void }) {
   const mine = tg.current(c, progress, me.id)
   const s = tg.streak(c, progress, me.id)
   const done = c.ends_on < ymd(today())
@@ -182,7 +193,7 @@ function ChallengeCard({ me, c, members, progress, big = false, fresh = 0, onOpe
   return (
     <Tap className={`chcard ${big ? 'big' : ''}`} onOpen={onOpen} label={c.name}>
       <div className="row">
-        <span className="chtag">{tag}{solo ? ' · just me' : ` · ${members} in`}{fresh > 0 && <span className="newtag">{fresh} new</span>}</span>
+        <span className="chtag">{tag}{solo ? ' · just me' : ` · ${members} in`}</span>
         {!done && <PinBtn onPin={onPin} />}
       </div>
       <div className="row" style={{ marginTop: 2, alignItems: 'flex-end' }}>
@@ -196,6 +207,7 @@ function ChallengeCard({ me, c, members, progress, big = false, fresh = 0, onOpe
         </>
       )}
       {hist.length > 0 && <History hist={hist} color={colorFor(c)} />}
+      {onChat && !done && <div style={{ marginTop: 12 }}><ChatBtn fresh={fresh} onChat={onChat} /></div>}
     </Tap>
   )
 }
@@ -241,8 +253,8 @@ function Mine({ me, c, progress, renderLog }: { me: Profile; c: Challenge; progr
   )
 }
 
-function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin }: {
-  me: Profile; c: Challenge; onBack: () => void; embedded?: boolean
+function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatOnly = false }: {
+  me: Profile; c: Challenge; onBack: () => void; embedded?: boolean; chatOnly?: boolean
   renderLog: (kinds: string[], onClose: () => void) => ReactNode; pinned?: boolean; onPin?: () => void
 }) {
   const toast = useToast()
@@ -321,7 +333,7 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin }: {
         </div>
       )}
 
-      {!embedded && c.kind === 'custom' && room && <Mine me={me} c={c} progress={room.progress} renderLog={renderLog} />}
+      {!embedded && !chatOnly && c.kind === 'custom' && room && <Mine me={me} c={c} progress={room.progress} renderLog={renderLog} />}
 
       {people.length > 1 && <div className="crew">
         {people.map((p) => {

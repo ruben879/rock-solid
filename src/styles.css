@@ -613,3 +613,5 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .mgoal { margin: 0 0 18px; color: rgba(255,255,255,.8); font-size: 16px; }
 .mgoal b { color: #fff; font-weight: 600; }
 .morning .btn.gold { color: #1a2238; }
+.chatbtn { position: relative; gap: 8px; }
+.chatbtn .cbubble { min-width: 22px; height: 22px; border-radius: 999px; background: var(--urgent); color: #fff; font: 600 12.5px/22px var(--font); text-align: center; padding: 0 6px; margin-left: 2px; }
