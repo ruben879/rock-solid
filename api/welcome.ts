@@ -71,12 +71,12 @@ export function html(first: string) {
       <tr><td style="padding:28px 28px 8px;font:400 16px/1.55 Helvetica,Arial,sans-serif;color:#1a2238">
         <div style="font-weight:700;color:#1e3a6e;font-size:18px;margin-bottom:18px">Rock Solid</div>
         <p style="margin:0 0 12px">Hey ${first},</p>
-        <p style="margin:0 0 12px">Welcome to Rock Solid. This is where we work our people: a short list every day, a quick way to log it, and a little friendly competition along the way.</p>
+        <p style="margin:0 0 12px">Welcome to Rock Solid. This is where we stay close to the people who matter to us. Each day it reminds you who you haven't connected with in a while, so no one slips through the cracks and every relationship gets the care it deserves.</p>
         <p style="margin:0 0 22px">Here is how to get set up. It takes about 20 minutes, and you only do it once.</p>
       </td></tr>
       <tr><td style="padding:0 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${STEPS.map(step).join('')}</table></td></tr>
       <tr><td style="padding:0 28px 28px;font:400 16px/1.55 Helvetica,Arial,sans-serif;color:#1a2238">
-        <p style="margin:0 0 12px">After that, it is simple. Open Today, stack your rocks, and log every call, text, card and pop-by. A few touches a day adds up to a database that keeps sending you business.</p>
+        <p style="margin:0 0 12px">After that, it is simple. Open Today, reach out to the people on your list, and log each call, text, card and pop-by. A few genuine check-ins a day add up to relationships that last, and people who think of you first when it matters.</p>
         <p style="margin:0 0 12px">Questions? Just reply to this email.</p>
         <p style="margin:0">Glad you're here,<br>Ruben</p>
         <p style="margin:18px 0 0;color:#5d6781;font-size:13px">Clear Rock Realty · Leaving People and Places Better Than We Found Them.<br><a href="${SITE}" style="color:#2a4f8f">${SITE.replace('https://', '')}</a></p>
@@ -88,10 +88,10 @@ export function html(first: string) {
 export function text(first: string) {
   return [
     `Hey ${first},`, '',
-    'Welcome to Rock Solid. This is where we work our people: a short list every day, a quick way to log it, and a little friendly competition along the way.', '',
+    "Welcome to Rock Solid. This is where we stay close to the people who matter to us. Each day it reminds you who you haven't connected with in a while, so no one slips through the cracks and every relationship gets the care it deserves.", '',
     'Here is how to get set up. It takes about 20 minutes, and you only do it once.', '',
     ...STEPS.flatMap(([t, b, label, href], i) => [`${i + 1}. ${t}`, b, ...(label ? [`${label}: ${href}`] : []), '']),
-    'After that, it is simple. Open Today, stack your rocks, and log every call, text, card and pop-by.', '',
+    'After that, it is simple. Open Today, reach out to the people on your list, and log each call, text, card and pop-by. A few genuine check-ins a day add up to relationships that last, and people who think of you first when it matters.', '',
     'Questions? Just reply to this email.', '',
     'Glad you\'re here,', 'Ruben', '', SITE,
   ].join('\n')
