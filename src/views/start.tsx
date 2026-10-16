@@ -125,3 +125,33 @@ export function GettingStarted({ contacts, agent, onGo }: { contacts: Contact[];
     </>
   )
 }
+
+const ShareGlyph = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ verticalAlign: '-3px' }}>
+    <path d="M12 3v12M8 7l4-4 4 4M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7" />
+  </svg>
+)
+
+/** First time on a phone in the browser: show how to put Rock Solid on the Home Screen, step by step. Once per phone. */
+export function HomeScreenTip() {
+  const [show, setShow] = useState(() => isPhone() && !installed() && !store.get<boolean>('rs-a2hs-seen', false))
+  if (!show) return null
+  const done = () => { setShow(false); store.set('rs-a2hs-seen', true) }
+  const ios = isIOS()
+  const steps = ios
+    ? [<>Tap the <b>Share</b> button <ShareGlyph /> at the bottom of Safari.</>, <>Scroll down and tap <b>Add to Home Screen</b>.</>, <>Tap <b>Add</b>. Then open Rock Solid from your Home Screen.</>]
+    : [<>Tap the <b>⋮</b> menu at the top right of Chrome.</>, <>Tap <b>Install app</b> or <b>Add to Home screen</b>.</>, <>Tap <b>Install</b>. Then open Rock Solid from your Home Screen.</>]
+  return (
+    <Sheet label="Put Rock Solid on your Home Screen" onClose={done}>
+      <h3>Put Rock Solid on your Home Screen</h3>
+      <p className="note">It opens like any other app, stays signed in, and can send you reminders. Takes 10 seconds.</p>
+      <ol className="gsteps">
+        {steps.map((s, i) => (
+          <li key={i}><span className="stepn">{i + 1}</span><div className="stepbody" style={{ marginTop: 3 }}><p style={{ margin: 0 }}>{s}</p></div></li>
+        ))}
+      </ol>
+      {ios && /crios|fxios|edgios|gsa\//i.test(navigator.userAgent) && <p className="note">Not in Safari? Copy <b>{SITE}</b> and open it in Safari first.</p>}
+      <button className="btn primary lg block" style={{ marginTop: 12 }} onClick={done}>Got it</button>
+    </Sheet>
+  )
+}

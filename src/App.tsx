@@ -10,6 +10,7 @@ import { AgentsOverview, DrawingView, TeamAdmin } from './views/team'
 import { Reminders } from './views/reminders'
 import { IChart, IHome, IPeople, ITeam, ITrophy } from './icons'
 import { myInvites, unread } from './lib/together'
+import { HomeScreenTip } from './views/start'
 
 // A challenge link (/j/CODE): remember the code, show the normal app, and open the join sheet once signed in.
 {
@@ -18,6 +19,12 @@ import { myInvites, unread } from './lib/together'
     store.set('rs-join', m[1].toUpperCase())
     history.replaceState(null, '', '/')
   }
+}
+
+// The welcome email's upload link (?go=import): open People with the import ready, once signed in.
+if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('go') === 'import') {
+  store.set('rs-go', 'import')
+  history.replaceState(null, '', '/')
 }
 
 export default function App() {
@@ -190,7 +197,7 @@ function Signed({ session }: { session: Session }) {
   const [brokerage, setBrokerage] = useState<Brokerage | null>(null)
   const [team, setTeam] = useState<Profile[]>([])
   // Always open on Today (or Challenges when someone tapped a challenge link).
-  const [tab, setTab] = useState<Tab>(() => (store.get<string | null>('rs-join', null) ? 'cards' : 'week'))
+  const [tab, setTab] = useState<Tab>(() => (store.get<string | null>('rs-join', null) ? 'cards' : store.get<string | null>('rs-go', null) === 'import' ? 'db' : 'week'))
   // Coming back after a while also lands on Today.
   useEffect(() => {
     let hiddenAt = 0
@@ -263,6 +270,19 @@ function Signed({ session }: { session: Session }) {
     }
   }, [session.user.id])
   useEffect(() => { loadProfile() }, [loadProfile])
+  // The welcome email goes out once, the first time someone opens the app (the server keeps track).
+  const welcomeId = me?.id
+  useEffect(() => {
+    if (!welcomeId || store.get<boolean>(`rs-welcomed-${welcomeId}`, false) || !navigator.onLine) return
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data.session?.access_token
+      if (!token) return
+      fetch('/api/welcome', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json())
+        .then((b: { sent?: boolean; why?: string }) => { if (b.sent || b.why === 'Already welcomed.') store.set(`rs-welcomed-${welcomeId}`, true) })
+        .catch(() => {})
+    })
+  }, [welcomeId])
   // Send changes made offline as soon as the connection is back, then refresh what's on screen.
   useEffect(() => startSync(() => window.dispatchEvent(new Event('rs-synced'))), [])
 
@@ -335,6 +355,7 @@ function Signed({ session }: { session: Session }) {
           ))}
         </div>
       </nav>
+      {!viewing && <HomeScreenTip />}
       {offerPw && !menu && (
         <Sheet label="Skip the code next time" onClose={() => { setOfferPw(false); store.set('rs-offer-pw', false) }}>
           <h3>Skip the code next time?</h3>

@@ -1787,7 +1787,12 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [view, setView] = useState<Contact | null>(null)
   const [addName, setAddName] = useState<string | null>(null)
   const [group, setGroup] = useState(false)
-  const [importing, setImporting] = useState(false)
+  // Opened from the welcome email's upload link.
+  const [importing, setImporting] = useState(() => {
+    if (store.get<string | null>('rs-go', null) !== 'import') return false
+    store.set('rs-go', null)
+    return !ctx.readOnly
+  })
   const [shown, setShown] = useState(60)
 
   const heats = new Map(data.contacts.map((c) => [c.id, heat(c, byContact, ctx.goal, agent.tier_days)]))
