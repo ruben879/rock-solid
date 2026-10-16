@@ -195,6 +195,7 @@ type TeamView = 'agents' | 'invite' | 'draw' | 'note'
 
 function Signed({ session }: { session: Session }) {
   const [me, setMe] = useState<Profile | null | undefined>(undefined)
+  const toast = useToast()
   const [brokerage, setBrokerage] = useState<Brokerage | null>(null)
   const [team, setTeam] = useState<Profile[]>([])
   // Always open on Today (or Challenges when someone tapped a challenge link).
@@ -288,6 +289,14 @@ function Signed({ session }: { session: Session }) {
   useEffect(() => startSync(() => window.dispatchEvent(new Event('rs-synced'))), [])
 
   const signOut = () => supabase.auth.signOut()
+  async function sendTestWelcome() {
+    try {
+      const { data } = await supabase.auth.getSession()
+      const r = await fetch('/api/welcome', { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token ?? ''}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ test: true }) })
+      const b = (await r.json().catch(() => ({}))) as { sent?: boolean; to?: string; why?: string; error?: string }
+      toast(b.sent ? `Sent to ${b.to}. Check your inbox (and spam) in a minute.` : `Not sent: ${b.why ?? b.error ?? `the server answered ${r.status}`}`)
+    } catch (e) { toast(`Not sent: ${(e as Error).message}`) }
+  }
 
   if (me === undefined) return <Shell>{loadErr ? <Notice title="Can't load right now">{loadErr}</Notice> : <p className="muted" style={{ marginTop: 24 }}>Loading…</p>}</Shell>
   if (me === null)
@@ -374,6 +383,7 @@ function Signed({ session }: { session: Session }) {
           <Reminders me={me} />
           <div className="menu" style={{ marginTop: 12 }}>
             <button onClick={() => { setMenu(false); go('week'); setTimeout(() => window.dispatchEvent(new Event('rs-start-show')), 150) }}>Getting started guide</button>
+            {me.role === 'broker' && <button onClick={() => { setMenu(false); sendTestWelcome() }}>Send me a test welcome email</button>}
             <button onClick={signOut}>Sign out</button>
             <button onClick={() => setMenu(false)}>Close</button>
           </div>

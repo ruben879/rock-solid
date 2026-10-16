@@ -4,7 +4,7 @@ import { admin } from './_push.js'
 // Needs RESEND_API_KEY and RESEND_FROM (for example: Rock Solid <hello@clearrockrealty.com>) in Vercel settings.
 // Optional RESEND_REPLY_TO: where replies go.
 
-type Req = { method?: string; headers: Record<string, string | string[] | undefined> }
+type Req = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown }
 type Res = { status: (n: number) => { json: (b: unknown) => void } }
 
 const SITE = 'https://rock-solid-three.vercel.app'
@@ -21,11 +21,21 @@ export default async function handler(req: Req, res: Res) {
     const { data: u, error: authErr } = await db.auth.getUser(token)
     if (authErr || !u.user) return res.status(401).json({ error: 'Sign in first.' })
 
-    // Claim it first so two open tabs can't send it twice.
-    const { data: claimed, error } = await db.from('profiles').update({ welcomed_at: new Date().toISOString() })
-      .eq('id', u.user.id).is('welcomed_at', null).select('full_name, email')
-    if (error) return res.status(200).json({ sent: false, why: /welcomed_at/.test(error.message) ? 'Run the 0011 SQL in Supabase first.' : error.message })
-    if (!claimed?.length) return res.status(200).json({ sent: false, why: 'Already welcomed.' })
+    // The broker can send themselves a test copy any time.
+    const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body ?? {}) as { test?: boolean }
+    let claimed: { full_name: string | null; email: string }[] | null
+    if (body.test) {
+      const { data: me } = await db.from('profiles').select('full_name, email, role').eq('id', u.user.id).single()
+      if (me?.role !== 'broker') return res.status(403).json({ error: 'Only the broker can send a test.' })
+      claimed = [me]
+    } else {
+      // Claim it first so two open tabs can't send it twice.
+      const r = await db.from('profiles').update({ welcomed_at: new Date().toISOString() })
+        .eq('id', u.user.id).is('welcomed_at', null).select('full_name, email')
+      if (r.error) return res.status(200).json({ sent: false, why: /welcomed_at/.test(r.error.message) ? 'Run the 0011 SQL in Supabase first.' : r.error.message })
+      if (!r.data?.length) return res.status(200).json({ sent: false, why: 'Already welcomed.' })
+      claimed = r.data
+    }
 
     const p = claimed[0] as { full_name: string | null; email: string }
     const first = (p.full_name ?? '').trim().split(/\s+/)[0] || 'there'
@@ -35,10 +45,10 @@ export default async function handler(req: Req, res: Res) {
       body: JSON.stringify({ from, to: p.email, ...(clean(process.env.RESEND_REPLY_TO) ? { reply_to: clean(process.env.RESEND_REPLY_TO) } : {}), subject: 'Welcome to Rock Solid. Here is your first week.', html: html(first), text: text(first) }),
     })
     if (!r.ok) {
-      await db.from('profiles').update({ welcomed_at: null }).eq('id', u.user.id) // Try again next time.
+      if (!body.test) await db.from('profiles').update({ welcomed_at: null }).eq('id', u.user.id) // Try again next time.
       return res.status(200).json({ sent: false, why: `Resend said: ${await r.text()}` })
     }
-    res.status(200).json({ sent: true })
+    res.status(200).json({ sent: true, to: p.email })
   } catch (e) {
     res.status(500).json({ error: (e as Error).message })
   }
