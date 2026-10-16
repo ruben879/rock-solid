@@ -51,6 +51,9 @@ export interface Contact {
   added_on: string
   last_touch_on: string | null
   skip_until: string | null
+  /** A follow-up the agent set: this person shows up on Today on this date, with the note. */
+  follow_up_on?: string | null
+  follow_up_note?: string | null
   source: string | null
 }
 

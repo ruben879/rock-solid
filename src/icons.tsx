@@ -65,3 +65,6 @@ export const IPin = ({ size }: P) => (
 export const ITrophy = ({ size }: P) => (
   <svg {...base(size)}><path d="M7 4h10v4a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 13v3M8 20h8M9.5 16h5l.5 4h-6z" /></svg>
 )
+export const IBell = ({ size }: P) => (
+  <svg {...base(size)}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0" /></svg>
+)

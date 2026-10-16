@@ -9,7 +9,7 @@ import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { Together, type CadInfo } from './together'
-import { ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
+import { IBell, ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
 export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
 
@@ -34,6 +34,15 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
     if (own && auto && fromPeople && props.agent.daily_goal !== fromPeople)
       api.updateMyProfile(props.me, { daily_goal: fromPeople, weekly_goal: fromPeople * 5 }).catch(() => {})
   }, [own, auto, fromPeople, props.agent.daily_goal, props.me])
+  // A follow-up is done once you've touched that person on or after its date.
+  useEffect(() => {
+    if (!own || !data) return
+    const t = ymd(today())
+    for (const c of data.contacts) {
+      if (!c.follow_up_on || c.follow_up_on > t) continue
+      if (data.touches.some((x) => x.contact_id === c.id && !x.is_group && x.occurred_on >= c.follow_up_on!)) api.clearFollowUp(c).then(() => reload()).catch(() => {})
+    }
+  }, [own, data, reload])
   if (error) return <p className="error" style={{ marginTop: 24 }}>Couldn't load your list: {error}. Pull down to refresh.</p>
   if (!data) return <p className="muted" style={{ marginTop: 24 }}>Loading…</p>
   const agent = auto && fromPeople ? { ...props.agent, daily_goal: fromPeople, weekly_goal: fromPeople * 5 } : props.agent
@@ -85,9 +94,19 @@ function useBatch(ctx: Ctx) {
   const [saved, setSaved] = useState<{ ids: string[]; round: number; stopped?: boolean }>(() => store.get(key, { ids: [], round: 0 }))
   const [justCleared, setJustCleared] = useState(false)
 
+  // Follow-ups due today (or earlier) join the top of today's list and stay there for the day.
+  const fuKey = `rs-fu-${agent.id}-${day}`
+  const fuIds = useMemo(() => {
+    const seen = store.get<string[]>(fuKey, [])
+    const due = data.contacts.filter((c) => c.follow_up_on && c.follow_up_on <= day && !(c.skip_until && c.skip_until > day)).map((c) => c.id)
+    const have = new Set(data.contacts.map((c) => c.id))
+    return [...new Set([...seen, ...due])].filter((id) => have.has(id))
+  }, [data.contacts, day, fuKey])
+  useEffect(() => { if (!readOnly) store.set(fuKey, fuIds) }, [fuIds, fuKey, readOnly])
+
   const result = useMemo(() => {
     const byId = new Map(data.contacts.map((c) => [c.id, c]))
-    let ids = saved.ids.filter((id) => byId.has(id))
+    let ids = saved.ids.filter((id) => byId.has(id) && !fuIds.includes(id))
     let round = saved.round
     let cleared = false
     // If the daily goal went down, trim today's list to fit (people already reached stay).
@@ -97,7 +116,7 @@ function useBatch(ctx: Ctx) {
       const keep = new Set([...reached, ...open].slice(0, Math.max(size, reached.length)))
       ids = ids.filter((id) => keep.has(id))
     }
-    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(ex), want, agent.id)
+    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...ex, ...fuIds]), want, agent.id)
     if (ids.length === 0) {
       // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
       const last = store.get<{ day: string; ids: string[] } | null>(lastKey, null)
@@ -118,9 +137,9 @@ function useBatch(ctx: Ctx) {
       round = ids.length ? 1 : 0
     }
     const allDone = ids.length > 0 && ids.every((id) => touchedThisWeek.has(id))
-    const waiting = poolExcluding(ids, 1).length
+    const waiting = poolExcluding([...ids, ...fuIds], 1).length
     return { ids, round, cleared, waiting, size, allDone, stopped: !!saved.stopped }
-  }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, day, lastKey])
+  }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, day, lastKey, fuIds])
 
   /** Finished the list: load another round for today (asked, never automatic). */
   const loadMore = () => {
@@ -163,7 +182,7 @@ function useBatch(ctx: Ctx) {
     setSaved(v)
     return pool[0]
   }
-  return { ...result, touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday }
+  return { ...result, fuIds, touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday }
 }
 
 function goalState(ctx: Ctx) {
@@ -230,9 +249,14 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const pendingCheck = useRef<boolean[] | null>(null)
 
   const byId = new Map(data.contacts.map((c) => [c.id, c]))
-  const rows = b.ids.map((id) => byId.get(id)).filter(Boolean) as Contact[]
-  const todo = rows.filter((c) => !b.touchedThisWeek.has(c.id))
-  const doneRows = rows.filter((c) => b.touchedThisWeek.has(c.id))
+  // Follow-ups first. They count as done once you've touched them today.
+  const tk = ymd(today())
+  const touchedToday = new Set(data.touches.filter((t) => !t.is_group && t.occurred_on === tk && t.contact_id).map((t) => t.contact_id as string))
+  const isFu = (c: Contact) => b.fuIds.includes(c.id)
+  const isDone = (c: Contact) => (isFu(c) ? touchedToday.has(c.id) : b.touchedThisWeek.has(c.id))
+  const rows = [...b.fuIds, ...b.ids].map((id) => byId.get(id)).filter(Boolean) as Contact[]
+  const todo = rows.filter((c) => !isDone(c))
+  const doneRows = rows.filter((c) => isDone(c))
   const done = doneRows.length
   // Position in the list decides ties, so each day's list mixes calls, texts and cards.
   const sug = (c: Contact) => suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
@@ -397,7 +421,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
               <div className={`pile backs-${Math.min(2, n - i - 1)}`}>
               {Math.min(2, n - i - 1) >= 2 && <div className="pback b2" aria-hidden="true" />}
               {Math.min(2, n - i - 1) >= 1 && <div className="pback b1" aria-hidden="true" />}
-              <article key={c.id} className={`pcard in-${enter} ${drag ? 'dragging' : ''}`}
+              <article key={c.id} className={`pcard in-${enter} ${drag ? 'dragging' : ''} ${isFu(c) ? 'fu' : ''}`}
                 style={shown ? { transform: `translateX(${shown}px) rotate(${shown / 40}deg)` } : undefined}
                 onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dir: null } }}
                 onTouchMove={(e) => {
@@ -423,8 +447,9 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                     <Signal bars={signal(c, personalBy, agent.tier_days)} plain />
                     {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
                   </div>
+                  {isFu(c) && <span className="fubadge"><IBell size={14} /> Follow-up</span>}
                   <h3 className="pc-name"><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button></h3>
-                  <p className="why">{whyLine(c, lastOf(c))}</p>
+                  {isFu(c) && c.follow_up_note ? <p className="why funote">{c.follow_up_note}</p> : <p className="why">{whyLine(c, lastOf(c))}</p>}
                 </div>
                 <div className="pc-bot">
                   {readOnly ? (
@@ -464,7 +489,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
             const k = sug(c)
             const name = c.first_name || fullName(c)
             return (
-              <article key={c.id} className="person">
+              <article key={c.id} className={`person ${isFu(c) ? 'fu' : ''}`}>
+                {isFu(c) && <span className="fubadge"><IBell size={14} /> Follow-up{c.follow_up_note ? `: ${c.follow_up_note}` : ''}</span>}
                 <div className="head">
                   <div style={{ minWidth: 0 }}>
                     <h3><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button> <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} title={TIER_NAMES[c.tier]}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span></h3>
@@ -809,7 +835,7 @@ function PersonGauge({ ctx, c }: { ctx: Ctx; c: Contact }) {
         <Signal bars={bars} tone />
       </div>
       <p className="pg-line">
-        {last ? <>Last one-on-one <b>{ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`}</b> · {due && due < today() ? <>was due <b>{fmt(due)}</b></> : <>next due <b>{due ? fmt(due) : ''}</b></>}</> : <>No one-on-one touch yet. They come up every {every} days.</>}
+        {last ? <>Last touch <b>{ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`}</b> · {due && due < today() ? <>was due <b>{fmt(due)}</b></> : <>next due <b>{due ? fmt(due) : ''}</b></>}</> : <>No touch yet. They come up every {every} days.</>}
       </p>
       <div className="pg36">
         <span><b>{all12}</b> of {ctx.goal} touches in the last 12 months</span>
@@ -827,11 +853,48 @@ function PersonGauge({ ctx, c }: { ctx: Ctx; c: Contact }) {
   )
 }
 
+/** Pick a day (and what it's about). That person shows up at the top of Today that day. */
+function FollowUpSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact; onClose: () => void }) {
+  const toast = useToast()
+  const t = today()
+  const opts: [string, Date][] = [['Tomorrow', addDays(t, 1)], ['In 3 days', addDays(t, 3)], ['Next week', addDays(t, 7)], ['In 2 weeks', addDays(t, 14)], ['In a month', addDays(t, 30)]]
+  const [on, setOn] = useState(c.follow_up_on ?? ymd(addDays(t, 7)))
+  const [note, setNote] = useState(c.follow_up_note ?? '')
+  const [busy, setBusy] = useState(false)
+  async function save() {
+    setBusy(true)
+    try {
+      await api.setFollowUp(c, on, note.trim() || null)
+      await ctx.reload()
+      toast(`${c.first_name || 'They'} will be at the top of Today on ${fmt(on)}.`)
+      onClose()
+    } catch (e) { toast((e as Error).message); setBusy(false) }
+  }
+  return (
+    <Sheet label="Set a follow-up" onClose={onClose}>
+      <h3>Follow up with {c.first_name || fullName(c)}</h3>
+      <p className="note">They'll show up at the top of Today that day, marked as a follow-up, with your note.</p>
+      <div className="chips" style={{ marginTop: 12 }}>
+        {opts.map(([l, d]) => <button key={l} type="button" aria-pressed={on === ymd(d)} onClick={() => setOn(ymd(d))}>{l}</button>)}
+      </div>
+      <label className="field" style={{ marginTop: 12 }}><span>Or pick a day</span>
+        <input type="date" value={on} min={ymd(t)} onChange={(e) => e.target.value && setOn(e.target.value)} />
+      </label>
+      <label className="field" style={{ marginTop: 12 }}><span>What's it about?</span>
+        <textarea rows={3} placeholder="Check on the dispute letters. Ask how the move went." value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <button className="btn gold lg block" style={{ marginTop: 14 }} disabled={busy} onClick={save}>{busy ? 'Saving…' : `Follow up ${fmt(on)}`}</button>
+      <button className="btn ghost block" style={{ marginTop: 6 }} onClick={onClose}>Cancel</button>
+    </Sheet>
+  )
+}
+
 function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
   const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
   const toast = useToast()
   const [noteOn, setNoteOn] = useState<{ t: Touch; fresh?: boolean } | null>(null)
   const [info, setInfo] = useState<Touch | null>(null)
+  const [fu, setFu] = useState(false)
   // The phone keeps about a year. Older touches with this person load from the server when you open them.
   const [older, setOlder] = useState<{ touches: Touch[]; cards: Card[] }>({ touches: [], cards: [] })
   useEffect(() => {
@@ -877,6 +940,20 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         </div>
       )}
       <PersonGauge ctx={ctx} c={live} />
+      {live.follow_up_on ? (
+        <div className="furow">
+          <span className="fubadge" style={{ margin: 0 }}><IBell size={14} /> Follow up {parse(live.follow_up_on) <= today() ? 'today' : fmt(live.follow_up_on)}</span>
+          {live.follow_up_note && <p>{live.follow_up_note}</p>}
+          {!ctx.readOnly && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => setFu(true)}>Change</button>
+              <button className="btn ghost" style={{ flex: 1 }} onClick={async () => { try { await api.setFollowUp(live, null, null); await ctx.reload(); toast('Follow-up cleared.') } catch (e) { toast((e as Error).message) } }}>Clear</button>
+            </div>
+          )}
+        </div>
+      ) : !ctx.readOnly && (
+        <button className="btn block fuset" onClick={() => setFu(true)}><IBell size={18} /> Set a follow-up</button>
+      )}
 
       <div className="facts">
         {live.phone && (
@@ -917,6 +994,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>Close</button>
       </div>
       {noteOn && <NoteSheet ctx={ctx} t={noteOn.t} c={live} onClose={() => setNoteOn(null)} onUndo={noteOn.fresh ? () => undo(noteOn.t) : undefined} />}
+      {fu && <FollowUpSheet ctx={ctx} c={live} onClose={() => setFu(false)} />}
       {info && (
         <Sheet label="Touch details" onClose={() => setInfo(null)}>
           <h3>{touchLabel(info)}</h3>

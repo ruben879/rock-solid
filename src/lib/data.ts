@@ -193,6 +193,17 @@ export async function skipToNextWeek(c: Contact) {
   await exec(c.agent_id, [{ t: 'update', table: 'contacts', id: c.id, fields: { skip_until: ymd(addDays(weekStart(), 7)) } }])
 }
 
+/** Set (or clear) a follow-up date and note for one person. */
+export async function setFollowUp(c: Contact, on: string | null, note: string | null) {
+  needOnline()
+  const { error } = await supabase.from('contacts').update({ follow_up_on: on, follow_up_note: note }).eq('id', c.id)
+  if (error) throw new Error(/follow_up/.test(error.message) ? 'Follow-ups need the 0012 SQL run in Supabase first.' : error.message)
+}
+/** Clears a follow-up once it's done (works offline, sends when back online). */
+export async function clearFollowUp(c: Contact) {
+  await exec(c.agent_id, [{ t: 'update', table: 'contacts', id: c.id, fields: { follow_up_on: null, follow_up_note: null } }])
+}
+
 export type ContactInput = Partial<Omit<Contact, 'id' | 'agent_id' | 'brokerage_id'>> & { first_name: string }
 
 /** Saves a person. Returns their id (new people get one right away, so they work offline too). */

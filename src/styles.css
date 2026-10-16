@@ -655,3 +655,14 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 nav.bottom button:not(.center) .navic { padding: 4px 18px; border-radius: 999px; transition: background .15s; }
 nav.bottom button[aria-current="page"]:not(.center) .navic { background: color-mix(in srgb, var(--navy) 13%, transparent); box-shadow: 0 2px 8px rgba(30, 58, 110, .12); }
 nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
+
+/* ---------- Follow-ups ---------- */
+.fubadge { display: inline-flex; align-items: center; gap: 6px; font: 600 12.5px var(--font); color: #fff; background: #7a5ab8; border-radius: 999px; padding: 4px 10px; margin-bottom: 6px; }
+.pcard.fu { border: 2px solid #7a5ab8; background: linear-gradient(180deg, color-mix(in srgb, #7a5ab8 10%, var(--surface)), var(--surface) 55%); }
+.why.funote { color: var(--ink); font-weight: 500; }
+.person.fu { border-left: 4px solid #7a5ab8; }
+.person .fubadge { margin: 0 0 8px; }
+.furow { margin-top: 12px; background: color-mix(in srgb, #7a5ab8 9%, var(--surface)); border: 1.5px solid color-mix(in srgb, #7a5ab8 40%, transparent); border-radius: 16px; padding: 12px 14px; }
+.furow p { margin: 8px 0 0; color: var(--ink); }
+.btn.fuset { margin-top: 12px; color: #7a5ab8; border-color: color-mix(in srgb, #7a5ab8 40%, var(--line)); }
+@media (prefers-color-scheme: dark) { .btn.fuset { color: #b9a2ec; } }
