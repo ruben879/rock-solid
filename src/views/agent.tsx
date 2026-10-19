@@ -1214,7 +1214,7 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
   })
   const [confirmDel, setConfirmDel] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [openMore, setOpenMore] = useState(false)
+  const [plans, setPlans] = useState<Record<Occasion, BirthdayPlan>>(() => ({ birthday: c ? planOf(c, 'birthday') : 'text', home: c ? planOf(c, 'home') : 'text', wedding: c ? planOf(c, 'wedding') : 'text' }))
   // New people: let the phone offer to fill in from its contacts (iPhone AutoFill Contact). Existing people: no autofill.
   const ac = (v: string) => (c ? 'off' : v)
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
@@ -1235,6 +1235,11 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
       if (f.wedding_anniversary || c?.wedding_anniversary) input.wedding_anniversary = f.wedding_anniversary || null
       else delete input.wedding_anniversary
       const id = await api.saveContact(ctx.me, input, c?.id)
+      // Birthday and anniversary choices save on their own, so the rest saves even before that SQL is run.
+      for (const o of OCCASION_LIST) {
+        const was = c ? planOf(c, o) : 'text'
+        if (plans[o] !== was) await api.setOccasionPlan({ ...(c ?? {}), id } as Contact, o, plans[o]).catch((e) => toast((e as Error).message))
+      }
       await ctx.reload()
       if (onSaved) {
         onSaved({ ...(c ?? {}), ...input, id, agent_id: ctx.me.id } as Contact)
@@ -1269,7 +1274,7 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
           </div>
         )}
         {!c && !ro && canPickContact() && (
-          <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={async () => { const p = await pickPhoneContact(); if (p) { setF((cur) => mergePicked(cur, p)); setOpenMore(true) } }}>
+          <button type="button" className="btn" style={{ alignSelf: 'flex-start' }} onClick={async () => { const p = await pickPhoneContact(); if (p) { setF((cur) => mergePicked(cur, p)) } }}>
             <IPeople size={18} /> Fill in from my phone's contacts
           </button>
         )}
@@ -1287,19 +1292,33 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
           </div>
         </div>
         <label className="field"><span>Notes</span><textarea disabled={ro} value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
-        <details className="more" style={{ marginTop: 0 }} open={!!prefill || openMore || undefined}>
-          <summary>Email, address and special dates</summary>
-          <div className="ed">
-            <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} autoComplete={ac('email')} /></label>
-            <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} autoComplete={ac('street-address')} /></label>
-            <label className="field full"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} autoComplete={ac('address-level2')} /></label>
-            <label className="field"><span>State</span><input disabled={ro} value={f.state} onChange={set('state')} autoCapitalize="characters" maxLength={20} autoComplete={ac('address-level1')} /></label>
-            <label className="field"><span>Zip</span><input disabled={ro} inputMode="numeric" value={f.zip} onChange={set('zip')} autoComplete={ac('postal-code')} /></label>
-            <DateField label="Birthday" ro={ro} value={f.birthday} onChange={(v) => setF({ ...f, birthday: v })} />
-            <DateField label="Home anniversary" ro={ro} value={f.home_anniversary} onChange={(v) => setF({ ...f, home_anniversary: v })} />
-            <DateField label="Wedding anniversary" ro={ro} value={f.wedding_anniversary} onChange={(v) => setF({ ...f, wedding_anniversary: v })} />
-          </div>
-        </details>
+        <div className="grp" style={{ marginTop: 6 }}>Email, address and special dates</div>
+        <div className="ed">
+          <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} autoComplete={ac('email')} /></label>
+          <label className="field full"><span>Address</span><input disabled={ro} value={f.address} onChange={set('address')} autoComplete={ac('street-address')} /></label>
+          <label className="field full"><span>City</span><input disabled={ro} value={f.city} onChange={set('city')} autoComplete={ac('address-level2')} /></label>
+          <label className="field"><span>State</span><input disabled={ro} value={f.state} onChange={set('state')} autoCapitalize="characters" maxLength={20} autoComplete={ac('address-level1')} /></label>
+          <label className="field"><span>Zip</span><input disabled={ro} inputMode="numeric" value={f.zip} onChange={set('zip')} autoComplete={ac('postal-code')} /></label>
+          {OCCASION_LIST.map((o) => {
+            const m = OCCASION_META[o]
+            const v = f[m.field]
+            return (
+              <div key={o} className="field full occfield">
+                <DateField label={m.name} ro={ro} value={v} onChange={(d) => setF({ ...f, [m.field]: d })} />
+                {v && !ro && (
+                  <div className="occplan" role="group" aria-label={`How to bring up their ${m.name.toLowerCase()}`}>
+                    <span>{m.icon} On Today:</span>
+                    {(['text', 'card', 'both', 'none'] as BirthdayPlan[]).map((k) => (
+                      <button type="button" key={k} aria-pressed={plans[o] === k} onClick={() => setPlans({ ...plans, [o]: k })}>
+                        {k === 'text' ? 'Text that day' : k === 'card' ? 'Card early' : k === 'both' ? 'Both' : 'Off'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
         {confirmDel && (
           <div className="warn">
             Remove {c?.first_name} from your people for good?
