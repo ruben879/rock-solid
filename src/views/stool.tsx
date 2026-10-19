@@ -8,7 +8,7 @@ import { addDays, monthStart, today, weekStart, ymd } from '../lib/dates'
 import { store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { IChevL } from '../icons'
 
-type Per = 'week' | 'month' | 'quarter'
+type Per = 'week' | 'month' | 'quarter' | 'half' | 'year'
 interface Goal { id: string; name: string; target: number; per: Per }
 interface Leg { id: string; name: string; preset: string | null; goals: Goal[] }
 interface Saved { legs: Leg[]; counts: Record<string, Record<string, number>>; log: { leg: string; goal: string; note: string; day: string }[] }
@@ -16,15 +16,15 @@ interface Shown { id: string; name: string; target: number; per: Per; count: num
 
 const PRESETS: Record<string, [string, number, Per][]> = {
   'Social media': [['Posts', 3, 'week'], ['Videos', 1, 'week'], ['Go live or stories', 2, 'week']],
-  'Farming': [['Mailers out', 1, 'month'], ['Door knocking hours', 2, 'week'], ['Neighborhood event', 1, 'quarter']],
+  'Farming': [['Mailers out', 1, 'month'], ['Door knocking hours', 2, 'week'], ['Neighborhood event', 1, 'quarter'], ['Sponsored community event', 1, 'year']],
   'Open houses': [['Open houses held', 1, 'week'], ['Sign-ins followed up', 10, 'week']],
   'Cold calling': [['Dials', 100, 'week'], ['Conversations', 15, 'week'], ['Appointments set', 1, 'week']],
   'Past client events': [['Client event', 1, 'quarter'], ['Invites sent', 25, 'quarter']],
   'Builders and new construction': [['Model home visits', 2, 'week'], ['Builder rep coffees', 1, 'month']],
   'Expired and FSBO': [['Expireds called', 20, 'week'], ['FSBO visits', 3, 'week']],
 }
-const PER: Record<Per, string> = { week: 'a week', month: 'a month', quarter: 'a quarter' }
-const PER_NOW: Record<Per, string> = { week: 'this week', month: 'this month', quarter: 'this quarter' }
+const PER: Record<Per, string> = { week: 'a week', month: 'a month', quarter: 'a quarter', half: 'every 6 months', year: 'a year' }
+const PER_NOW: Record<Per, string> = { week: 'this week', month: 'this month', quarter: 'this quarter', half: 'this half of the year', year: 'this year' }
 const COLORS = ['var(--leg1)', 'var(--leg2)', 'var(--leg3)']
 const gid = () => Math.random().toString(36).slice(2, 9)
 const fromPreset = (preset: string, name?: string): Leg => ({ id: gid(), name: name ?? preset, preset, goals: PRESETS[preset].map(([n, t, p]) => ({ id: gid(), name: n, target: t, per: p })) })
@@ -33,6 +33,8 @@ function periodKey(per: Per) {
   const t = today()
   if (per === 'week') return ymd(weekStart())
   if (per === 'month') return ymd(monthStart()).slice(0, 7)
+  if (per === 'half') return `${t.getFullYear()}-H${t.getMonth() < 6 ? 1 : 2}`
+  if (per === 'year') return String(t.getFullYear())
   return `${t.getFullYear()}-Q${Math.floor(t.getMonth() / 3) + 1}`
 }
 const keyOf = (agentId: string) => `rs-stool-${agentId}`
