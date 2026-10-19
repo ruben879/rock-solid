@@ -265,7 +265,7 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
               <label className="field"><span>Name it</span>
                 <input value={l.name} onChange={(e) => editLeg(i, (x) => ({ ...x, name: e.target.value }))} onBlur={(e) => !e.target.value.trim() && editLeg(i, (x) => ({ ...x, name: 'My leg' }))} />
               </label>
-              <span className="note">Goals</span>
+              <span className="note">Goals: as few as one. Tap × to drop any you don't do.</span>
               {l.goals.map((g) => (
                 <div key={g.id} className="st-gedit">
                   <input aria-label="Goal name" value={g.name} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, name: e.target.value } : y)) }))} />
@@ -274,7 +274,7 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
                     <select aria-label="How often" style={{ flex: 1 }} value={g.per} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, per: e.target.value as Per } : y)) }))}>
                       {(Object.keys(PER) as Per[]).map((k) => <option key={k} value={k}>{PER[k]}</option>)}
                     </select>
-                    <button className="iconbtn" aria-label={`Remove ${g.name}`} onClick={() => editLeg(i, (x) => ({ ...x, goals: x.goals.filter((y) => y.id !== g.id) }))}>×</button>
+                    {l.goals.length > 1 && <button className="iconbtn" aria-label={`Remove ${g.name}`} onClick={() => editLeg(i, (x) => ({ ...x, goals: x.goals.filter((y) => y.id !== g.id) }))}>×</button>}
                   </div>
                 </div>
               ))}
