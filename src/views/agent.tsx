@@ -303,6 +303,12 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const touch = useRef<{ x: number; y: number; dir: 'h' | 'v' | null } | null>(null)
   const [cele, setCele] = useState<{ eyebrow: string; title: string; sub: string } | null>(null)
   const pendingCheck = useRef<boolean[] | null>(null)
+  // After you log something, glide back to the top so you see your rocks and the next person.
+  const logged = useRef(data.touches.length)
+  useEffect(() => {
+    if (data.touches.length > logged.current && !readOnly) window.scrollTo({ top: 0, behavior: 'smooth' })
+    logged.current = data.touches.length
+  }, [data.touches.length, readOnly])
 
   const byId = new Map(data.contacts.map((c) => [c.id, c]))
   // Follow-ups first. They count as done once you've touched them today.
