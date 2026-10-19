@@ -727,3 +727,12 @@ nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
 .st-gedit { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
 @media (prefers-reduced-motion: reduce) { .st-seat, .st-fill, .st-bar i { transition: none; } }
 .st-top { transition: transform .6s cubic-bezier(.3, 1.4, .5, 1); transform-box: view-box; transform-origin: 150px 72px; }
+
+/* Swipe-left-to-delete rows */
+.swiperow { position: relative; overflow: hidden; }
+.swipedel { position: absolute; top: 0; right: 0; bottom: 0; width: 88px; border: 0; background: var(--urgent); color: #fff; font: 600 15px var(--font); cursor: pointer; }
+.swipefront { position: relative; background: var(--surface); transition: transform .2s ease; display: flex; align-items: center; gap: 6px; }
+.swipefront > :first-child { flex: 1; min-width: 0; }
+.rowx { border: 0; background: none; color: var(--muted); font-size: 20px; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; flex: none; }
+@media (hover: none) { .rowx { display: none; } }
+html, body { overflow-x: hidden; }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
@@ -1355,7 +1355,7 @@ function ChallengeLog({ ctx, kinds, onClose }: { ctx: Ctx; kinds: string[]; onCl
 
 function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfileChange?: () => void; onBack?: () => void; extra?: ReactNode }) {
   const { data, agent, readOnly } = ctx
-  useSwipeBack(onBack)
+  const swipeRef = useSwipeBack(onBack)
   const [cele, setCele] = useState(false)
   const counting = data.cards.filter((c) => c.counts_for_challenge)
   const cov = cardCoverage(data.cards)
@@ -1393,7 +1393,7 @@ function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfile
   const pad = first.getDay() // Sunday first
   const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   return (
-    <section>
+    <section ref={swipeRef as RefObject<HTMLElement>}>
       {onBack ? (
         <div className="roomhdr">
           <button className="iconbtn" aria-label="Back to challenges" onClick={onBack}><IChevL /></button>

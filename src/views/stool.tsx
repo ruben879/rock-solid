@@ -1,11 +1,11 @@
 // The three-legged stool (preview). Sphere comes from Rock Solid; the other two legs are planned and checked off here.
 // Preview only: legs 2 and 3 are saved on this phone, not to the account yet.
-import { useId, useState } from 'react'
+import { useId, useState, type RefObject } from 'react'
 import type { Profile } from '../lib/model'
 import { cardCoverage } from '../lib/model'
 import type { AgentData } from '../lib/data'
 import { addDays, monthStart, today, weekStart, ymd } from '../lib/dates'
-import { store, useSwipeBack, useToast } from '../ui'
+import { store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { IChevL } from '../icons'
 
 type Per = 'week' | 'month' | 'quarter'
@@ -155,7 +155,7 @@ export function MiniStool({ agent, data, onOpen }: { agent: Profile; data: Agent
 export function StoolPage({ agent, data, onBack }: { agent: Profile; data: AgentData; onBack: () => void }) {
   const toast = useToast()
   const { saved, save, legs, p } = useStool(agent, data)
-  useSwipeBack(onBack)
+  const swipeRef = useSwipeBack(onBack)
   const [view, setView] = useState<'week' | 'plan'>('week')
   const [open, setOpen] = useState(0)
   const [noteFor, setNoteFor] = useState<string | null>(null)
@@ -178,7 +178,7 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
   const editLeg = (i: number, f: (l: Leg) => Leg) => save({ ...saved, legs: saved.legs.map((l, j) => (j === i ? f(l) : l)) })
 
   return (
-    <section className="st">
+    <section className="st" ref={swipeRef as RefObject<HTMLElement>}>
       <div className="roomhdr">
         <button className="iconbtn" aria-label="Back to Today" onClick={onBack}><IChevL /></button>
         <h2 style={{ margin: 0, fontSize: 21, flex: 1 }}>Your three legs</h2>
@@ -265,18 +265,19 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
               <label className="field"><span>Name it</span>
                 <input value={l.name} onChange={(e) => editLeg(i, (x) => ({ ...x, name: e.target.value }))} onBlur={(e) => !e.target.value.trim() && editLeg(i, (x) => ({ ...x, name: 'My leg' }))} />
               </label>
-              <span className="note">Goals: as few as one. Tap × to drop any you don't do.</span>
+              <span className="note">Goals</span>
               {l.goals.map((g) => (
-                <div key={g.id} className="st-gedit">
-                  <input aria-label="Goal name" value={g.name} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, name: e.target.value } : y)) }))} />
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input aria-label="How many" inputMode="numeric" style={{ width: 70, textAlign: 'center' }} value={g.target} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, target: Math.max(1, parseInt(e.target.value, 10) || 1) } : y)) }))} />
-                    <select aria-label="How often" style={{ flex: 1 }} value={g.per} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, per: e.target.value as Per } : y)) }))}>
-                      {(Object.keys(PER) as Per[]).map((k) => <option key={k} value={k}>{PER[k]}</option>)}
-                    </select>
-                    {l.goals.length > 1 && <button className="iconbtn" aria-label={`Remove ${g.name}`} onClick={() => editLeg(i, (x) => ({ ...x, goals: x.goals.filter((y) => y.id !== g.id) }))}>×</button>}
+                <SwipeRow key={g.id} label={g.name} onDelete={l.goals.length > 1 ? () => editLeg(i, (x) => ({ ...x, goals: x.goals.filter((y) => y.id !== g.id) })) : undefined}>
+                  <div className="st-gedit">
+                    <input aria-label="Goal name" value={g.name} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, name: e.target.value } : y)) }))} />
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input aria-label="How many" inputMode="numeric" style={{ width: 70, textAlign: 'center' }} value={g.target} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, target: Math.max(1, parseInt(e.target.value, 10) || 1) } : y)) }))} />
+                      <select aria-label="How often" style={{ flex: 1 }} value={g.per} onChange={(e) => editLeg(i, (x) => ({ ...x, goals: x.goals.map((y) => (y.id === g.id ? { ...y, per: e.target.value as Per } : y)) }))}>
+                        {(Object.keys(PER) as Per[]).map((k) => <option key={k} value={k}>{PER[k]}</option>)}
+                      </select>
+                    </div>
                   </div>
-                </div>
+                </SwipeRow>
               ))}
               <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => editLeg(i, (x) => ({ ...x, goals: [...x.goals, { id: gid(), name: 'New goal', target: 1, per: 'week' }] }))}>+ Add a goal</button>
             </div>

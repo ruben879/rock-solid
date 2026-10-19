@@ -312,21 +312,77 @@ export function Rock({ i, on, ghost }: { i: number; on: boolean; ghost?: boolean
 }
 
 // ---------- Swipe right to go back ----------
-/** On a page with a back arrow: a quick swipe to the right does the same thing. */
+/**
+ * On a page with a back arrow: drag the page to the right to go back. It follows your finger,
+ * so you can change your mind and let it slide back. Returns a ref for the page's outer element.
+ */
 export function useSwipeBack(onBack?: () => void) {
+  const ref = useRef<HTMLElement | null>(null)
+  const back = useRef(onBack)
+  back.current = onBack
+  const on = !!onBack
   useEffect(() => {
-    if (!onBack) return
-    let s: { x: number; y: number; t: number } | null = null
-    const skip = (t: EventTarget | null) => t instanceof Element && !!t.closest('input, textarea, select, .sheet, .pcard')
-    const down = (e: TouchEvent) => { s = skip(e.target) ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } }
-    const up = (e: TouchEvent) => {
+    if (!on) return
+    let s: { x: number; y: number; t: number; dir: 'h' | 'v' | null; dx: number } | null = null
+    const skip = (t: EventTarget | null) => t instanceof Element && !!t.closest('input, textarea, select, .sheet, .pcard, .swiperow')
+    const set = (dx: number, anim: boolean) => {
+      const el = ref.current
+      if (!el) return
+      el.style.transition = anim ? 'transform .22s ease, opacity .22s ease' : 'none'
+      el.style.transform = dx ? `translateX(${dx}px)` : ''
+      el.style.opacity = dx ? String(Math.max(0.35, 1 - dx / 700)) : ''
+    }
+    const down = (e: TouchEvent) => { s = skip(e.target) ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), dir: null, dx: 0 } }
+    const move = (e: TouchEvent) => {
       if (!s) return
-      const dx = e.changedTouches[0].clientX - s.x, dy = e.changedTouches[0].clientY - s.y
-      if (dx > 70 && Math.abs(dy) < dx * 0.6 && Date.now() - s.t < 1000) onBack()
+      const dx = e.touches[0].clientX - s.x, dy = e.touches[0].clientY - s.y
+      if (!s.dir && Math.abs(dx) + Math.abs(dy) > 10) s.dir = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.2 ? 'h' : 'v'
+      if (s.dir === 'h') { s.dx = Math.max(0, dx); set(s.dx, false) }
+    }
+    const up = () => {
+      if (!s || s.dir !== 'h') { s = null; return }
+      const w = window.innerWidth
+      const fast = s.dx / Math.max(1, Date.now() - s.t) > 0.5
+      if (s.dx > w * 0.35 || (fast && s.dx > 60)) {
+        set(w, true)
+        setTimeout(() => { back.current?.(); set(0, false) }, 200)
+      } else set(0, true)
       s = null
     }
     window.addEventListener('touchstart', down, { passive: true })
+    window.addEventListener('touchmove', move, { passive: true })
     window.addEventListener('touchend', up)
-    return () => { window.removeEventListener('touchstart', down); window.removeEventListener('touchend', up) }
-  }, [onBack])
+    window.addEventListener('touchcancel', up)
+    return () => {
+      window.removeEventListener('touchstart', down); window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up); window.removeEventListener('touchcancel', up)
+      set(0, false)
+    }
+  }, [on])
+  return ref
+}
+
+/** A row that slides left to show a Delete button (touch). On a computer, a small × does the same. */
+export function SwipeRow({ onDelete, children, label }: { onDelete?: () => void; children: ReactNode; label: string }) {
+  const [x, setX] = useState(0)
+  const st = useRef<{ x: number; y: number; base: number; dir: 'h' | 'v' | null } | null>(null)
+  if (!onDelete) return <div className="swiperow">{children}</div>
+  return (
+    <div className="swiperow">
+      <button className="swipedel" aria-label={`Delete ${label}`} onClick={onDelete} tabIndex={x ? 0 : -1}>Delete</button>
+      <div className="swipefront" style={{ transform: x ? `translateX(${x}px)` : undefined, transition: st.current?.dir === 'h' ? 'none' : undefined }}
+        onTouchStart={(e) => { st.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, base: x, dir: null } }}
+        onTouchMove={(e) => {
+          const s = st.current
+          if (!s) return
+          const dx = e.touches[0].clientX - s.x, dy = e.touches[0].clientY - s.y
+          if (!s.dir && Math.abs(dx) + Math.abs(dy) > 8) s.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
+          if (s.dir === 'h') setX(Math.min(0, Math.max(-110, s.base + dx)))
+        }}
+        onTouchEnd={() => { const s = st.current; st.current = null; if (s?.dir === 'h') setX((v) => (v < -45 ? -88 : 0)) }}>
+        {children}
+        <button className="rowx" aria-label={`Delete ${label}`} onClick={onDelete}>×</button>
+      </div>
+    </div>
+  )
 }

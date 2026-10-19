@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import type { Profile } from '../lib/model'
 import { addDays, fmt, monthStart, today, ymd } from '../lib/dates'
 import * as tg from '../lib/together'
@@ -258,7 +258,7 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatO
   renderLog: (kinds: string[], onClose: () => void) => ReactNode; pinned?: boolean; onPin?: () => void
 }) {
   const toast = useToast()
-  useSwipeBack(embedded ? undefined : onBack)
+  const swipeRef = useSwipeBack(embedded ? undefined : onBack)
   const [room, setRoom] = useState<{ people: Person[]; progress: DayCount[]; posts: Post[]; kudos: { post_id: string; user_id: string }[] } | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -311,7 +311,7 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatO
   }
 
   return (
-    <section className={`room ${embedded ? 'embedded' : ''}`}>
+    <section className={`room ${embedded ? 'embedded' : ''}`} ref={swipeRef as RefObject<HTMLElement>}>
       {embedded ? (
         <div className="grp" style={{ marginTop: 26 }}>
           <span>{c.name} · {people.length} in</span>
