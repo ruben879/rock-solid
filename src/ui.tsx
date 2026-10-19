@@ -317,12 +317,12 @@ export function useSwipeBack(onBack?: () => void) {
   useEffect(() => {
     if (!onBack) return
     let s: { x: number; y: number; t: number } | null = null
-    const skip = (t: EventTarget | null) => t instanceof Element && !!t.closest('input, textarea, select, .sheet, .pcard, .st-svg')
+    const skip = (t: EventTarget | null) => t instanceof Element && !!t.closest('input, textarea, select, .sheet, .pcard')
     const down = (e: TouchEvent) => { s = skip(e.target) ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } }
     const up = (e: TouchEvent) => {
       if (!s) return
       const dx = e.changedTouches[0].clientX - s.x, dy = e.changedTouches[0].clientY - s.y
-      if (dx > 90 && Math.abs(dy) < dx * 0.5 && Date.now() - s.t < 700) onBack()
+      if (dx > 70 && Math.abs(dy) < dx * 0.6 && Date.now() - s.t < 1000) onBack()
       s = null
     }
     window.addEventListener('touchstart', down, { passive: true })

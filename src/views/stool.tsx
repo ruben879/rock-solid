@@ -1,6 +1,6 @@
 // The three-legged stool (preview). Sphere comes from Rock Solid; the other two legs are planned and checked off here.
 // Preview only: legs 2 and 3 are saved on this phone, not to the account yet.
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { Profile } from '../lib/model'
 import { cardCoverage } from '../lib/model'
 import type { AgentData } from '../lib/data'
@@ -73,16 +73,19 @@ function useStool(agent: Profile, data: AgentData) {
 
 // ---------- The stool drawing ----------
 export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; onLeg?: (i: number) => void }) {
+  const uid = useId().replace(/:/g, '')
   const legs = [
     { pts: [[76, 82], [106, 88], [62, 236], [38, 233]], back: false },
     { pts: [[136, 92], [164, 92], [160, 216], [140, 216]], back: true },
     { pts: [[194, 88], [224, 82], [262, 233], [238, 236]], back: false },
   ]
-  // It leans a little for every bit one side is shorter, and levels out as they even up.
-  const side = p[0] - p[2]
-  const tilt = Math.abs(side) < 0.05 ? 0 : Math.max(-8, Math.min(8, side * 12))
-  // A short back leg tips the stool backward: it leans away from you, so it looks a bit shorter and you see less of the seat top.
-  const back = Math.min(0.15, Math.max(0, (p[0] + p[2]) / 2 - p[1] - 0.05) * 0.4)
+  // Like a real stool: it stays planted on its longest front leg and tips toward the shorter one.
+  const footL = 85 + 150 * p[0], footR = 85 + 150 * p[2]
+  let tilt = (Math.atan2(footL - footR, 200) * 180) / Math.PI * 0.3
+  tilt = Math.abs(tilt) < 0.6 ? 0 : Math.max(-7, Math.min(7, tilt))
+  const pivot = p[0] >= p[2] ? 50 : 250
+  // A short back leg tips it away from you: a little shorter, with less of the seat top showing.
+  const back = Math.min(0.08, Math.max(0, (p[0] + p[2]) / 2 - p[1] - 0.05) * 0.25)
   const poly = (pts: number[][]) => pts.map((q) => q.join(',')).join(' ')
   const short = (n: string) => (n.length <= 10 ? n : n.split(' ')[0])
   const leg = (i: number) => {
@@ -96,10 +99,10 @@ export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; on
     if (ang > 90) ang -= 180
     return (
       <g key={i} className="st-leg" onClick={() => onLeg?.(i)}>
-        <clipPath id={`stcl${i}`}><rect x="0" y={top - 4} width="300" height={len + 4} className="st-fill" /></clipPath>
+        <clipPath id={`stcl${uid}${i}`}><rect x="0" y={top - 4} width="300" height={len + 4} className="st-fill" /></clipPath>
         <polygon points={poly(L.pts)} fill="var(--st-empty)" stroke="var(--line)" strokeWidth="2" strokeDasharray="5 4" strokeLinejoin="round" />
-        <polygon points={poly(L.pts)} fill={COLORS[i]} clipPath={`url(#stcl${i})`} opacity={L.back ? 0.85 : 1} />
-        <polygon points={poly(L.pts)} fill="url(#stgrain)" clipPath={`url(#stcl${i})`} />
+        <polygon points={poly(L.pts)} fill={COLORS[i]} clipPath={`url(#stcl${uid}${i})`} opacity={L.back ? 0.85 : 1} />
+        <polygon points={poly(L.pts)} fill="url(#stgrain)" clipPath={`url(#stcl${uid}${i})`} />
         <text x={mx} y={my} transform={`rotate(${ang} ${mx} ${my})`} textAnchor="middle" dominantBaseline="central" className="st-txt">{short(names[i] ?? '')}</text>
       </g>
     )
@@ -111,9 +114,9 @@ export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; on
         <linearGradient id="stseat" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#e2bd84" /><stop offset="1" stopColor="#b98a4e" /></linearGradient>
       </defs>
       <ellipse cx="150" cy="242" rx="122" ry="10" fill="var(--line)" opacity=".8" />
-      <g className="st-seat" style={{ transform: `rotate(${tilt}deg) scaleY(${1 - back})` }}>
+      <g className="st-seat" style={{ transformOrigin: `${pivot}px 236px`, transform: `rotate(${tilt}deg) scaleY(${1 - back})` }}>
         {leg(1)}{leg(0)}{leg(2)}
-        <g className="st-top" style={{ transform: `scaleY(${1 - back * 2.5})` }}>
+        <g className="st-top" style={{ transform: `scaleY(${1 - back * 2})` }}>
           <path d="M40 64 L40 80 A110 26 0 0 0 260 80 L260 64 Z" fill="#93683a" />
           <ellipse cx="150" cy="64" rx="110" ry="26" fill="url(#stseat)" />
           <ellipse cx="150" cy="64" rx="84" ry="18" fill="none" stroke="#8a5f30" strokeWidth="1.5" opacity=".6" />
