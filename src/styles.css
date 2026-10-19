@@ -739,3 +739,37 @@ nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
 main.wrap { overflow-x: clip; }
 .st-due.soon { color: var(--behind); font-weight: 500; }
 .st-due.over { color: var(--urgent); font-weight: 600; }
+
+/* Goal setup: one question at a time */
+.gwiz { position: fixed; inset: 0; z-index: 55; background: var(--bg); display: flex; flex-direction: column; padding: calc(12px + env(safe-area-inset-top, 0px)) 20px calc(18px + env(safe-area-inset-bottom, 0px)); animation: mIn .3s ease both; overflow-y: auto; }
+.gwiz.out { animation: mOut .2s ease both; }
+.gwiz-top { display: flex; align-items: center; gap: 12px; max-width: 520px; width: 100%; margin: 0 auto; }
+.gwiz-x { width: 40px; height: 40px; flex: none; border: 0; background: none; color: var(--muted); font: 400 30px/1 var(--font); cursor: pointer; display: grid; place-items: center; }
+.gwiz-bar { flex: 1; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.gwiz-bar i { display: block; height: 100%; background: var(--gold); border-radius: 99px; transition: width .35s ease; }
+.gwiz-body { flex: 1; max-width: 520px; width: 100%; margin: 0 auto; padding-top: 8vh; animation: gwIn .28s ease both; }
+@keyframes gwIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+.gwiz-kicker { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--gold-ink); margin-bottom: 8px; }
+.gwiz h2 { font-size: 27px; line-height: 1.22; font-weight: 600; margin: 0 0 10px; color: var(--ink); }
+.gwiz-hint { color: var(--muted); font-size: 16px; line-height: 1.5; margin: 0 0 18px; }
+.gwiz-num { display: flex; align-items: baseline; gap: 4px; border-bottom: 2px solid var(--navy); padding: 4px 2px; margin: 8px 0 18px; font: 600 40px var(--font); color: var(--ink); }
+.gwiz-num span { color: var(--muted); }
+.gwiz-num input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; color: inherit; outline: none; padding: 0; }
+.gwiz-chips button { min-width: 72px; }
+.gwiz-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 14px 0 16px; }
+.gwiz-opts { display: grid; gap: 10px; margin-top: 16px; }
+.gwiz-opt { display: flex; gap: 12px; align-items: flex-start; text-align: left; width: 100%; padding: 16px; border-radius: var(--r); border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.gwiz-opt b { display: block; font-size: 17px; font-weight: 600; margin-bottom: 3px; }
+.gwiz-opt small { display: block; color: var(--muted); font-size: 14.5px; line-height: 1.45; }
+.gwiz-opt.on { border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy), 0 6px 18px rgba(30, 58, 110, .12); }
+.gwiz-dot { width: 22px; height: 22px; flex: none; margin-top: 1px; border-radius: 50%; border: 2px solid var(--line); }
+.gwiz-opt.on .gwiz-dot { border: 7px solid var(--navy); }
+.gwiz-step { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 18px; }
+.gwiz-step .btn { width: 56px; height: 56px; border-radius: 50%; font-size: 26px; }
+.gwiz-step div { text-align: center; min-width: 110px; }
+.gwiz-step b { display: block; font-size: 44px; font-weight: 600; line-height: 1.1; }
+.gwiz-step small { color: var(--muted); font-size: 14px; }
+.gwiz-check { width: 64px; height: 64px; border-radius: 50%; background: var(--gold-soft); color: var(--gold-ink); display: grid; place-items: center; font-size: 32px; font-weight: 700; margin-bottom: 16px; }
+.gwiz-foot { max-width: 520px; width: 100%; margin: 18px auto 0; display: grid; gap: 6px; }
+.gwiz-go { width: 100%; min-height: 54px; font-size: 17px; border-radius: 14px; }
+.gwiz-later { border: 0; background: none; color: var(--muted); }

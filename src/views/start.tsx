@@ -3,6 +3,7 @@ import type { Contact, Profile } from '../lib/model'
 import { currentSubscription, pushSupported } from '../lib/push'
 import { Sheet, store } from '../ui'
 import { ICheck } from '../icons'
+import { openGoalWizard } from './goals'
 
 type Tab = 'week' | 'cards' | 'activity' | 'db'
 const SITE = 'rock-solid-three.vercel.app'
@@ -35,8 +36,8 @@ export function GettingStarted({ contacts, agent, onGo }: { contacts: Contact[];
   const steps: Step[] = [
     {
       key: 'goals', title: 'Set your goals first', done: !!agent.plan && Object.keys(agent.plan).length > 0,
-      body: <p>Tap <b>Progress</b> (the graph icon at the top, next to your initial) and fill in your plan for the year (take-home goal, average price). It tells you how many people you need in your database, and with <b>Set my goals from my plan</b> checked, how many to reach each day.</p>,
-      action: { label: 'Go to Progress', run: () => go('activity') },
+      body: <p>A few quick questions about your year (take-home goal, average price). Rock Solid turns them into how many people you need and how many to reach each day.</p>,
+      action: { label: 'Set my goals', run: () => { setOpen(false); openGoalWizard() } },
     },
     {
       key: 'people', title: 'Bring in your people', done: contacts.length > 0,

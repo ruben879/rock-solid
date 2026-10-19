@@ -4,10 +4,12 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
+  planNumbers,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
+import { GoalWizardHost } from './goals'
 import { Together, type CadInfo } from './together'
 import { MiniStool, StoolPage } from './stool'
 import { IBell, ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
@@ -59,6 +61,7 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
       {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
       {props.tab === 'db' && <People ctx={ctx} onProfileChange={props.onProfileChange} />}
       {props.tab === 'stool' && <StoolPage agent={agent} data={data} onBack={() => props.onGo?.('week')} />}
+      {own && <GoalWizardHost me={props.me} agent={props.agent} contacts={data.contacts} onSaved={props.onProfileChange} />}
     </>
   )
 }
@@ -1739,15 +1742,6 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
 
 /** One-on-one touches per person per year: the personal part of the 36 (6 calls, 6 texts, 2 cards, 2 pop-bys). */
 const PERSONAL_TOUCHES = 16
-
-function planNumbers(plan: Record<string, number> | undefined) {
-  const p = { income: 80000, cap: 0, price: 275000, rate: 2.7, conversion: 12, ...(plan ?? {}) }
-  const gci = p.income + p.cap
-  const perDeal = p.price * (p.rate / 100)
-  const deals = perDeal > 0 ? Math.ceil(gci / perDeal) : 0
-  const dbNeeded = p.conversion > 0 ? Math.ceil(deals / (p.conversion / 100)) : 0
-  return { gci, perDeal, deals, dbNeeded }
-}
 
 /** Daily and weekly goals that keep the plan's people on pace. Weekly is always 5 days' worth. */
 export function goalsFromPlan(plan: Record<string, number> | undefined, have: number) {

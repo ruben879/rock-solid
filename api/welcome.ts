@@ -55,7 +55,7 @@ export default async function handler(req: Req, res: Res) {
 }
 
 const STEPS: [string, string, string?, string?][] = [
-  ['Set your goals', 'Open Rock Solid and tap the graph icon at the top, next to your initial. Fill in your plan for the year. It tells you how many people you need in your database and how many to reach each day.'],
+  ['Set your goals', 'The first time you open Rock Solid, it asks a few quick questions about your year: what you want to take home, your average price. It turns your answers into how many people you need and how many to reach each day.'],
   ['Bring in your people', 'This part is easiest on a computer. Export your contacts as a CSV file from BoldTrail, Google Contacts or a spreadsheet, then use the button below. Sign in, and the import opens on its own.', 'Upload my contacts', `${SITE}/?go=import`],
   ['Put Rock Solid on your phone', 'On your phone, tap the button below (on iPhone, use Safari) and sign in. iPhone: tap the Share button (the square with the arrow), then Add to Home Screen. Android: tap the three dots in Chrome, then Install app. From then on, open it from your Home Screen like any other app.', 'Open Rock Solid', SITE],
   ["Tag your A's and B's", "On People, tap Needs a tag. A is your VIPs, every two weeks. B is everyone else you want to stay close to, about once a month. Rock Solid builds your list each day from these."],

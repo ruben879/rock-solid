@@ -353,3 +353,14 @@ export function cardCoverage(cards: Card[]) {
   const has = (k: string) => written.has(k) || covered.has(k)
   return { written, covered, coveredBy, byDay, has }
 }
+
+// ---------- The yearly plan ----------
+/** Take-home goal to closings to people needed. */
+export function planNumbers(plan: Record<string, number> | undefined) {
+  const p = { income: 80000, cap: 0, price: 275000, rate: 2.7, conversion: 12, ...(plan ?? {}) }
+  const gci = p.income + p.cap
+  const perDeal = p.price * (p.rate / 100)
+  const deals = perDeal > 0 ? Math.ceil(gci / perDeal) : 0
+  const dbNeeded = p.conversion > 0 ? Math.ceil(deals / (p.conversion / 100)) : 0
+  return { gci, perDeal, deals, dbNeeded }
+}
