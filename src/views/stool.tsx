@@ -23,8 +23,8 @@ interface Shown { id: string; name: string; target: number; per: Per; count: num
 interface Roll { fill: number; due: string; state: 'good' | 'soon' | 'over'; last?: string }
 
 // ---------- Rolling goals: every 6 months or once a year ----------
-// The clock starts when you set the goal up (or last did it). The leg stays full until about 4 months
-// before it's due, then drains toward the due date, so there's a nudge without a leg sitting empty all year.
+// The clock starts when you set the goal up (or last did it). It drains slowly from the start, then speeds up
+// in the last ~4 months before it's due, so there's a nudge without a leg sitting empty all year.
 const ROLL_DAYS: Partial<Record<Per, number>> = { half: 182, year: 365 }
 const URGENT_DAYS = 122
 const isRolling = (per: Per) => per in ROLL_DAYS
@@ -34,7 +34,9 @@ function rolling(per: Per, target: number, since: string, last?: string): Roll {
   const zone = Math.min(URGENT_DAYS, Math.round(cycle * 0.67))
   const t = ymd(today())
   const left = cycle - dayDiff(since, t)
-  const fill = left >= zone ? 1 : Math.max(0, left / zone)
+  // Drains slowly from day one (down to about 75% when ~4 months are left), then faster to empty on the due date.
+  const early = cycle - zone
+  const fill = left <= 0 ? 0 : left >= zone ? 0.75 + 0.25 * ((left - zone) / Math.max(1, early)) : 0.75 * (left / zone)
   return { fill, due: ymd(addDays(today(), left)), state: left <= 0 ? 'over' : left < zone ? 'soon' : 'good', last }
 }
 
