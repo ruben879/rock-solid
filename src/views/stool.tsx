@@ -4,15 +4,39 @@ import { useId, useState, type RefObject } from 'react'
 import type { Profile } from '../lib/model'
 import { cardCoverage } from '../lib/model'
 import type { AgentData } from '../lib/data'
-import { addDays, monthStart, today, weekStart, ymd } from '../lib/dates'
+import { addDays, fmt, monthStart, today, weekStart, ymd } from '../lib/dates'
 import { store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { IChevL } from '../icons'
 
 type Per = 'week' | 'month' | 'quarter' | 'half' | 'year'
 interface Goal { id: string; name: string; target: number; per: Per }
 interface Leg { id: string; name: string; preset: string | null; goals: Goal[] }
-interface Saved { legs: Leg[]; counts: Record<string, Record<string, number>>; log: { leg: string; goal: string; note: string; day: string }[] }
-interface Shown { id: string; name: string; target: number; per: Per; count: number; auto?: boolean }
+interface Saved {
+  legs: Leg[]
+  counts: Record<string, Record<string, number>>
+  log: { leg: string; goal: string; note: string; day: string }[]
+  /** Rolling goals (every 6 months, a year): the days you did them, and when the goal was set up. */
+  done?: Record<string, string[]>
+  created?: Record<string, string>
+}
+interface Shown { id: string; name: string; target: number; per: Per; count: number; auto?: boolean; roll?: Roll }
+interface Roll { fill: number; due: string; state: 'good' | 'soon' | 'over'; last?: string }
+
+// ---------- Rolling goals: every 6 months or once a year ----------
+// The clock starts when you set the goal up (or last did it). The leg stays full until about 4 months
+// before it's due, then drains toward the due date, so there's a nudge without a leg sitting empty all year.
+const ROLL_DAYS: Partial<Record<Per, number>> = { half: 182, year: 365 }
+const URGENT_DAYS = 122
+const isRolling = (per: Per) => per in ROLL_DAYS
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000)
+function rolling(per: Per, target: number, since: string, last?: string): Roll {
+  const cycle = Math.round((ROLL_DAYS[per] ?? 365) / Math.max(1, target))
+  const zone = Math.min(URGENT_DAYS, Math.round(cycle * 0.67))
+  const t = ymd(today())
+  const left = cycle - dayDiff(since, t)
+  const fill = left >= zone ? 1 : Math.max(0, left / zone)
+  return { fill, due: ymd(addDays(today(), left)), state: left <= 0 ? 'over' : left < zone ? 'soon' : 'good', last }
+}
 
 const PRESETS: Record<string, [string, number, Per][]> = {
   'Social media': [['Posts', 3, 'week'], ['Videos', 1, 'week'], ['Go live or stories', 2, 'week']],
@@ -38,8 +62,15 @@ function periodKey(per: Per) {
   return `${t.getFullYear()}-Q${Math.floor(t.getMonth() / 3) + 1}`
 }
 const keyOf = (agentId: string) => `rs-stool-${agentId}`
+/** Every goal remembers when it was set up, so a new yearly goal starts full. */
+function stamp(v: Saved): Saved {
+  const created = { ...(v.created ?? {}) }
+  const t = ymd(today())
+  for (const l of v.legs) for (const g of l.goals) if (!created[g.id]) created[g.id] = t
+  return { ...v, created }
+}
 function loadSaved(agentId: string): Saved {
-  return store.get<Saved | null>(keyOf(agentId), null) ?? { legs: [fromPreset('Farming', 'Ransom'), fromPreset('Social media', 'Socials')], counts: {}, log: [] }
+  return stamp(store.get<Saved | null>(keyOf(agentId), null) ?? { legs: [fromPreset('Farming', 'Ransom'), fromPreset('Social media', 'Socials')], counts: {}, log: [] })
 }
 
 /** Sphere, from what's already logged in Rock Solid. */
@@ -58,13 +89,20 @@ function sphereGoals(agent: Profile, data: AgentData): Shown[] {
   ]
 }
 
-const pct = (g: Shown) => Math.min(1, g.target ? g.count / g.target : 0)
+const pct = (g: Shown) => (g.roll ? g.roll.fill : Math.min(1, g.target ? g.count / g.target : 0))
 const legPct = (gs: Shown[]) => (gs.length ? gs.reduce((s, g) => s + pct(g), 0) / gs.length : 0)
 
 function useStool(agent: Profile, data: AgentData) {
   const [saved, setSaved] = useState<Saved>(() => loadSaved(agent.id))
-  const save = (v: Saved) => { setSaved(v); store.set(keyOf(agent.id), v) }
-  const shown = (l: Leg): Shown[] => l.goals.map((g) => ({ ...g, count: saved.counts[g.id]?.[periodKey(g.per)] ?? 0 }))
+  const save = (v: Saved) => { const x = stamp(v); setSaved(x); store.set(keyOf(agent.id), x) }
+  const shown = (l: Leg): Shown[] => l.goals.map((g) => {
+    if (isRolling(g.per)) {
+      const done = saved.done?.[g.id] ?? []
+      const last = done.at(-1)
+      return { ...g, count: done.length, roll: rolling(g.per, g.target, last ?? saved.created?.[g.id] ?? ymd(today()), last) }
+    }
+    return { ...g, count: saved.counts[g.id]?.[periodKey(g.per)] ?? 0 }
+  })
   const legs = [
     { id: 'sphere', name: 'Sphere', goals: sphereGoals(agent, data), fixed: true },
     ...saved.legs.map((l) => ({ id: l.id, name: l.name, goals: shown(l), fixed: false })),
@@ -167,6 +205,14 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
   const L = legs[open]
 
   const bump = (g: Shown, d: number) => {
+    if (g.roll) {
+      // Did it: the clock restarts today and the leg fills back up. Minus undoes the last one.
+      const list = saved.done?.[g.id] ?? []
+      const next = d > 0 ? [...list, ymd(today())] : list.slice(0, -1)
+      save({ ...saved, done: { ...(saved.done ?? {}), [g.id]: next } })
+      if (d > 0) { setNoteFor(g.id); setNote(''); toast(`${g.name}: done. The clock restarts today.`) }
+      return
+    }
     const k = periodKey(g.per)
     const cur = saved.counts[g.id]?.[k] ?? 0
     const n = Math.max(0, cur + d)
@@ -212,10 +258,17 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
                 <div key={g.id}>
                   <div className="st-goal">
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <b>{g.name}</b><small>{g.target} {PER[g.per]}</small>
+                      <b>{g.name}</b>
+                      <small className={g.roll ? `st-due ${g.roll.state}` : undefined}>
+                        {g.roll
+                          ? g.roll.state === 'over' ? `${g.target} ${PER[g.per]} · overdue since ${fmt(g.roll.due)}`
+                            : g.roll.state === 'soon' ? `${g.target} ${PER[g.per]} · due by ${fmt(g.roll.due)}`
+                            : `${g.target} ${PER[g.per]} · ${g.roll.last ? `done ${fmt(g.roll.last)}, ` : ''}next by ${fmt(g.roll.due)}`
+                          : `${g.target} ${PER[g.per]}`}
+                      </small>
                       <div className="st-bar"><i style={{ width: `${pct(g) * 100}%`, background: COLORS[open] }} /></div>
                     </div>
-                    <span className="st-cnt">{g.count}<small>/{g.target}</small></span>
+                    {g.roll ? <span className="st-cnt">{g.roll.state === 'good' ? '✓' : g.roll.state === 'soon' ? <small>Soon</small> : <small>Due</small>}</span> : <span className="st-cnt">{g.count}<small>/{g.target}</small></span>}
                     {g.auto ? <span className="st-auto">from Today</span> : (
                       <span className="st-pm">
                         <button aria-label={`Take one off ${g.name}`} disabled={g.count <= 0} onClick={() => bump(g, -1)}>−</button>

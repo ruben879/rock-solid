@@ -737,3 +737,5 @@ nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
 @media (hover: none) { .rowx { display: none; } }
 /* Keep the swipe-back slide inside the page area. Never on html/body: on iPhone that unpins the bottom bar. */
 main.wrap { overflow-x: clip; }
+.st-due.soon { color: var(--behind); font-weight: 500; }
+.st-due.over { color: var(--urgent); font-weight: 600; }
