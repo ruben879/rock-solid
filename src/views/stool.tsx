@@ -5,7 +5,7 @@ import type { Profile } from '../lib/model'
 import { cardCoverage } from '../lib/model'
 import type { AgentData } from '../lib/data'
 import { addDays, monthStart, today, weekStart, ymd } from '../lib/dates'
-import { store, useToast } from '../ui'
+import { store, useSwipeBack, useToast } from '../ui'
 import { IChevL } from '../icons'
 
 type Per = 'week' | 'month' | 'quarter'
@@ -81,7 +81,7 @@ export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; on
   // It leans a little for every bit one side is shorter, and levels out as they even up.
   const side = p[0] - p[2]
   const tilt = Math.abs(side) < 0.05 ? 0 : Math.max(-8, Math.min(8, side * 12))
-  // A short back leg tips the stool backward: it leans away from you (looks a bit shorter) and you see more of the seat's top.
+  // A short back leg tips the stool backward: it leans away from you, so it looks a bit shorter and you see less of the seat top.
   const back = Math.min(0.15, Math.max(0, (p[0] + p[2]) / 2 - p[1] - 0.05) * 0.4)
   const poly = (pts: number[][]) => pts.map((q) => q.join(',')).join(' ')
   const short = (n: string) => (n.length <= 10 ? n : n.split(' ')[0])
@@ -113,7 +113,7 @@ export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; on
       <ellipse cx="150" cy="242" rx="122" ry="10" fill="var(--line)" opacity=".8" />
       <g className="st-seat" style={{ transform: `rotate(${tilt}deg) scaleY(${1 - back})` }}>
         {leg(1)}{leg(0)}{leg(2)}
-        <g className="st-top" style={{ transform: `scaleY(${1 + back * 3})` }}>
+        <g className="st-top" style={{ transform: `scaleY(${1 - back * 2.5})` }}>
           <path d="M40 64 L40 80 A110 26 0 0 0 260 80 L260 64 Z" fill="#93683a" />
           <ellipse cx="150" cy="64" rx="110" ry="26" fill="url(#stseat)" />
           <ellipse cx="150" cy="64" rx="84" ry="18" fill="none" stroke="#8a5f30" strokeWidth="1.5" opacity=".6" />
@@ -152,6 +152,7 @@ export function MiniStool({ agent, data, onOpen }: { agent: Profile; data: Agent
 export function StoolPage({ agent, data, onBack }: { agent: Profile; data: AgentData; onBack: () => void }) {
   const toast = useToast()
   const { saved, save, legs, p } = useStool(agent, data)
+  useSwipeBack(onBack)
   const [view, setView] = useState<'week' | 'plan'>('week')
   const [open, setOpen] = useState(0)
   const [noteFor, setNoteFor] = useState<string | null>(null)

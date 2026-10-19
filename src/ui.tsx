@@ -310,3 +310,23 @@ export function Rock({ i, on, ghost }: { i: number; on: boolean; ghost?: boolean
     </svg>
   )
 }
+
+// ---------- Swipe right to go back ----------
+/** On a page with a back arrow: a quick swipe to the right does the same thing. */
+export function useSwipeBack(onBack?: () => void) {
+  useEffect(() => {
+    if (!onBack) return
+    let s: { x: number; y: number; t: number } | null = null
+    const skip = (t: EventTarget | null) => t instanceof Element && !!t.closest('input, textarea, select, .sheet, .pcard, .st-svg')
+    const down = (e: TouchEvent) => { s = skip(e.target) ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } }
+    const up = (e: TouchEvent) => {
+      if (!s) return
+      const dx = e.changedTouches[0].clientX - s.x, dy = e.changedTouches[0].clientY - s.y
+      if (dx > 90 && Math.abs(dy) < dx * 0.5 && Date.now() - s.t < 700) onBack()
+      s = null
+    }
+    window.addEventListener('touchstart', down, { passive: true })
+    window.addEventListener('touchend', up)
+    return () => { window.removeEventListener('touchstart', down); window.removeEventListener('touchend', up) }
+  }, [onBack])
+}

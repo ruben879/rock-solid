@@ -6,7 +6,7 @@ import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
-import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
+import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { Together, type CadInfo } from './together'
 import { MiniStool, StoolPage } from './stool'
@@ -1355,6 +1355,7 @@ function ChallengeLog({ ctx, kinds, onClose }: { ctx: Ctx; kinds: string[]; onCl
 
 function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfileChange?: () => void; onBack?: () => void; extra?: ReactNode }) {
   const { data, agent, readOnly } = ctx
+  useSwipeBack(onBack)
   const [cele, setCele] = useState(false)
   const counting = data.cards.filter((c) => c.counts_for_challenge)
   const cov = cardCoverage(data.cards)

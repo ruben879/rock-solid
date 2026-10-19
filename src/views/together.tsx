@@ -4,7 +4,7 @@ import { addDays, fmt, monthStart, today, ymd } from '../lib/dates'
 import * as tg from '../lib/together'
 import { supabase } from '../supabase'
 import type { Challenge, DayCount, Period, Person, Post } from '../lib/together'
-import { Sheet, store, useToast } from '../ui'
+import { Sheet, store, useSwipeBack, useToast } from '../ui'
 import { IChevL, IMore, IPin, IPlus, IText } from '../icons'
 
 const COLORS = ['#2f6bd8', '#13806a', '#b07c1c', '#7a5ab8', '#c8401c', '#1e3a6e', '#0f7a8a', '#a2456e']
@@ -258,6 +258,7 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatO
   renderLog: (kinds: string[], onClose: () => void) => ReactNode; pinned?: boolean; onPin?: () => void
 }) {
   const toast = useToast()
+  useSwipeBack(embedded ? undefined : onBack)
   const [room, setRoom] = useState<{ people: Person[]; progress: DayCount[]; posts: Post[]; kudos: { post_id: string; user_id: string }[] } | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
