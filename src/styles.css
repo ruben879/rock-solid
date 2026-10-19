@@ -679,3 +679,50 @@ nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
 /* Leave room above every sheet so there's always somewhere to tap (or swipe) to close it. */
 .sheet { padding-top: calc(env(safe-area-inset-top, 0px) + 64px); }
 .sheet .in { max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 76px); }
+
+/* ---------- Three-legged stool (preview) ---------- */
+:root { --leg1: #c9a24a; --leg2: #2f6bd8; --leg3: #13806a; --st-empty: #eef1f6; }
+@media (prefers-color-scheme: dark) { :root { --leg1: #e0bd66; --leg2: #7fa8f2; --leg3: #5ccbb0; --st-empty: #1f2a47; } }
+.st-svg { width: 100%; height: auto; overflow: visible; display: block; }
+.st-seat { transition: transform .6s cubic-bezier(.3, 1.4, .5, 1); transform-box: view-box; transform-origin: 150px 236px; }
+.st-fill { transition: height .5s ease; }
+.st-leg { cursor: pointer; }
+.st-txt { font: 700 11px var(--font); fill: var(--ink); stroke: var(--surface); stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; letter-spacing: .04em; text-transform: uppercase; pointer-events: none; }
+.st-mini { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; font: inherit; color: var(--ink); cursor: pointer; margin-top: 16px; padding: 12px 14px; }
+.st-mini-art { width: 92px; flex: none; }
+.st-mini-art .st-txt { display: none; }
+.st-mini-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.st-mini-txt b { font-weight: 600; }
+.st-tag { font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.st-pcts { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; color: var(--muted); }
+.st-pcts i, .st-labels i, .st-legcard h3 i, .st-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.st .roomhdr { flex-wrap: wrap; }
+.st-pre { margin: 4px 0 12px; }
+.st-card { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.st-card .st-svg { max-width: 290px; }
+.st-msg { font-weight: 600; text-align: center; margin: 0; text-wrap: balance; }
+.st-msg small { display: block; font-weight: 400; color: var(--muted); font-size: 14px; }
+.st-labels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
+.st-labels button { border: 0; background: none; border-radius: 12px; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 1px; font: inherit; color: var(--ink); cursor: pointer; min-width: 0; }
+.st-labels button[aria-pressed="true"] { background: var(--bg); }
+.st-labels b { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.st-labels span { font-size: 13px; color: var(--muted); }
+.st-legcard { margin-top: 12px; }
+.st-legcard h3 { margin: 0; font-size: 19px; }
+.st-goal { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.st-goal b { display: block; font-weight: 500; }
+.st-goal small { color: var(--muted); font-size: 13px; }
+.st-bar { height: 7px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.st-bar i { display: block; height: 100%; border-radius: 999px; transition: width .4s ease; }
+.st-cnt { font-weight: 600; min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.st-cnt small { color: var(--muted); font-weight: 400; }
+.st-auto { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.st-pm { display: flex; gap: 6px; }
+.st-pm button { width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font-size: 20px; line-height: 1; cursor: pointer; }
+.st-pm button.plus { background: var(--navy); border-color: var(--navy); color: #fff; }
+@media (prefers-color-scheme: dark) { .st-pm button.plus { color: #0f1526; } }
+.st-pm button:disabled { opacity: .35; cursor: default; }
+.st-notebox { display: flex; gap: 8px; padding-bottom: 10px; }
+.st-notebox input { flex: 1; min-width: 0; }
+.st-gedit { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+@media (prefers-reduced-motion: reduce) { .st-seat, .st-fill, .st-bar i { transition: none; } }

@@ -9,9 +9,10 @@ import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { Together, type CadInfo } from './together'
+import { MiniStool, StoolPage } from './stool'
 import { IBell, ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
 
-export type AgentTab = 'week' | 'cards' | 'activity' | 'db'
+export type AgentTab = 'week' | 'cards' | 'activity' | 'db' | 'stool'
 
 interface Ctx {
   me: Profile
@@ -57,6 +58,7 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
             renderLog={(kinds, close) => <ChallengeLog ctx={ctx} kinds={kinds} onClose={close} />} />)}
       {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
       {props.tab === 'db' && <People ctx={ctx} onProfileChange={props.onProfileChange} />}
+      {props.tab === 'stool' && <StoolPage agent={agent} data={data} onBack={() => props.onGo?.('week')} />}
     </>
   )
 }
@@ -546,6 +548,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </details>
       )}
 
+      {/* Preview for the broker only: the three-legged stool. */}
+      {!readOnly && ctx.me.role === 'broker' && agent.id === ctx.me.id && <MiniStool agent={agent} data={data} onOpen={() => onGo?.('stool')} />}
       <Extras ctx={ctx} />
 
       {logFor && <LogSheet c={logFor} suggested={sug(logFor)} goal={ctx.goal} onClose={() => setLogFor(null)} onLog={(k, n) => { const c = logFor; setLogFor(null); log(c, k, n) }} />}

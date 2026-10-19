@@ -317,7 +317,7 @@ function Signed({ session }: { session: Session }) {
     ['week', 'Today', <IHome key="h" size={28} />],
     ['cards', 'Challenges', <ITrophy key="c" />],
   ]
-  const allowed = [...tabs.map(([k]) => k), 'activity' as Tab, ...(leads && !viewing ? (['team'] as Tab[]) : [])]
+  const allowed = [...tabs.map(([k]) => k), 'activity' as Tab, ...(me.role === 'broker' && !viewing ? (['stool'] as Tab[]) : []), ...(leads && !viewing ? (['team'] as Tab[]) : [])]
   const current = allowed.includes(tab) ? tab : 'week'
   const go = (t: Tab) => { setTab(t); window.scrollTo({ top: 0 }) }
   const subject = viewing ?? me
