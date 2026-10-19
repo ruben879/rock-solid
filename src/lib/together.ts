@@ -16,7 +16,7 @@ export interface Challenge {
   ends_on: string
   code: string
 }
-export interface Post { id: string; challenge_id: string; user_id: string; body: string | null; auto_day: string | null; auto_n: number; created_at: string }
+export interface Post { id: string; challenge_id: string; user_id: string; body: string | null; auto_day: string | null; auto_n: number; created_at: string; reply_to?: string | null }
 export interface Person { user_id: string; name: string }
 export interface DayCount { user_id: string; day: string; n: number }
 
@@ -132,8 +132,9 @@ export async function declineInvite(challengeId: string, userId: string) {
   await supabase.from('challenge_invites').delete().eq('challenge_id', challengeId).eq('user_id', userId)
 }
 
-export async function say(challengeId: string, userId: string, body: string) {
-  check(await supabase.from('challenge_posts').insert({ challenge_id: challengeId, user_id: userId, body }))
+export async function say(challengeId: string, userId: string, body: string, replyTo?: string) {
+  const r = await supabase.from('challenge_posts').insert({ challenge_id: challengeId, user_id: userId, body, ...(replyTo ? { reply_to: replyTo } : {}) })
+  if (r.error) throw new Error(/reply_to/.test(r.error.message) ? 'Replies need the 0014 SQL run in Supabase first.' : r.error.message)
 }
 export async function removePost(id: string) {
   check(await supabase.from('challenge_posts').delete().eq('id', id))

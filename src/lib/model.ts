@@ -54,8 +54,13 @@ export interface Contact {
   /** A follow-up the agent set: this person shows up on Today on this date, with the note. */
   follow_up_on?: string | null
   follow_up_note?: string | null
+  /** How to celebrate their birthday: text on the day (default), a card a few days early, both, or none. */
+  birthday_plan?: BirthdayPlan | null
   source: string | null
 }
+
+export type BirthdayPlan = 'text' | 'card' | 'both' | 'none'
+
 
 export interface Touch {
   id: string
@@ -363,4 +368,44 @@ export function planNumbers(plan: Record<string, number> | undefined) {
   const deals = perDeal > 0 ? Math.ceil(gci / perDeal) : 0
   const dbNeeded = p.conversion > 0 ? Math.ceil(deals / (p.conversion / 100)) : 0
   return { gci, perDeal, deals, dbNeeded }
+}
+
+// ---------- Birthdays on Today ----------
+/** Card prompts show this many days before the birthday, until a card is logged. */
+export const CARD_EARLY = { from: 5, to: 3 }
+export const birthdayPlanOf = (c: Contact): BirthdayPlan => c.birthday_plan ?? 'text'
+
+/** This year's birthday (or next year's if it already passed more than a week ago), at noon. */
+export function nextBirthday(c: Contact, from = today()): Date | null {
+  if (!c.birthday) return null
+  const b = parse(c.birthday)
+  let d = new Date(from.getFullYear(), b.getMonth(), b.getDate(), 12)
+  if (daysBetween(from, d) < -7) d = new Date(from.getFullYear() + 1, b.getMonth(), b.getDate(), 12)
+  return d
+}
+
+export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string }
+/**
+ * Who has a birthday to celebrate today: day-of texts (plan text or both, or a "remind me on their birthday" follow-up),
+ * and card prompts from 5 to 3 days before (plan card or both) until a card is logged.
+ */
+export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry[] {
+  const now = today()
+  const t = ymd(now)
+  const out: BdayEntry[] = []
+  for (const c of contacts) {
+    const d = nextBirthday(c, now)
+    if (!d || (c.skip_until && c.skip_until > t)) continue
+    const on = ymd(d)
+    const left = daysBetween(now, d)
+    const plan = birthdayPlanOf(c)
+    if (left === 0 && (plan === 'text' || plan === 'both' || c.follow_up_on === on)) out.push({ id: c.id, kind: 'day', on })
+    else if (left <= CARD_EARLY.from && left >= CARD_EARLY.to && (plan === 'card' || plan === 'both')) {
+      const since = ymd(addDays(d, -10))
+      const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
+      if (!sent) out.push({ id: c.id, kind: 'card', on })
+    }
+  }
+  // Today's birthdays first, then the nearest cards.
+  return out.sort((a, b) => (a.kind === b.kind ? a.on.localeCompare(b.on) : a.kind === 'day' ? -1 : 1))
 }

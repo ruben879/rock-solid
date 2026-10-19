@@ -199,6 +199,12 @@ export async function setFollowUp(c: Contact, on: string | null, note: string | 
   const { error } = await supabase.from('contacts').update({ follow_up_on: on, follow_up_note: note }).eq('id', c.id)
   if (error) throw new Error(/follow_up/.test(error.message) ? 'Follow-ups need the 0012 SQL run in Supabase first.' : error.message)
 }
+/** How to celebrate someone's birthday on Today: a text on the day, a card a few days early, both, or none. */
+export async function setBirthdayPlan(c: Contact, plan: 'text' | 'card' | 'both' | 'none') {
+  needOnline()
+  const { error } = await supabase.from('contacts').update({ birthday_plan: plan }).eq('id', c.id)
+  if (error) throw new Error(/birthday_plan/.test(error.message) ? 'Birthday choices need the 0014 SQL run in Supabase first.' : error.message)
+}
 /** Clears a follow-up once it's done (works offline, sends when back online). */
 export async function clearFollowUp(c: Contact) {
   await exec(c.agent_id, [{ t: 'update', table: 'contacts', id: c.id, fields: { follow_up_on: null, follow_up_note: null } }])
@@ -252,6 +258,33 @@ export async function logCard(me: Profile, cards: Card[], contacts: Contact[], i
   const touch = { id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: match?.id ?? null, kind: 'card', is_group: false, note: `Card a Day: ${input.name.trim()}`, occurred_on: ymd(today()) }
   await exec(me.id, [{ t: 'insert', table: 'cards', rows: [card] }, { t: 'insert', table: 'touches', rows: [touch] }])
   return { repeat, match }
+}
+
+/**
+ * One-time repair: cards logged as a plain touch (from a person's card or the record sheet) before they went through Card a Day.
+ * Each becomes a real Card a Day entry, with the touch's note kept as the card's note.
+ */
+export async function repairPlainCards(me: Profile, touches: Touch[], cards: Card[], contacts: Contact[]) {
+  const since = ymd(addDays(today(), -60))
+  const byId = new Map(contacts.map((c) => [c.id, c]))
+  const ops: Parameters<typeof exec>[1] = []
+  const made: Card[] = []
+  for (const t of touches) {
+    if (t.kind !== 'card' || t.is_group || !t.contact_id || t.occurred_on < since || t.note?.startsWith('Card a Day: ')) continue
+    const c = byId.get(t.contact_id)
+    if (!c) continue
+    const name = fullName(c)
+    if ([...cards, ...made].some((k) => k.sent_on === t.occurred_on && (k.contact_id === c.id || k.recipient_name === name))) continue
+    const prior = [...cards, ...made].filter((k) => k.sent_on < t.occurred_on)
+    const card = {
+      id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, recipient_name: name, relationship: '', occasion: 'Other',
+      note: t.note || null, counts_for_challenge: !(me.card_rule && !!cardWithin12Months(prior, name)), sent_on: t.occurred_on,
+    }
+    made.push(card as Card)
+    ops.push({ t: 'insert', table: 'cards', rows: [card] }, { t: 'update', table: 'touches', id: t.id, fields: { note: `Card a Day: ${name}` } })
+  }
+  if (ops.length) await exec(me.id, ops)
+  return made.length
 }
 
 export async function bumpTally(me: Profile, tallies: Tally[], kind: string, delta: number) {

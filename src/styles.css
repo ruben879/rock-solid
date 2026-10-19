@@ -782,3 +782,23 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .gwiz-gap { margin-top: 14px; padding: 14px; border-radius: var(--r); background: var(--surface); border: 1.5px dashed var(--line); }
 .gwiz-gap p { margin: 10px 0 0; font-size: 14.5px; line-height: 1.45; color: var(--muted); }
 .gwiz-gap .stones { flex-wrap: wrap; }
+
+/* Birthdays on Today */
+.fubadge.bdbadge { background: #c2477a; }
+.pcard.bd { border: 2px solid #c2477a; background: linear-gradient(180deg, color-mix(in srgb, #c2477a 10%, var(--surface)), var(--surface) 55%); }
+.person.bd { border-left: 4px solid #c2477a; }
+.bdagain { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 10px; background: none; border: 1.5px dashed color-mix(in srgb, #c2477a 45%, var(--line)); border-radius: 12px; padding: 10px; font: 500 14px var(--font); color: var(--ink); cursor: pointer; }
+.bdagain.on { border-style: solid; color: var(--good); cursor: default; }
+.bdmore { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.bdmore .link { font-size: inherit; }
+.bdplan { display: inline-flex; margin-left: 10px; font: 500 13px var(--font); color: #c2477a; background: color-mix(in srgb, #c2477a 10%, var(--surface)); border: 0; border-radius: 99px; padding: 3px 10px; cursor: pointer; vertical-align: 1px; }
+
+/* Replies in challenge chats */
+.pacts { display: flex; gap: 8px; flex-wrap: wrap; }
+.replies { margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--line); display: grid; gap: 10px; }
+.reply { display: flex; gap: 8px; }
+.reply .ph { font-size: 14px; }
+.reply .pbody { font-size: 15px; }
+.kudo.sm { margin-top: 4px; padding: 2px 9px; font-size: 12px; }
+.composer.replybox { margin-top: 10px; }
+.composer.replybox input { font-size: 15px; }

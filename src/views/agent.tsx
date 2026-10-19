@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
-import type { Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
+import type { BdayEntry, BirthdayPlan, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers,
+  planNumbers, birthdaysToday, birthdayPlanOf, nextBirthday,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
@@ -37,6 +37,12 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
     if (own && auto && fromPeople && props.agent.daily_goal !== fromPeople)
       api.updateMyProfile(props.me, { daily_goal: fromPeople, weekly_goal: fromPeople * 5 }).catch(() => {})
   }, [own, auto, fromPeople, props.agent.daily_goal, props.me])
+  // Cards logged as a plain touch before they went through Card a Day: turn them into Card a Day entries, once.
+  useEffect(() => {
+    if (!own || !data || store.get<boolean>(`rs-cardfix1-${props.me.id}`, false)) return
+    store.set(`rs-cardfix1-${props.me.id}`, true)
+    api.repairPlainCards(props.me, data.touches, data.cards, data.contacts).then((n) => { if (n) reload() }).catch(() => store.set(`rs-cardfix1-${props.me.id}`, false))
+  }, [own, data, props.me, reload])
   // A follow-up is done once you've touched that person on or after its date.
   useEffect(() => {
     if (!own || !data) return
@@ -87,7 +93,7 @@ const KIND_ICON: Record<string, ReactNode> = { call: <IPhone />, text: <IText />
  */
 function useBatch(ctx: Ctx) {
   const { data, agent, readOnly } = ctx
-  const size = Math.min(30, Math.max(1, agent.daily_goal || 5))
+  const full = Math.min(30, Math.max(1, agent.daily_goal || 5))
   const day = ymd(today())
   const ws = ymd(weekStart())
   const key = `rs-day3-${agent.id}-${day}`
@@ -109,9 +115,27 @@ function useBatch(ctx: Ctx) {
   }, [data.contacts, day, fuKey])
   useEffect(() => { if (!readOnly) store.set(fuKey, fuIds) }, [fuIds, fuKey, readOnly])
 
+  // Birthdays go first. They take at most half of today's spots, so they never crowd out everyone else;
+  // any extra birthdays show as a short line instead. Kept for the day, so a done one stays checked off.
+  const bdKey = `rs-bd-${agent.id}-${day}`
+  const bdAll = useMemo(() => {
+    const have = new Set(data.contacts.map((c) => c.id))
+    const seen = store.get<BdayEntry[]>(bdKey, []).filter((e) => have.has(e.id))
+    const now = birthdaysToday(data.contacts, data.touches).filter((e) => !seen.some((x) => x.id === e.id))
+    return [...seen, ...now]
+  }, [data.contacts, data.touches, bdKey])
+  useEffect(() => { if (!readOnly) store.set(bdKey, bdAll) }, [bdAll, bdKey, readOnly])
+  const bdCap = Math.max(1, Math.floor(full / 2))
+  const bdays = bdAll.slice(0, bdCap)
+  const bdMore = bdAll.slice(bdCap)
+  const bdIds = bdays.map((e) => e.id)
+  const size = Math.max(0, full - bdIds.length)
+  const fuShown = fuIds.filter((id) => !bdIds.includes(id))
+
   const result = useMemo(() => {
     const byId = new Map(data.contacts.map((c) => [c.id, c]))
-    let ids = saved.ids.filter((id) => byId.has(id) && !fuIds.includes(id))
+    const top = [...bdIds, ...fuShown]
+    let ids = saved.ids.filter((id) => byId.has(id) && !top.includes(id))
     let round = saved.round
     let cleared = false
     // If the daily goal went down, trim today's list to fit (people already reached stay).
@@ -121,7 +145,7 @@ function useBatch(ctx: Ctx) {
       const keep = new Set([...reached, ...open].slice(0, Math.max(size, reached.length)))
       ids = ids.filter((id) => keep.has(id))
     }
-    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...ex, ...fuIds]), want, agent.id)
+    const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...ex, ...top]), want, agent.id)
     if (ids.length === 0) {
       // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
       const last = store.get<{ day: string; ids: string[] } | null>(lastKey, null)
@@ -131,10 +155,10 @@ function useBatch(ctx: Ctx) {
         carry = last.ids.filter((id) => {
           const c = byId.get(id)
           return c && !reached.has(id) && (!c.skip_until || c.skip_until <= day)
-        }).slice(0, size)
+        }).filter((id) => !top.includes(id)).slice(0, size)
       }
       // People already reached today count toward today's list, so the stones show today's real progress.
-      const doneToday = [...new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on === day && byId.has(t.contact_id)).map((t) => t.contact_id as string))].slice(0, size)
+      const doneToday = [...new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on === day && byId.has(t.contact_id)).map((t) => t.contact_id as string))].filter((id) => !top.includes(id)).slice(0, size)
       carry = carry.filter((id) => !doneToday.includes(id)).slice(0, size - doneToday.length)
       const start = [...doneToday, ...carry]
       // Mixed order (not alphabetical), the same all day.
@@ -142,13 +166,13 @@ function useBatch(ctx: Ctx) {
       round = ids.length ? 1 : 0
     }
     const allDone = ids.length > 0 && ids.every((id) => touchedThisWeek.has(id))
-    const waiting = poolExcluding([...ids, ...fuIds], 1).length
-    return { ids, round, cleared, waiting, size, allDone, stopped: !!saved.stopped }
-  }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, day, lastKey, fuIds])
+    const waiting = poolExcluding(ids, 1).length
+    return { ids, round, cleared, waiting, size: full, allDone, stopped: !!saved.stopped }
+  }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, full, day, lastKey, fuShown.join(), bdIds.join()]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Finished the list: load another round for today (asked, never automatic). */
   const loadMore = () => {
-    const next = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set(result.ids), size, agent.id).map((c) => c.id)
+    const next = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, ...bdIds, ...fuShown]), full, agent.id).map((c) => c.id)
     if (!next.length) return
     const v = { ids: next, round: result.round + 1 }
     if (!readOnly) {
@@ -176,7 +200,7 @@ function useBatch(ctx: Ctx) {
   }, [result, saved, key, lastKey, day, readOnly])
 
   const replace = (id: string) => {
-    const pool = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, id]), 1, agent.id)
+    const pool = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, id, ...bdIds, ...fuShown]), 1, agent.id)
     const ids = result.ids.filter((x) => x !== id)
     if (pool[0]) ids.push(pool[0].id)
     const v = { ids, round: result.round }
@@ -187,7 +211,7 @@ function useBatch(ctx: Ctx) {
     setSaved(v)
     return pool[0]
   }
-  return { ...result, fuIds, touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday }
+  return { ...result, fuIds: fuShown, bdays, bdMore, touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday }
 }
 
 function goalState(ctx: Ctx) {
@@ -213,6 +237,8 @@ function greeting() {
   const h = new Date().getHours()
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
+
+const longDay = (d: string) => parse(d).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 
 /** One short, plain line about why this person is on the list. */
 function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string; is_group?: boolean } | undefined) {
@@ -283,13 +309,47 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const tk = ymd(today())
   const touchedToday = new Set(data.touches.filter((t) => !t.is_group && t.occurred_on === tk && t.contact_id).map((t) => t.contact_id as string))
   const isFu = (c: Contact) => b.fuIds.includes(c.id)
-  const isDone = (c: Contact) => (isFu(c) ? touchedToday.has(c.id) : b.touchedThisWeek.has(c.id))
-  const rows = [...b.fuIds, ...b.ids].map((id) => byId.get(id)).filter(Boolean) as Contact[]
+  // Birthdays come first: a text on the day, or a card a few days early.
+  const bdOf = (c: Contact) => b.bdays.find((e) => e.id === c.id)
+  const cardSent = (c: Contact, on: string) => {
+    const since = ymd(addDays(parse(on), -10))
+    return data.touches.some((t) => t.contact_id === c.id && !t.is_group && t.kind === 'card' && t.occurred_on >= since)
+  }
+  const isDone = (c: Contact) => {
+    const bd = bdOf(c)
+    if (bd) return bd.kind === 'card' ? cardSent(c, bd.on) : touchedToday.has(c.id)
+    return isFu(c) ? touchedToday.has(c.id) : b.touchedThisWeek.has(c.id)
+  }
+  const rows = [...b.bdays.map((e) => e.id), ...b.fuIds, ...b.ids].map((id) => byId.get(id)).filter(Boolean) as Contact[]
+  const remindOnDay = async (c: Contact, on: string) => {
+    try {
+      await api.setFollowUp(c, on, 'Wish them a happy birthday')
+      await ctx.reload()
+      toast(`${c.first_name || fullName(c)} will be back on Today on their birthday.`)
+    } catch (e) { toast((e as Error).message) }
+  }
+  const bdBadge = (c: Contact, bd: BdayEntry, long = false) => (
+    <span className="fubadge bdbadge">🎂 {bd.kind === 'day' ? 'Birthday today' : `Birthday ${fmt(bd.on)}${long ? ': mail a card' : ''}`}</span>
+  )
+  const bdWhy = (c: Contact, bd: BdayEntry) => {
+    const name = c.first_name || fullName(c)
+    if (bd.kind === 'card') return `Mail it today so it lands by ${longDay(bd.on)}.`
+    return cardSent(c, ymd(addDays(parse(bd.on), 1))) ? `You sent ${name} a card. A quick text today shows you remembered the day.` : `Send ${name} a happy birthday text.`
+  }
+  const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && birthdayPlanOf(c) !== 'both' && (
+    c.follow_up_on === bd.on
+      ? <p className="bdagain on"><ICheck size={14} /> They'll be back on Today on their birthday</p>
+      : <button className="bdagain" onClick={() => remindOnDay(c, bd.on)}>🔔 Remind me again on their birthday</button>
+  )
   const todo = rows.filter((c) => !isDone(c))
   const doneRows = rows.filter((c) => isDone(c))
   const done = doneRows.length
   // Position in the list decides ties, so each day's list mixes calls, texts and cards.
-  const sug = (c: Contact) => suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
+  const sug = (c: Contact): 'call' | 'text' | 'card' => {
+    const bd = bdOf(c)
+    if (bd) return bd.kind === 'card' ? 'card' : c.phone ? 'text' : 'call'
+    return suggestKind(c, data.touches, Math.max(0, b.ids.indexOf(c.id)) + b.round * 3)
+  }
   // Bars cool off from the last one-on-one touch; group emails and mailouts don't warm them back up.
   const personalBy = useMemo(() => touchCounts(data.touches.filter((t) => !t.is_group)), [data.touches])
   const lastOf = (c: Contact) => data.touches.filter((t) => t.contact_id === c.id).sort((a, b) => a.occurred_on.localeCompare(b.occurred_on)).at(-1)
@@ -321,6 +381,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   })
 
   async function log(c: Contact, kind: TouchKind, note: string) {
+    if (kind === 'card') { setCardFor(c); return } // Cards go through Card a Day.
     try {
       const before = flags()
       const t = await api.logTouch(ctx.me, c.id, kind, note)
@@ -398,6 +459,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       )}
       {gapInfo && <GapSheet have={data.contacts.length} need={plan.dbNeeded} today={rows.length} atPlan={Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent))}
         onClose={() => setGapInfo(false)} onAdd={() => { setGapInfo(false); onGo?.('db') }} onGoals={() => { setGapInfo(false); openGoalWizard() }} />}
+      {b.bdMore.length > 0 && (
+        <p className="bdmore">🎂 Also celebrating:{' '}
+          {b.bdMore.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
+        </p>
+      )}
       <div className="todayrow">
         {rows.length > 0 ? <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round})` : ''}</p> : <span />}
         {!readOnly && <button className="recpill" onClick={() => setRecording(true)}><IPlus size={18} /> Record a touch</button>}
@@ -458,7 +524,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
               <div className={`pile backs-${Math.min(2, n - i - 1)}`}>
               {Math.min(2, n - i - 1) >= 2 && <div className="pback b2" aria-hidden="true" />}
               {Math.min(2, n - i - 1) >= 1 && <div className="pback b1" aria-hidden="true" />}
-              <article key={c.id} className={`pcard in-${enter} ${drag ? 'dragging' : ''} ${isFu(c) ? 'fu' : ''}`}
+              <article key={c.id} className={`pcard in-${enter} ${drag ? 'dragging' : ''} ${bdOf(c) ? 'bd' : isFu(c) ? 'fu' : ''}`}
                 style={shown ? { transform: `translateX(${shown}px) rotate(${shown / 40}deg)` } : undefined}
                 onTouchStart={(e) => { touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, dir: null } }}
                 onTouchMove={(e) => {
@@ -484,9 +550,9 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                     <Signal bars={signal(c, personalBy, agent.tier_days)} plain />
                     {!readOnly && <button className="iconbtn" aria-label={`More for ${name}`} onClick={() => setMoreFor(c)}><IMore /></button>}
                   </div>
-                  {isFu(c) && <span className="fubadge"><IBell size={14} /> Follow-up</span>}
+                  {bdOf(c) ? bdBadge(c, bdOf(c)!) : isFu(c) && <span className="fubadge"><IBell size={14} /> Follow-up</span>}
                   <h3 className="pc-name"><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button></h3>
-                  {isFu(c) && c.follow_up_note ? <p className="why funote">{c.follow_up_note}</p> : <p className="why">{whyLine(c, lastOf(c))}</p>}
+                  {bdOf(c) ? <p className="why funote">{bdWhy(c, bdOf(c)!)}</p> : isFu(c) && c.follow_up_note ? <p className="why funote">{c.follow_up_note}</p> : <p className="why">{whyLine(c, lastOf(c))}</p>}
                 </div>
                 <div className="pc-bot">
                   {readOnly ? (
@@ -507,6 +573,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                       {k !== 'card' && <button className="alt k-card" onClick={() => setCardFor(c)}><ICard size={18} /> Card</button>}
                     </div>
                   )}
+                  {bdOf(c) && bdRemind(c, bdOf(c)!)}
                 </div>
               </article>
               </div>
@@ -526,12 +593,12 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
             const k = sug(c)
             const name = c.first_name || fullName(c)
             return (
-              <article key={c.id} className={`person ${isFu(c) ? 'fu' : ''}`}>
-                {isFu(c) && <span className="fubadge"><IBell size={14} /> Follow-up{c.follow_up_note ? `: ${c.follow_up_note}` : ''}</span>}
+              <article key={c.id} className={`person ${bdOf(c) ? 'bd' : isFu(c) ? 'fu' : ''}`}>
+                {bdOf(c) ? bdBadge(c, bdOf(c)!, true) : isFu(c) && <span className="fubadge"><IBell size={14} /> Follow-up{c.follow_up_note ? `: ${c.follow_up_note}` : ''}</span>}
                 <div className="head">
                   <div style={{ minWidth: 0 }}>
                     <h3><button className="namebtn" onClick={() => setViewFor(c)} aria-label={`See ${fullName(c)}'s details and history`}>{fullName(c)}</button> <span className={`ttag ${c.tier === 'U' ? 'q' : ''}`} title={TIER_NAMES[c.tier]}>{c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B'}</span></h3>
-                    <p className="why">{whyLine(c, lastOf(c))}</p>
+                    <p className="why">{bdOf(c) ? bdWhy(c, bdOf(c)!) : whyLine(c, lastOf(c))}</p>
                   </div>
                   <div className="sig">
                     <Signal bars={signal(c, personalBy, agent.tier_days)} plain />
@@ -557,6 +624,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
                     <button className="alt" onClick={() => setLogFor(c)}><ICheck size={18} /> Already did it</button>
                   </div>
                 )}
+                {bdOf(c) && bdRemind(c, bdOf(c)!)}
               </article>
             )
           })}
@@ -604,11 +672,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       {recording && <RecordSheet ctx={ctx} onClose={() => setRecording(false)} onLog={(c, k, n) => { setRecording(false); log(c, k, n) }} />}
       {viewFor && <PersonSheet ctx={ctx} c={viewFor} onClose={() => setViewFor(null)} onEdit={() => { const c = viewFor; setViewFor(null); setEditFor(c) }} />}
       {doneFor && <DoneSheet ctx={ctx} c={doneFor} onClose={() => setDoneFor(null)} onEdit={() => { const c = doneFor; setDoneFor(null); setEditFor(c) }} />}
-      {cardFor && (
-        <Sheet label={`Card for ${cardFor.first_name}`} onClose={() => setCardFor(null)}>
-          <CardSteps ctx={ctx} preset={fullName(cardFor)} onBefore={snapshot} onLogged={() => setCardFor(null)} />
-        </Sheet>
-      )}
+      {cardFor && <CardSheet ctx={ctx} c={cardFor} occasion={bdOf(cardFor) ? 'Birthday' : undefined} onBefore={snapshot} onClose={() => setCardFor(null)} />}
       {reach && (
         <div className="reach" role="status">
           <p>Did you {reach.kind} {reach.c.first_name}?</p>
@@ -930,12 +994,20 @@ function FollowUpSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact; onClose: () 
   )
 }
 
+const BD_PLANS: [BirthdayPlan, string, string][] = [
+  ['text', 'Text on the day', 'They show up first on Today on their birthday.'],
+  ['card', 'Mail a card', 'A card prompt shows up 3 to 5 days early, so it lands in time.'],
+  ['both', 'Card and a text', 'The card a few days early, then a text on the day.'],
+  ['none', "Don't remind me", 'Their birthday stays off Today.'],
+]
+
 function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
   const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
   const toast = useToast()
   const [noteOn, setNoteOn] = useState<{ t: Touch; fresh?: boolean } | null>(null)
   const [info, setInfo] = useState<Touch | null>(null)
   const [fu, setFu] = useState(false)
+  const [bdPick, setBdPick] = useState(false)
   // The phone keeps about a year. Older touches with this person load from the server when you open them.
   const [older, setOlder] = useState<{ touches: Touch[]; cards: Card[] }>({ touches: [], cards: [] })
   useEffect(() => {
@@ -950,7 +1022,9 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
   const cardFor = (t: Touch) => t.kind === 'card' && t.note?.startsWith('Card a Day: ')
     ? allCards.find((k) => k.sent_on === t.occurred_on && k.recipient_name === t.note!.slice('Card a Day: '.length))
     : undefined
+  const [carding, setCarding] = useState(false)
   async function quick(kind: TouchKind) {
+    if (kind === 'card') { setCarding(true); return }
     try {
       const t = await api.logTouch(ctx.me, live.id, kind, '')
       await ctx.reload()
@@ -1001,7 +1075,13 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         )}
         {live.email && <div><span>Email</span><b>{ctx.readOnly ? live.email : <a href={`mailto:${live.email}`}>{live.email}</a>}</b></div>}
         {where && <div><span>Address</span><b><a href={`https://maps.apple.com/?q=${encodeURIComponent(where)}`} target="_blank" rel="noreferrer">{where}</a></b></div>}
-        {shown.map(([l, v]) => <div key={l}><span>{l}</span><b>{l === 'Birthday' ? monthDay(v as string) : longDate(v as string)}</b></div>)}
+        {shown.map(([l, v]) => (
+          <div key={l}><span>{l}</span>
+            <b>{l === 'Birthday' ? monthDay(v as string) : longDate(v as string)}
+              {l === 'Birthday' && !ctx.readOnly && <button className="bdplan" onClick={() => setBdPick(true)}>🎂 {BD_PLANS.find(([k]) => k === birthdayPlanOf(live))![1]} ›</button>}
+            </b>
+          </div>
+        ))}
         {live.notes && <div><span>Notes</span><b style={{ fontWeight: 400, whiteSpace: 'pre-wrap' }}>{live.notes}</b></div>}
         {!live.phone && !live.email && !where && !shown.length && !live.notes && <p className="note">No contact details yet. Tap Edit details to add them.</p>}
       </div>
@@ -1035,6 +1115,21 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       </div>
       {noteOn && <NoteSheet ctx={ctx} t={noteOn.t} c={live} onClose={() => setNoteOn(null)} onUndo={noteOn.fresh ? () => undo(noteOn.t) : undefined} />}
       {fu && <FollowUpSheet ctx={ctx} c={live} onClose={() => setFu(false)} />}
+      {carding && <CardSheet ctx={ctx} c={live} onClose={() => setCarding(false)} />}
+      {bdPick && (
+        <Sheet label="Their birthday" onClose={() => setBdPick(false)}>
+          <h3>{live.first_name || fullName(live)}'s birthday</h3>
+          <p className="note">How should Rock Solid bring them up on Today?</p>
+          <div className="gwiz-opts" style={{ marginTop: 10 }}>
+            {BD_PLANS.map(([k, label, sub]) => (
+              <button key={k} className={`gwiz-opt${birthdayPlanOf(live) === k ? ' on' : ''}`}
+                onClick={async () => { try { await api.setBirthdayPlan(live, k); await ctx.reload(); setBdPick(false) } catch (e) { toast((e as Error).message) } }}>
+                <span className="gwiz-dot" /><span><b>{label}</b><small>{sub}</small></span>
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
       {info && (
         <Sheet label="Touch details" onClose={() => setInfo(null)}>
           <h3>{touchLabel(info)}</h3>
@@ -1241,14 +1336,14 @@ function DateField({ label, value, onChange, ro }: { label: string; value: strin
 const RELS = ['Friend', 'Family', 'Client', 'Agent/Colleague', 'Vendor', 'Other']
 const OCCASIONS = ['Thank You', 'Birthday', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
 
-function CardSteps({ ctx, preset, onBefore, onLogged }: { ctx: Ctx; preset?: string; onBefore?: () => void; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
+function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; preset?: string; occasion?: string; onBefore?: () => void; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
   const { data, agent } = ctx
   const toast = useToast()
   const start = preset ? 1 : 0
   const [step, setStep] = useState(start)
   const [name, setName] = useState(preset ?? '')
   const [rel, setRel] = useState('')
-  const [occ, setOcc] = useState('')
+  const [occ, setOcc] = useState(occasion ?? '')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -1369,10 +1464,21 @@ function cadInfo(cards: Card[]): CadInfo {
   }
 }
 
+/** Logging a card for someone always goes through Card a Day, so it counts there too. */
+function CardSheet({ ctx, c, occasion, onBefore, onClose }: { ctx: Ctx; c: Contact; occasion?: string; onBefore?: () => void; onClose: () => void }) {
+  return (
+    <Sheet label={`Card for ${c.first_name || fullName(c)}`} onClose={onClose}>
+      <CardSteps ctx={ctx} preset={fullName(c)} occasion={occasion} onBefore={onBefore} onLogged={onClose} />
+    </Sheet>
+  )
+}
+
 /** Log a touch from inside a challenge: the same person picker as Record a touch, showing only what counts. */
 function ChallengeLog({ ctx, kinds, onClose }: { ctx: Ctx; kinds: string[]; onClose: () => void }) {
   const toast = useToast()
+  const [card, setCard] = useState<Contact | null>(null)
   async function log(c: Contact, kind: TouchKind) {
+    if (kind === 'card') { setCard(c); return }
     onClose()
     try {
       const t = await api.logTouch(ctx.me, c.id, kind, '')
@@ -1385,6 +1491,7 @@ function ChallengeLog({ ctx, kinds, onClose }: { ctx: Ctx; kinds: string[]; onCl
       toast(`That didn't save: ${(e as Error).message}`)
     }
   }
+  if (card) return <CardSheet ctx={ctx} c={card} onClose={onClose} />
   return <RecordSheet ctx={ctx} kinds={kinds as TouchKind[]} onClose={onClose} onLog={(c, k) => log(c, k)} />
 }
 

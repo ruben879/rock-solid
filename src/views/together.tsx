@@ -262,6 +262,8 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatO
   const [room, setRoom] = useState<{ people: Person[]; progress: DayCount[]; posts: Post[]; kudos: { post_id: string; user_id: string }[] } | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [replyTo, setReplyTo] = useState<string | null>(null)
+  const [reply, setReply] = useState('')
   const [inviting, setInviting] = useState(false)
   const [menu, setMenu] = useState(false)
   const load = useCallback(async () => {
@@ -290,6 +292,14 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatO
     if (!body) return
     setBusy(true)
     try { await tg.say(c.id, me.id, body); setText(''); await load() } catch (err) { toast((err as Error).message) }
+    setBusy(false)
+  }
+  async function sendReply(e: FormEvent, parent: Post) {
+    e.preventDefault()
+    const body = reply.trim()
+    if (!body) return
+    setBusy(true)
+    try { await tg.say(c.id, me.id, body, parent.id); setReply(''); setReplyTo(null); await load() } catch (err) { toast((err as Error).message) }
     setBusy(false)
   }
   async function toggleKudo(p: Post, on: boolean) {
@@ -365,29 +375,70 @@ function Room({ me, c, onBack, embedded = false, renderLog, pinned, onPin, chatO
       <div className="feed">
         {room === null && <p className="muted">Loading…</p>}
         {room && room.posts.length === 0 && <p className="note" style={{ textAlign: 'center', padding: 20 }}>Nothing yet. When anyone logs something for this challenge, it shows up here on its own.</p>}
-        {room?.posts.map((p) => {
-          const name = names.get(p.user_id) ?? 'Someone'
-          const ks = room.kudos.filter((k) => k.post_id === p.id)
-          const mine = ks.some((k) => k.user_id === me.id)
-          const s = p.auto_day ? tg.streak(c, room.progress, p.user_id) : 0
-          return (
-            <div key={p.id} className="post">
-              <Avatar id={p.user_id} name={name} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="ph"><b>{p.user_id === me.id ? 'You' : name}</b><span className="note"> · {ago(p.created_at)}</span>
-                  {p.user_id === me.id && !p.auto_day && <button className="link pdel" onClick={() => remove(p)}>Remove</button>}
+        {room && (() => {
+          // Replies sit under the post they answer, oldest first.
+          const ids = new Set(room.posts.map((p) => p.id))
+          const top = room.posts.filter((p) => !p.reply_to || !ids.has(p.reply_to))
+          const under = new Map<string, Post[]>()
+          for (const p of [...room.posts].reverse()) if (p.reply_to && ids.has(p.reply_to)) under.set(p.reply_to, [...(under.get(p.reply_to) ?? []), p])
+          const kudoBtn = (p: Post, small = false) => {
+            const ks = room.kudos.filter((k) => k.post_id === p.id)
+            const mine = ks.some((k) => k.user_id === me.id)
+            return (
+              <button className={`kudo ${mine ? 'on' : ''} ${small ? 'sm' : ''}`} disabled={p.user_id === me.id} aria-pressed={mine}
+                onClick={() => toggleKudo(p, !mine)}>👏 {small ? '' : 'Kudos'}{ks.length ? `${small ? '' : ' · '}${ks.length}` : ''}</button>
+            )
+          }
+          return top.map((p) => {
+            const name = names.get(p.user_id) ?? 'Someone'
+            const s = p.auto_day ? tg.streak(c, room.progress, p.user_id) : 0
+            const kids = under.get(p.id) ?? []
+            return (
+              <div key={p.id} className="post">
+                <Avatar id={p.user_id} name={name} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="ph"><b>{p.user_id === me.id ? 'You' : name}</b><span className="note"> · {ago(p.created_at)}</span>
+                    {p.user_id === me.id && !p.auto_day && <button className="link pdel" onClick={() => remove(p)}>Remove</button>}
+                  </div>
+                  {p.auto_day ? (
+                    <div className="auto">{autoText(p)}{s >= 2 ? ` · 🔥 ${s} ${tg.unit(c.kind === 'cards' ? 'day' : c.period, s)} in a row` : ''}</div>
+                  ) : (
+                    <div className="pbody">{p.body}</div>
+                  )}
+                  <div className="pacts">
+                    {kudoBtn(p)}
+                    <button className={`kudo ${replyTo === p.id ? 'on' : ''}`} onClick={() => { setReplyTo(replyTo === p.id ? null : p.id); setReply('') }}>💬 Reply</button>
+                  </div>
+                  {kids.length > 0 && (
+                    <div className="replies">
+                      {kids.map((r) => {
+                        const rn = names.get(r.user_id) ?? 'Someone'
+                        return (
+                          <div key={r.id} className="reply">
+                            <Avatar id={r.user_id} name={rn} size={28} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div className="ph"><b>{r.user_id === me.id ? 'You' : firstName(rn)}</b><span className="note"> · {ago(r.created_at)}</span>
+                                {r.user_id === me.id && <button className="link pdel" onClick={() => remove(r)}>Remove</button>}
+                              </div>
+                              <div className="pbody">{r.body}</div>
+                              {kudoBtn(r, true)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {replyTo === p.id && (
+                    <form className="composer replybox" onSubmit={(e) => sendReply(e, p)}>
+                      <input autoFocus aria-label={`Reply to ${name}`} placeholder={`Reply to ${p.user_id === me.id ? 'your post' : firstName(name)}…`} value={reply} maxLength={500} onChange={(e) => setReply(e.target.value)} />
+                      <button className="btn primary" disabled={busy || !reply.trim()}>Send</button>
+                    </form>
+                  )}
                 </div>
-                {p.auto_day ? (
-                  <div className="auto">{autoText(p)}{s >= 2 ? ` · 🔥 ${s} ${tg.unit(c.kind === 'cards' ? 'day' : c.period, s)} in a row` : ''}</div>
-                ) : (
-                  <div className="pbody">{p.body}</div>
-                )}
-                <button className={`kudo ${mine ? 'on' : ''}`} disabled={p.user_id === me.id} aria-pressed={mine}
-                  onClick={() => toggleKudo(p, !mine)}>👏 Kudos{ks.length ? ` · ${ks.length}` : ''}</button>
               </div>
-            </div>
-          )
-        })}
+            )
+          })
+        })()}
       </div>
         </>
       )}
