@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 import { addDays, monthStart, today, weekStart, ymd } from './dates'
-import type { Brokerage, Card, Contact, Profile, Tally, Tier, Touch, TouchKind } from './model'
-import { cardWithin12Months, fullName } from './model'
+import type { BirthdayPlan, Brokerage, Card, Contact, Occasion, Profile, Tally, Tier, Touch, TouchKind } from './model'
+import { OCCASION_META, cardWithin12Months, fullName } from './model'
 import { exec, flush, getCached, isNetworkError, isOnline, pendingCount, setCached, subscribe, uuid, type AgentData } from './offline'
 export type { AgentData } from './offline'
 
@@ -199,11 +199,12 @@ export async function setFollowUp(c: Contact, on: string | null, note: string | 
   const { error } = await supabase.from('contacts').update({ follow_up_on: on, follow_up_note: note }).eq('id', c.id)
   if (error) throw new Error(/follow_up/.test(error.message) ? 'Follow-ups need the 0012 SQL run in Supabase first.' : error.message)
 }
-/** How to celebrate someone's birthday on Today: a text on the day, a card a few days early, both, or none. */
-export async function setBirthdayPlan(c: Contact, plan: 'text' | 'card' | 'both' | 'none') {
+/** How to celebrate a birthday or anniversary on Today: a text on the day, a card a few days early, both, or none. */
+export async function setOccasionPlan(c: Contact, occ: Occasion, plan: BirthdayPlan) {
   needOnline()
-  const { error } = await supabase.from('contacts').update({ birthday_plan: plan }).eq('id', c.id)
-  if (error) throw new Error(/birthday_plan/.test(error.message) ? 'Birthday choices need the 0014 SQL run in Supabase first.' : error.message)
+  const col = OCCASION_META[occ].plan
+  const { error } = await supabase.from('contacts').update({ [col]: plan }).eq('id', c.id)
+  if (error) throw new Error(/_plan/.test(error.message) ? `These choices need the ${occ === 'birthday' ? '0014' : '0015'} SQL run in Supabase first.` : error.message)
 }
 /** Clears a follow-up once it's done (works offline, sends when back online). */
 export async function clearFollowUp(c: Contact) {

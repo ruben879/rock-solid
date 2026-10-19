@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
-import type { BdayEntry, BirthdayPlan, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
+import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, birthdaysToday, birthdayPlanOf, nextBirthday,
+  planNumbers, birthdaysToday, planOf, yearsOn, OCCASION_META, OCCASION_LIST,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
@@ -321,25 +321,39 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     return isFu(c) ? touchedToday.has(c.id) : b.touchedThisWeek.has(c.id)
   }
   const rows = [...b.bdays.map((e) => e.id), ...b.fuIds, ...b.ids].map((id) => byId.get(id)).filter(Boolean) as Contact[]
-  const remindOnDay = async (c: Contact, on: string) => {
+  // Birthday or anniversary wording for each entry.
+  const occWord = (bd: BdayEntry) => {
+    const o = bd.occ ?? 'birthday'
+    return o === 'birthday' ? 'birthday' : o === 'home' ? 'home anniversary' : 'anniversary'
+  }
+  const remindOnDay = async (c: Contact, bd: BdayEntry) => {
+    const o = bd.occ ?? 'birthday'
     try {
-      await api.setFollowUp(c, on, 'Wish them a happy birthday')
+      await api.setFollowUp(c, bd.on, o === 'birthday' ? 'Wish them a happy birthday' : o === 'home' ? 'Happy home anniversary' : 'Happy anniversary')
       await ctx.reload()
-      toast(`${c.first_name || fullName(c)} will be back on Today on their birthday.`)
+      toast(`${c.first_name || fullName(c)} will be back on Today on their ${occWord(bd)}.`)
     } catch (e) { toast((e as Error).message) }
   }
-  const bdBadge = (c: Contact, bd: BdayEntry, long = false) => (
-    <span className="fubadge bdbadge">🎂 {bd.kind === 'day' ? 'Birthday today' : `Birthday ${fmt(bd.on)}${long ? ': mail a card' : ''}`}</span>
-  )
+  const bdBadge = (c: Contact, bd: BdayEntry, long = false) => {
+    const m = OCCASION_META[bd.occ ?? 'birthday']
+    const yrs = m.years ? yearsOn(c, bd.occ!, bd.on) : 0
+    const label = bd.kind === 'day' ? `${m.name} today` : `${m.name} ${fmt(bd.on)}${long ? ': mail a card' : ''}`
+    return <span className={`fubadge bdbadge occ-${bd.occ ?? 'birthday'}`}>{m.icon} {label}{yrs > 0 ? ` · ${yrs} ${yrs === 1 ? 'year' : 'years'}` : ''}</span>
+  }
   const bdWhy = (c: Contact, bd: BdayEntry) => {
     const name = c.first_name || fullName(c)
+    const o = bd.occ ?? 'birthday'
     if (bd.kind === 'card') return `Mail it today so it lands by ${longDay(bd.on)}.`
-    return cardSent(c, ymd(addDays(parse(bd.on), 1))) ? `You sent ${name} a card. A quick text today shows you remembered the day.` : `Send ${name} a happy birthday text.`
+    if (cardSent(c, ymd(addDays(parse(bd.on), 1)))) return `You sent ${name} a card. A quick text today shows you remembered the day.`
+    if (o === 'birthday') return `Send ${name} a happy birthday text.`
+    const yrs = yearsOn(c, o, bd.on)
+    if (o === 'home') return yrs > 0 ? `${yrs} ${yrs === 1 ? 'year' : 'years'} in their home today. Send ${name} a happy home anniversary text.` : `Send ${name} a happy home anniversary text.`
+    return `Send ${name} a happy anniversary text.`
   }
-  const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && birthdayPlanOf(c) !== 'both' && (
+  const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && planOf(c, bd.occ ?? 'birthday') !== 'both' && (
     c.follow_up_on === bd.on
-      ? <p className="bdagain on"><ICheck size={14} /> They'll be back on Today on their birthday</p>
-      : <button className="bdagain" onClick={() => remindOnDay(c, bd.on)}>🔔 Remind me again on their birthday</button>
+      ? <p className="bdagain on"><ICheck size={14} /> They'll be back on Today on their {occWord(bd)}</p>
+      : <button className="bdagain" onClick={() => remindOnDay(c, bd)}>🔔 Remind me again on their {occWord(bd)}</button>
   )
   const todo = rows.filter((c) => !isDone(c))
   const doneRows = rows.filter((c) => isDone(c))
@@ -460,8 +474,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       {gapInfo && <GapSheet have={data.contacts.length} need={plan.dbNeeded} today={rows.length} atPlan={Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent))}
         onClose={() => setGapInfo(false)} onAdd={() => { setGapInfo(false); onGo?.('db') }} onGoals={() => { setGapInfo(false); openGoalWizard() }} />}
       {b.bdMore.length > 0 && (
-        <p className="bdmore">🎂 Also celebrating:{' '}
-          {b.bdMore.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
+        <p className="bdmore">🎉 Also celebrating:{' '}
+          {b.bdMore.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.occ && e.occ !== 'birthday' ? ` ${OCCASION_META[e.occ].icon}` : ''}{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
         </p>
       )}
       <div className="todayrow">
@@ -672,7 +686,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       {recording && <RecordSheet ctx={ctx} onClose={() => setRecording(false)} onLog={(c, k, n) => { setRecording(false); log(c, k, n) }} />}
       {viewFor && <PersonSheet ctx={ctx} c={viewFor} onClose={() => setViewFor(null)} onEdit={() => { const c = viewFor; setViewFor(null); setEditFor(c) }} />}
       {doneFor && <DoneSheet ctx={ctx} c={doneFor} onClose={() => setDoneFor(null)} onEdit={() => { const c = doneFor; setDoneFor(null); setEditFor(c) }} />}
-      {cardFor && <CardSheet ctx={ctx} c={cardFor} occasion={bdOf(cardFor) ? 'Birthday' : undefined} onBefore={snapshot} onClose={() => setCardFor(null)} />}
+      {cardFor && <CardSheet ctx={ctx} c={cardFor} occasion={bdOf(cardFor) ? OCCASION_META[bdOf(cardFor)!.occ ?? 'birthday'].card : undefined} onBefore={snapshot} onClose={() => setCardFor(null)} />}
       {reach && (
         <div className="reach" role="status">
           <p>Did you {reach.kind} {reach.c.first_name}?</p>
@@ -994,12 +1008,17 @@ function FollowUpSheet({ ctx, c, onClose }: { ctx: Ctx; c: Contact; onClose: () 
   )
 }
 
-const BD_PLANS: [BirthdayPlan, string, string][] = [
-  ['text', 'Text on the day', 'They show up first on Today on their birthday.'],
-  ['card', 'Mail a card', 'A card prompt shows up 3 to 5 days early, so it lands in time.'],
-  ['both', 'Card and a text', 'The card a few days early, then a text on the day.'],
-  ['none', "Don't remind me", 'Their birthday stays off Today.'],
-]
+/** The four ways to celebrate a birthday or anniversary on Today. */
+const occPlans = (o: Occasion): [BirthdayPlan, string, string][] => {
+  const day = o === 'birthday' ? 'birthday' : o === 'home' ? 'home anniversary' : 'anniversary'
+  return [
+    ['text', 'Text on the day', `They show up first on Today on their ${day}.`],
+    ['card', 'Mail a card', 'A card prompt shows up 3 to 5 days early, so it lands in time.'],
+    ['both', 'Card and a text', 'The card a few days early, then a text on the day.'],
+    ['none', "Don't remind me", `Their ${day} stays off Today.`],
+  ]
+}
+const PLAN_SHORT: Record<BirthdayPlan, string> = { text: 'Text on the day', card: 'Mail a card', both: 'Card and a text', none: 'Off' }
 
 function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClose: () => void; onEdit: () => void }) {
   const live = ctx.data.contacts.find((x) => x.id === c.id) ?? c
@@ -1007,7 +1026,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
   const [noteOn, setNoteOn] = useState<{ t: Touch; fresh?: boolean } | null>(null)
   const [info, setInfo] = useState<Touch | null>(null)
   const [fu, setFu] = useState(false)
-  const [bdPick, setBdPick] = useState(false)
+  const [bdPick, setBdPick] = useState<Occasion | null>(null)
   // The phone keeps about a year. Older touches with this person load from the server when you open them.
   const [older, setOlder] = useState<{ touches: Touch[]; cards: Card[] }>({ touches: [], cards: [] })
   useEffect(() => {
@@ -1036,9 +1055,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
     try { await api.deleteTouch(t, ctx.data.touches, ctx.data.cards); await ctx.reload(); toast('Undone.') } catch (e) { toast(`Couldn't undo: ${(e as Error).message}`) }
   }
   const where = live.address || live.city ? [live.address, [live.city, live.state].filter(Boolean).join(', '), live.zip].filter(Boolean).join(' ') : ''
-  const dates: [string, string | null | undefined][] = [
-    ['Birthday', live.birthday], ['Home anniversary', live.home_anniversary], ['Wedding anniversary', live.wedding_anniversary],
-  ]
+  const dates: [string, string | null | undefined, Occasion][] = OCCASION_LIST.map((o) => [OCCASION_META[o].name, live[OCCASION_META[o].field], o])
   const shown = dates.filter(([, v]) => v)
   return (
     <Sheet label={fullName(live)} onClose={onClose}>
@@ -1075,10 +1092,10 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         )}
         {live.email && <div><span>Email</span><b>{ctx.readOnly ? live.email : <a href={`mailto:${live.email}`}>{live.email}</a>}</b></div>}
         {where && <div><span>Address</span><b><a href={`https://maps.apple.com/?q=${encodeURIComponent(where)}`} target="_blank" rel="noreferrer">{where}</a></b></div>}
-        {shown.map(([l, v]) => (
+        {shown.map(([l, v, o]) => (
           <div key={l}><span>{l}</span>
-            <b>{l === 'Birthday' ? monthDay(v as string) : longDate(v as string)}
-              {l === 'Birthday' && !ctx.readOnly && <button className="bdplan" onClick={() => setBdPick(true)}>🎂 {BD_PLANS.find(([k]) => k === birthdayPlanOf(live))![1]} ›</button>}
+            <b>{o === 'birthday' ? monthDay(v as string) : longDate(v as string)}
+              {!ctx.readOnly && <button className={`bdplan occ-${o}`} onClick={() => setBdPick(o)}>{OCCASION_META[o].icon} {PLAN_SHORT[planOf(live, o)]} ›</button>}
             </b>
           </div>
         ))}
@@ -1117,13 +1134,13 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       {fu && <FollowUpSheet ctx={ctx} c={live} onClose={() => setFu(false)} />}
       {carding && <CardSheet ctx={ctx} c={live} onClose={() => setCarding(false)} />}
       {bdPick && (
-        <Sheet label="Their birthday" onClose={() => setBdPick(false)}>
-          <h3>{live.first_name || fullName(live)}'s birthday</h3>
-          <p className="note">How should Rock Solid bring them up on Today?</p>
+        <Sheet label={OCCASION_META[bdPick].name} onClose={() => setBdPick(null)}>
+          <h3>{live.first_name || fullName(live)}'s {OCCASION_META[bdPick].name.toLowerCase()}</h3>
+          <p className="note">How should Rock Solid bring it up on Today?</p>
           <div className="gwiz-opts" style={{ marginTop: 10 }}>
-            {BD_PLANS.map(([k, label, sub]) => (
-              <button key={k} className={`gwiz-opt${birthdayPlanOf(live) === k ? ' on' : ''}`}
-                onClick={async () => { try { await api.setBirthdayPlan(live, k); await ctx.reload(); setBdPick(false) } catch (e) { toast((e as Error).message) } }}>
+            {occPlans(bdPick).map(([k, label, sub]) => (
+              <button key={k} className={`gwiz-opt${planOf(live, bdPick) === k ? ' on' : ''}`}
+                onClick={async () => { try { await api.setOccasionPlan(live, bdPick, k); await ctx.reload(); setBdPick(null) } catch (e) { toast((e as Error).message) } }}>
                 <span className="gwiz-dot" /><span><b>{label}</b><small>{sub}</small></span>
               </button>
             ))}
@@ -1334,7 +1351,7 @@ function DateField({ label, value, onChange, ro }: { label: string; value: strin
 // Card a Day: one question at a time, like the Shortcut
 // ======================================================================
 const RELS = ['Friend', 'Family', 'Client', 'Agent/Colleague', 'Vendor', 'Other']
-const OCCASIONS = ['Thank You', 'Birthday', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
+const OCCASIONS = ['Thank You', 'Birthday', 'Anniversary', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
 
 function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; preset?: string; occasion?: string; onBefore?: () => void; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
   const { data, agent } = ctx

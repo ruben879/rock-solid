@@ -56,6 +56,8 @@ export interface Contact {
   follow_up_note?: string | null
   /** How to celebrate their birthday: text on the day (default), a card a few days early, both, or none. */
   birthday_plan?: BirthdayPlan | null
+  home_plan?: BirthdayPlan | null
+  wedding_plan?: BirthdayPlan | null
   source: string | null
 }
 
@@ -370,42 +372,63 @@ export function planNumbers(plan: Record<string, number> | undefined) {
   return { gci, perDeal, deals, dbNeeded }
 }
 
-// ---------- Birthdays on Today ----------
-/** Card prompts show this many days before the birthday, until a card is logged. */
+// ---------- Birthdays and anniversaries on Today ----------
+export type Occasion = 'birthday' | 'home' | 'wedding'
+export const OCCASION_META: Record<Occasion, { field: 'birthday' | 'home_anniversary' | 'wedding_anniversary'; plan: 'birthday_plan' | 'home_plan' | 'wedding_plan'; name: string; icon: string; card: string; years: boolean }> = {
+  birthday: { field: 'birthday', plan: 'birthday_plan', name: 'Birthday', icon: '🎂', card: 'Birthday', years: false },
+  home: { field: 'home_anniversary', plan: 'home_plan', name: 'Home anniversary', icon: '🏡', card: 'Anniversary', years: true },
+  wedding: { field: 'wedding_anniversary', plan: 'wedding_plan', name: 'Wedding anniversary', icon: '💍', card: 'Anniversary', years: true },
+}
+export const OCCASION_LIST: Occasion[] = ['birthday', 'home', 'wedding']
+/** Card prompts show this many days before the day, until a card is logged. */
 export const CARD_EARLY = { from: 5, to: 3 }
-export const birthdayPlanOf = (c: Contact): BirthdayPlan => c.birthday_plan ?? 'text'
+export const planOf = (c: Contact, o: Occasion): BirthdayPlan => (c[OCCASION_META[o].plan] as BirthdayPlan | null | undefined) ?? 'text'
+export const birthdayPlanOf = (c: Contact) => planOf(c, 'birthday')
 
-/** This year's birthday (or next year's if it already passed more than a week ago), at noon. */
-export function nextBirthday(c: Contact, from = today()): Date | null {
-  if (!c.birthday) return null
-  const b = parse(c.birthday)
+/** This year's date (or next year's if it already passed more than a week ago), at noon. */
+export function nextOccasion(date: string | null | undefined, from = today()): Date | null {
+  if (!date) return null
+  const b = parse(date)
   let d = new Date(from.getFullYear(), b.getMonth(), b.getDate(), 12)
   if (daysBetween(from, d) < -7) d = new Date(from.getFullYear() + 1, b.getMonth(), b.getDate(), 12)
   return d
 }
+export const nextBirthday = (c: Contact, from = today()) => nextOccasion(c.birthday, from)
+/** Years since the original date, on this year's date (home and wedding anniversaries). */
+export function yearsOn(c: Contact, o: Occasion, on: string) {
+  const v = c[OCCASION_META[o].field]
+  if (!v) return 0
+  return parse(on).getFullYear() - parse(v).getFullYear()
+}
 
-export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string }
+export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string; occ?: Occasion }
 /**
- * Who has a birthday to celebrate today: day-of texts (plan text or both, or a "remind me on their birthday" follow-up),
- * and card prompts from 5 to 3 days before (plan card or both) until a card is logged.
+ * Who has a birthday or anniversary to celebrate today: day-of texts (plan text or both, or a "remind me on the day"
+ * follow-up), and card prompts 5 to 3 days before (plan card or both) until a card is logged.
  */
 export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry[] {
   const now = today()
   const t = ymd(now)
   const out: BdayEntry[] = []
   for (const c of contacts) {
-    const d = nextBirthday(c, now)
-    if (!d || (c.skip_until && c.skip_until > t)) continue
-    const on = ymd(d)
-    const left = daysBetween(now, d)
-    const plan = birthdayPlanOf(c)
-    if (left === 0 && (plan === 'text' || plan === 'both' || c.follow_up_on === on)) out.push({ id: c.id, kind: 'day', on })
-    else if (left <= CARD_EARLY.from && left >= CARD_EARLY.to && (plan === 'card' || plan === 'both')) {
-      const since = ymd(addDays(d, -10))
-      const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
-      if (!sent) out.push({ id: c.id, kind: 'card', on })
+    if (c.skip_until && c.skip_until > t) continue
+    for (const occ of OCCASION_LIST) {
+      const d = nextOccasion(c[OCCASION_META[occ].field], now)
+      if (!d) continue
+      const on = ymd(d)
+      const left = daysBetween(now, d)
+      const plan = planOf(c, occ)
+      let e: BdayEntry | null = null
+      if (left === 0 && (plan === 'text' || plan === 'both' || c.follow_up_on === on)) e = { id: c.id, kind: 'day', on, occ }
+      else if (left <= CARD_EARLY.from && left >= CARD_EARLY.to && (plan === 'card' || plan === 'both')) {
+        const since = ymd(addDays(d, -10))
+        const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
+        if (!sent) e = { id: c.id, kind: 'card', on, occ }
+      }
+      // One spot per person: if two land together, the first one (birthday, then home, then wedding) wins.
+      if (e) { out.push(e); break }
     }
   }
-  // Today's birthdays first, then the nearest cards.
+  // Today's first, then the nearest cards.
   return out.sort((a, b) => (a.kind === b.kind ? a.on.localeCompare(b.on) : a.kind === 'day' ? -1 : 1))
 }
