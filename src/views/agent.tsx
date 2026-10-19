@@ -4,7 +4,7 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, birthdaysToday, planOf, yearsOn, OCCASION_META, OCCASION_LIST,
+  planNumbers, birthdaysToday, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
@@ -349,12 +349,18 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const bdWhy = (c: Contact, bd: BdayEntry) => {
     const name = c.first_name || fullName(c)
     const o = bd.occ ?? 'birthday'
-    if (bd.kind === 'card') return `Mail it today so it lands by ${longDay(bd.on)}.`
+    if (bd.kind === 'card') {
+      const yrs = o === 'birthday' ? 0 : yearsOn(c, o, bd.on)
+      if (o === 'home' && yrs > 0) return `${yrs} ${yrs === 1 ? 'year' : 'years'} in their home on ${longDay(bd.on)}. Mail a card today so it lands in time.`
+      if (o === 'wedding' && yrs > 0) return `${yrs} years married on ${longDay(bd.on)}. Mail a card today so it lands in time.`
+      return `Mail it today so it lands by ${longDay(bd.on)}.`
+    }
     if (cardSent(c, ymd(addDays(parse(bd.on), 1)))) return `You sent ${name} a card. A quick text today shows you remembered the day.`
     if (o === 'birthday') return `Send ${name} a happy birthday text.`
     const yrs = yearsOn(c, o, bd.on)
     if (o === 'home') return yrs > 0 ? `${yrs} ${yrs === 1 ? 'year' : 'years'} in their home today. Send ${name} a happy home anniversary text.` : `Send ${name} a happy home anniversary text.`
-    return `Send ${name} a happy anniversary text.`
+    const wy = yearsOn(c, 'wedding', bd.on)
+    return wy > 0 ? `${wy} years married today. Send ${name} a happy anniversary text.` : `Send ${name} a happy anniversary text.`
   }
   const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && planOf(c, bd.occ ?? 'birthday') !== 'both' && (
     c.follow_up_on === bd.on
@@ -932,7 +938,7 @@ function NoteSheet({ ctx, t, c, onClose, onUndo }: { ctx: Ctx; t: Touch; c: Cont
 // ======================================================================
 // One person: details at a glance, plus every touch logged
 // ======================================================================
-const longDate = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+const longDate = (d: string) => parse(d).toLocaleDateString('en-US', hasYear(d) ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'long', day: 'numeric' })
 const monthDay = (d: string) => parse(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
 
 /** How it's going with one person: same status as the Progress page, when you last reached them, when they're due, and the mix. */
@@ -1310,7 +1316,9 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
             const v = f[m.field]
             return (
               <div key={o} className="field full occfield">
-                <DateField label={m.name} ro={ro} value={v} onChange={(d) => setF({ ...f, [m.field]: d })} />
+                {o === 'home'
+                  ? <DateField label={m.name} ro={ro} value={v} onChange={(d) => setF({ ...f, [m.field]: d })} />
+                  : <MonthDayField label={m.name} ro={ro} value={v} onChange={(d) => setF({ ...f, [m.field]: d })} />}
                 {v && !ro && (
                   <div className="occplan">
                     <span>{m.icon} How should it show up on Today?</span>
@@ -1350,6 +1358,40 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
         )}
       </form>
     </Sheet>
+  )
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+/** Month and day, with the year optional (birthdays and wedding anniversaries). No year saves as 1904-MM-DD. */
+function MonthDayField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
+  const [y0, m0, d0] = value ? value.split('-') : ['', '', '']
+  const [year, setYear] = useState(value && hasYear(value) ? y0 : '')
+  const [mon, setMon] = useState(value ? String(Number(m0)) : '')
+  const [day, setDay] = useState(value ? String(Number(d0)) : '')
+  const max = mon ? new Date(2004, Number(mon), 0).getDate() : 31
+  const emit = (mo: string, da: string, yr: string) => {
+    if (!mo || !da) { onChange(''); return }
+    const y = /^\d{4}$/.test(yr) ? yr : NO_YEAR
+    const dd = Math.min(Number(da), new Date(Number(y), Number(mo), 0).getDate())
+    onChange(`${y}-${mo.padStart(2, '0')}-${String(dd).padStart(2, '0')}`)
+  }
+  return (
+    <div className="field full"><span>{label}</span>
+      <div className="mdrow">
+        <select aria-label={`${label} month`} disabled={ro} value={mon} onChange={(e) => { setMon(e.target.value); emit(e.target.value, day, year) }}>
+          <option value="">Month</option>
+          {MONTHS.map((n, i) => <option key={n} value={String(i + 1)}>{n}</option>)}
+        </select>
+        <select aria-label={`${label} day`} disabled={ro} value={day} onChange={(e) => { setDay(e.target.value); emit(mon, e.target.value, year) }}>
+          <option value="">Day</option>
+          {Array.from({ length: max }, (_, i) => <option key={i} value={String(i + 1)}>{i + 1}</option>)}
+        </select>
+        <input aria-label={`${label} year (optional)`} disabled={ro} inputMode="numeric" placeholder="Year" maxLength={4} value={year}
+          onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 4); setYear(v); if (v.length === 4 || v === '') emit(mon, day, v) }} />
+        {value && !ro && <button type="button" className="btn" onClick={() => { setMon(''); setDay(''); setYear(''); onChange('') }}>Clear</button>}
+      </div>
+      <small className="note">Year is optional.</small>
+    </div>
   )
 }
 

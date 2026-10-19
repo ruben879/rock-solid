@@ -373,6 +373,9 @@ export function planNumbers(plan: Record<string, number> | undefined) {
 }
 
 // ---------- Birthdays and anniversaries on Today ----------
+/** Birthdays and wedding anniversaries can be saved without a year. They're stored with this placeholder year (a leap year, so Feb 29 works). */
+export const NO_YEAR = '1904'
+export const hasYear = (d: string | null | undefined) => !!d && !d.startsWith(NO_YEAR)
 export type Occasion = 'birthday' | 'home' | 'wedding'
 export const OCCASION_META: Record<Occasion, { field: 'birthday' | 'home_anniversary' | 'wedding_anniversary'; plan: 'birthday_plan' | 'home_plan' | 'wedding_plan'; name: string; icon: string; card: string; years: boolean }> = {
   birthday: { field: 'birthday', plan: 'birthday_plan', name: 'Birthday', icon: '🎂', card: 'Birthday', years: false },
@@ -397,7 +400,7 @@ export const nextBirthday = (c: Contact, from = today()) => nextOccasion(c.birth
 /** Years since the original date, on this year's date (home and wedding anniversaries). */
 export function yearsOn(c: Contact, o: Occasion, on: string) {
   const v = c[OCCASION_META[o].field]
-  if (!v) return 0
+  if (!v || !hasYear(v)) return 0
   return parse(on).getFullYear() - parse(v).getFullYear()
 }
 

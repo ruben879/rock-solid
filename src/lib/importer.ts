@@ -46,6 +46,9 @@ export function toDate(v: string): string | null {
     const y = m[3].length === 2 ? (Number(m[3]) > 30 ? `19${m[3]}` : `20${m[3]}`) : m[3]
     return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
   }
+  // Month and day only (6/12): saved without a year.
+  m = s.match(/^(\d{1,2})\/(\d{1,2})$/)
+  if (m) return `1904-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`
   return null
 }
 

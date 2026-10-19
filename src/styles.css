@@ -813,3 +813,6 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .seg4 { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--line); border-radius: 12px; padding: 3px; gap: 3px; }
 .seg4 button { font: 500 14px var(--font); padding: 8px 0; border: 0; border-radius: 9px; background: transparent; color: var(--ink); cursor: pointer; }
 .seg4 button[aria-pressed="true"] { background: var(--surface); color: var(--navy); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.mdrow { display: grid; grid-template-columns: 1.6fr 1fr 1fr auto; gap: 8px; }
+.mdrow select, .mdrow input { min-width: 0; }
+.mdrow .btn { padding: 10px 12px; }
