@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Contact, Profile } from '../lib/model'
 import { dailyForPeople, dailyFromPeople, planNumbers } from '../lib/model'
 import * as api from '../lib/data'
-import { store, useToast } from '../ui'
+import { Rock, store, useToast } from '../ui'
 
 type Plan = { income: number; cap: number; price: number; rate: number; conversion: number }
 type Field = keyof Plan
@@ -159,6 +159,15 @@ function GoalWizard({ me, agent, contacts, onClose, onSaved }: { me: Profile; ag
                 </span>
               </button>
             </div>
+            {mode === 'goals' && have > 0 && have < dbNeeded && planDaily > autoDaily && (
+              <div className="gwiz-gap">
+                <div className="stones" aria-hidden>
+                  {Array.from({ length: Math.min(30, autoDaily) }, (_, i) => <Rock key={i} i={i} on={false} />)}
+                  {Array.from({ length: Math.min(30, planDaily) - Math.min(30, autoDaily) }, (_, i) => <Rock key={`g${i}`} i={autoDaily + i} on={false} ghost />)}
+                </div>
+                <p>On Today, solid rocks are the people to reach now. <b>Dotted rocks are your gap</b>: the {dbNeeded - have} people your plan still needs. They turn solid as you add people.</p>
+              </div>
+            )}
             {mode === 'custom' && (
               <div className="gwiz-step">
                 <button className="btn" aria-label="Fewer" onClick={() => setCustom((n) => Math.max(1, n - 1))}>−</button>

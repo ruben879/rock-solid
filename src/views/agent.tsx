@@ -227,6 +227,31 @@ function whyLine(c: Contact, last: { kind: TouchKind; occurred_on: string; is_gr
   return `Last: ${fmt(c.last_touch_on as string)}`
 }
 
+/** Why some rocks are dotted: the gap between the people you have and the people your plan needs. */
+function GapSheet({ have, need, today: now, atPlan, onClose, onAdd, onGoals }: { have: number; need: number; today: number; atPlan: number; onClose: () => void; onAdd: () => void; onGoals: () => void }) {
+  const gap = Math.max(0, need - have)
+  const extra = Math.max(0, atPlan - now)
+  return (
+    <Sheet label="Why some rocks are dotted" onClose={onClose}>
+      <h3>Why some rocks are dotted</h3>
+      <div className="stones" style={{ margin: '6px 0 4px' }} aria-hidden>
+        {Array.from({ length: Math.min(30, now) }, (_, i) => <Rock key={i} i={i} on={false} />)}
+        {Array.from({ length: Math.min(30 - Math.min(30, now), extra) }, (_, i) => <Rock key={`g${i}`} i={now + i} on={false} ghost />)}
+      </div>
+      <p><b>Solid rocks</b> are the people to reach today, from the {have} {have === 1 ? 'person' : 'people'} you have now.</p>
+      <p><b>Dotted rocks</b> are the gap. Your plan for the year calls for {need} people, which works out to about {atPlan} a day. As you add people, dotted rocks turn solid.</p>
+      <div className="gapbar" role="img" aria-label={`${have} of ${need} people`}>
+        <i style={{ width: `${Math.min(100, (have / Math.max(1, need)) * 100)}%` }} />
+      </div>
+      <div className="gaplabels"><span><b>{have}</b> you have</span><span><b>{gap}</b> to go</span><span><b>{need}</b> your plan</span></div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button className="btn primary" style={{ flex: 1 }} onClick={onAdd}>Add people</button>
+        <button className="btn" style={{ flex: 1 }} onClick={onGoals}>Change my goals</button>
+      </div>
+    </Sheet>
+  )
+}
+
 function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const { data, agent, readOnly } = ctx
   const toast = useToast()
@@ -349,6 +374,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
 
   // Dotted rocks: the extra daily touches your plan needs once your database reaches its size.
   const plan = planNumbers(agent.plan)
+  const [gapInfo, setGapInfo] = useState(false)
   const ghosts = !readOnly && agent.plan?.auto_goals !== 0 && data.contacts.length > 0 && data.contacts.length < plan.dbNeeded && b.round <= 1
     ? Math.max(0, Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent)) - Math.max(b.size, rows.length)) : 0
 
@@ -365,7 +391,13 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           {Array.from({ length: ghosts }, (_, i) => <Rock key={`g${i}`} i={rows.length + i} on={false} ghost />)}
         </div>
       )}
-      {ghosts > 0 && <p className="ghostnote">Dotted rocks fill in as you grow to {plan.dbNeeded} people.</p>}
+      {ghosts > 0 && (
+        <button className="ghostnote" onClick={() => setGapInfo(true)}>
+          Dotted rocks are your gap: {plan.dbNeeded - data.contacts.length} more people to reach your plan of {plan.dbNeeded}. <u>Why?</u>
+        </button>
+      )}
+      {gapInfo && <GapSheet have={data.contacts.length} need={plan.dbNeeded} today={rows.length} atPlan={Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent))}
+        onClose={() => setGapInfo(false)} onAdd={() => { setGapInfo(false); onGo?.('db') }} onGoals={() => { setGapInfo(false); openGoalWizard() }} />}
       <div className="todayrow">
         {rows.length > 0 ? <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round})` : ''}</p> : <span />}
         {!readOnly && <button className="recpill" onClick={() => setRecording(true)}><IPlus size={18} /> Record a touch</button>}
