@@ -735,4 +735,5 @@ nav.bottom button[aria-current="page"]:not(.center) { font-weight: 700; }
 .swipefront > :first-child { flex: 1; min-width: 0; }
 .rowx { border: 0; background: none; color: var(--muted); font-size: 20px; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; flex: none; }
 @media (hover: none) { .rowx { display: none; } }
-html, body { overflow-x: hidden; }
+/* Keep the swipe-back slide from adding a sideways scroll. clip (not hidden) so the bottom bar stays fixed on iPhone. */
+body { overflow-x: clip; }
