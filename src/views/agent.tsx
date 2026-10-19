@@ -1306,13 +1306,16 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
               <div key={o} className="field full occfield">
                 <DateField label={m.name} ro={ro} value={v} onChange={(d) => setF({ ...f, [m.field]: d })} />
                 {v && !ro && (
-                  <div className="occplan" role="group" aria-label={`How to bring up their ${m.name.toLowerCase()}`}>
-                    <span>{m.icon} On Today:</span>
-                    {(['text', 'card', 'both', 'none'] as BirthdayPlan[]).map((k) => (
-                      <button type="button" key={k} aria-pressed={plans[o] === k} onClick={() => setPlans({ ...plans, [o]: k })}>
-                        {k === 'text' ? 'Text that day' : k === 'card' ? 'Card early' : k === 'both' ? 'Both' : 'Off'}
-                      </button>
-                    ))}
+                  <div className="occplan">
+                    <span>{m.icon} How should it show up on Today?</span>
+                    <div className="seg4" role="group" aria-label={`How to bring up their ${m.name.toLowerCase()}`}>
+                      {(['text', 'card', 'both', 'none'] as BirthdayPlan[]).map((k) => (
+                        <button type="button" key={k} aria-pressed={plans[o] === k} onClick={() => setPlans({ ...plans, [o]: k })}>
+                          {k === 'text' ? 'Text' : k === 'card' ? 'Card' : k === 'both' ? 'Both' : 'Off'}
+                        </button>
+                      ))}
+                    </div>
+                    <small>{plans[o] === 'text' ? 'A text on the day.' : plans[o] === 'card' ? 'A card prompt 3 to 5 days early.' : plans[o] === 'both' ? 'A card a few days early, then a text on the day.' : 'Stays off Today.'}</small>
                   </div>
                 )}
               </div>

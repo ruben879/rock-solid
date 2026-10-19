@@ -808,6 +808,8 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .bdplan.occ-wedding { color: #b0782a; background: color-mix(in srgb, #b0782a 10%, var(--surface)); }
 .occfield { display: grid; gap: 6px; }
 .occfield > .field { margin: 0; }
-.occplan { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.occplan button { font: 500 13px var(--font); padding: 5px 11px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
-.occplan button[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.occplan { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.occplan small { font-size: 12.5px; }
+.seg4 { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--line); border-radius: 12px; padding: 3px; gap: 3px; }
+.seg4 button { font: 500 14px var(--font); padding: 8px 0; border: 0; border-radius: 9px; background: transparent; color: var(--ink); cursor: pointer; }
+.seg4 button[aria-pressed="true"] { background: var(--surface); color: var(--navy); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
