@@ -223,7 +223,7 @@ export function StoolPage({ agent, data, onBack }: { agent: Profile; data: Agent
                   </div>
                   {noteFor === g.id && (
                     <form className="st-notebox" onSubmit={(e) => { e.preventDefault(); saveNote(L.id, g.id) }}>
-                      <input autoFocus aria-label="Note" placeholder="Add a note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+                      <input aria-label="Note" placeholder="Add a note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
                       <button className="btn primary">Save</button>
                       <button type="button" className="btn ghost" onClick={() => setNoteFor(null)}>Skip</button>
                     </form>
