@@ -81,7 +81,8 @@ export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; on
   // It leans a little for every bit one side is shorter, and levels out as they even up.
   const side = p[0] - p[2]
   const tilt = Math.abs(side) < 0.05 ? 0 : Math.max(-8, Math.min(8, side * 12))
-  const sink = Math.max(0, (p[0] + p[2]) / 2 - p[1] - 0.05) * 12
+  // A short back leg tips the stool backward: it leans away from you (looks a bit shorter) and you see more of the seat's top.
+  const back = Math.min(0.15, Math.max(0, (p[0] + p[2]) / 2 - p[1] - 0.05) * 0.4)
   const poly = (pts: number[][]) => pts.map((q) => q.join(',')).join(' ')
   const short = (n: string) => (n.length <= 10 ? n : n.split(' ')[0])
   const leg = (i: number) => {
@@ -110,12 +111,14 @@ export function StoolArt({ p, names, onLeg }: { p: number[]; names: string[]; on
         <linearGradient id="stseat" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#e2bd84" /><stop offset="1" stopColor="#b98a4e" /></linearGradient>
       </defs>
       <ellipse cx="150" cy="242" rx="122" ry="10" fill="var(--line)" opacity=".8" />
-      <g className="st-seat" style={{ transform: `translateY(${sink}px) rotate(${tilt}deg)` }}>
+      <g className="st-seat" style={{ transform: `rotate(${tilt}deg) scaleY(${1 - back})` }}>
         {leg(1)}{leg(0)}{leg(2)}
-        <path d="M40 64 L40 80 A110 26 0 0 0 260 80 L260 64 Z" fill="#93683a" />
-        <ellipse cx="150" cy="64" rx="110" ry="26" fill="url(#stseat)" />
-        <ellipse cx="150" cy="64" rx="84" ry="18" fill="none" stroke="#8a5f30" strokeWidth="1.5" opacity=".6" />
-        <ellipse cx="150" cy="64" rx="56" ry="11" fill="none" stroke="#8a5f30" strokeWidth="1.2" opacity=".45" />
+        <g className="st-top" style={{ transform: `scaleY(${1 + back * 3})` }}>
+          <path d="M40 64 L40 80 A110 26 0 0 0 260 80 L260 64 Z" fill="#93683a" />
+          <ellipse cx="150" cy="64" rx="110" ry="26" fill="url(#stseat)" />
+          <ellipse cx="150" cy="64" rx="84" ry="18" fill="none" stroke="#8a5f30" strokeWidth="1.5" opacity=".6" />
+          <ellipse cx="150" cy="64" rx="56" ry="11" fill="none" stroke="#8a5f30" strokeWidth="1.2" opacity=".45" />
+        </g>
       </g>
     </svg>
   )
