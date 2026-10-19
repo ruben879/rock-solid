@@ -9,7 +9,7 @@ import {
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
-import { GoalWizardHost } from './goals'
+import { GoalWizardHost, openGoalWizard } from './goals'
 import { Together, type CadInfo } from './together'
 import { MiniStool, StoolPage } from './stool'
 import { IBell, ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
@@ -1734,7 +1734,8 @@ function Progress({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => 
       )}
       <details className="more" style={{ marginTop: 0 }}>
         <summary>My plan for the year</summary>
-        <MyPlan ctx={ctx} onProfileChange={onProfileChange} />
+        {!ctx.readOnly && <button className="btn" style={{ width: '100%', marginBottom: 10 }} onClick={openGoalWizard}>Walk me through my goals</button>}
+        <MyPlan key={JSON.stringify(ctx.agent.plan ?? {})} ctx={ctx} onProfileChange={onProfileChange} />
       </details>
     </section>
   )
