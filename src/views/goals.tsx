@@ -28,16 +28,23 @@ const seenKey = (id: string) => `rs-goalwiz-${id}`
  * and any time from the Getting started list. Fills in the plan and the daily goal on Progress.
  */
 export function GoalWizardHost({ me, agent, contacts, onSaved }: { me: Profile; agent: Profile; contacts: Contact[]; onSaved?: () => void }) {
+  // Pops up once per person (remembered on their account, so not again on another phone or computer).
   const [open, setOpen] = useState(() => {
-    const empty = !agent.plan || Object.keys(agent.plan).length === 0
-    return empty && !store.get<boolean>(seenKey(agent.id), false)
+    const plan = agent.plan ?? {}
+    return plan.income === undefined && !plan.wiz_seen && !store.get<boolean>(seenKey(agent.id), false)
   })
   useEffect(() => {
     const show = () => setOpen(true)
     window.addEventListener('rs-goal-wizard', show)
     return () => window.removeEventListener('rs-goal-wizard', show)
   }, [])
-  useEffect(() => { if (open) store.set(seenKey(agent.id), true) }, [open, agent.id])
+  const marked = useRef(false)
+  useEffect(() => {
+    if (!open || marked.current) return
+    marked.current = true
+    store.set(seenKey(agent.id), true)
+    if (!agent.plan?.wiz_seen) api.updateMyProfile(me, { plan: { ...(agent.plan ?? {}), wiz_seen: 1 } }).catch(() => {})
+  }, [open, agent.id, agent.plan, me])
   if (!open) return null
   return <GoalWizard me={me} agent={agent} contacts={contacts} onClose={() => setOpen(false)} onSaved={onSaved} />
 }

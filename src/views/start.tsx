@@ -35,7 +35,7 @@ export function GettingStarted({ contacts, agent, onGo }: { contacts: Contact[];
   const untagged = contacts.filter((c) => c.tier === 'U').length
   const steps: Step[] = [
     {
-      key: 'goals', title: 'Set your goals first', done: !!agent.plan && Object.keys(agent.plan).length > 0,
+      key: 'goals', title: 'Set your goals first', done: agent.plan?.income !== undefined,
       body: <p>A few quick questions about your year (take-home goal, average price). Rock Solid turns them into how many people you need and how many to reach each day.</p>,
       action: { label: 'Set my goals', run: () => { setOpen(false); openGoalWizard() } },
     },

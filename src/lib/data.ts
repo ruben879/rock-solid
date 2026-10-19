@@ -33,7 +33,7 @@ function stash<T>(k: string, v?: T): T | null {
 export const STARTER_DAILY_GOAL = Math.ceil((100 * 16) / 52 / 5)
 const DB_DEFAULT_DAILY = 5
 function withGoals(p: Profile): Profile {
-  const untouched = !p.plan || Object.keys(p.plan).length === 0
+  const untouched = p.plan?.income === undefined
   const daily = untouched && p.daily_goal === DB_DEFAULT_DAILY ? STARTER_DAILY_GOAL : p.daily_goal
   // A week is 5 workdays: the weekly goal is always the daily goal times 5.
   return { ...p, daily_goal: daily, weekly_goal: daily * 5 }
