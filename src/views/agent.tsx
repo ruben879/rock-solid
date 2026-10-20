@@ -2221,13 +2221,6 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       <div className="ptitle">
         <div>
           <h2>People<small>{data.contacts.length}</small></h2>
-          {data.contacts.length > 0 && (
-            <p className="pcounts">
-              <span><i className="pav t-A" /><b>{data.contacts.filter((c) => tierOf(c) === 'A').length}</b> A's</span>
-              <span><i className="pav t-B" /><b>{data.contacts.filter((c) => tierOf(c) === 'B').length}</b> B's</span>
-              {untagged > 0 && <span><i className="pav t-U" /><b>{untagged}</b> need a tag</span>}
-            </p>
-          )}
         </div>
         {!readOnly && (
           <span style={{ display: 'flex', gap: 8 }}>
@@ -2242,7 +2235,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         <div className="pfilter">
           <div className="seg mini" role="group" aria-label="Show">
             {([['all', 'All'], ['A', 'A'], ['B', 'B'], ...(untagged ? [['U', 'Tag']] : [])] as [PTier, string][]).map(([k, l]) => (
-              <button key={k} aria-pressed={tier === k} onClick={() => setTier(k)}>{l}{k === 'U' && <b className="cnt">{untagged}</b>}</button>
+              <button key={k} aria-pressed={tier === k} onClick={() => setTier(k)}>{l}{k === 'U' ? <b className="cnt">{untagged}</b> : <small className="segn">{k === 'all' ? data.contacts.length : data.contacts.filter((c) => tierOf(c) === k).length}</small>}</button>
             ))}
           </div>
           <button className="sortbtn" onClick={() => setSorting(true)}><span aria-hidden>⇅</span> {PSORTS.find(([k]) => k === sort)?.[1]}</button>

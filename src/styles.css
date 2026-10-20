@@ -623,7 +623,7 @@ nav.bottom .dot { position: absolute; top: -2px; right: -6px; width: 10px; heigh
 .btn.iconly { width: 44px; padding: 0; }
 .pfilter { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 12px 0; }
 .seg.mini { margin: 0; }
-.seg.mini button { padding: 6px 12px; font-size: 14px; flex: none; }
+.seg.mini button { padding: 6px 9px; font-size: 14px; flex: none; }
 .seg .cnt { display: inline-block; min-width: 18px; height: 18px; border-radius: 9px; background: var(--urgent); color: #fff; font: 600 11px/18px var(--font); text-align: center; margin-left: 5px; padding: 0 4px; }
 .sortbtn { display: inline-flex; align-items: center; gap: 6px; font: 600 14px var(--font); color: var(--navy); background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 12px; cursor: pointer; white-space: nowrap; }
 .phead { font: 600 12px var(--font); letter-spacing: .05em; color: var(--muted); padding: 10px 16px 6px; background: color-mix(in srgb, var(--bg) 60%, var(--surface)); border-bottom: 1px solid var(--line); }
@@ -832,3 +832,7 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .xrow:last-child { border-bottom: 0; }
 .xrow .pav { width: 30px; height: 30px; font-size: 12px; }
 .pcounts b { color: var(--ink); font-weight: 600; }
+.seg .segn { font: 500 12px var(--font); color: var(--muted); margin-left: 5px; }
+.seg button[aria-pressed="true"] .segn { color: var(--navy); }
+.seg .segn { margin-left: 4px; }
+.pfilter .sortbtn { padding: 8px 10px; }
