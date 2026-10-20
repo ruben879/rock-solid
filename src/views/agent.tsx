@@ -1082,7 +1082,9 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       topRef.current?.closest('.in')?.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) { toast(`That didn't save: ${(e as Error).message}`) }
   }
+  const [delT, setDelT] = useState<Touch | null>(null)
   async function removeTouch(t: Touch) {
+    setDelT(null)
     try {
       await api.deleteTouch(t, [...ctx.data.touches, ...older.touches], [...ctx.data.cards, ...older.cards])
       setOlder((o) => ({ ...o, touches: o.touches.filter((x) => x.id !== t.id) }))
@@ -1168,7 +1170,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
             const k = cardFor(t)
             const sub = k ? [k.occasion, k.note].filter(Boolean).join(' · ') : t.note && t.note !== 'Group touch' ? t.note : ''
             return (
-<SwipeRow key={t.id} label={touchLabel(t)} onDelete={ctx.readOnly ? undefined : () => removeTouch(t)}>
+<SwipeRow key={t.id} label={touchLabel(t)} onDelete={ctx.readOnly ? undefined : () => setDelT(t)}>
                               <button className="hrow tap" onClick={() => (canNote ? setNoteOn({ t }) : setInfo(t))}>
                 <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
@@ -1189,6 +1191,15 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       </div>
       {noteOn && <NoteSheet ctx={ctx} t={noteOn.t} c={live} onClose={() => setNoteOn(null)} onUndo={noteOn.fresh ? () => undo(noteOn.t) : undefined} />}
       {fu && <FollowUpSheet ctx={ctx} c={live} onClose={() => setFu(false)} />}
+      {delT && (
+        <Sheet label="Delete this touch" onClose={() => setDelT(null)}>
+          <h3>Delete this {touchLabel(delT).toLowerCase()}?</h3>
+          <p className="note">{touchLabel(delT)} with {live.first_name || fullName(live)} on {longDate(delT.occurred_on)}.{delT.kind === 'card' && delT.note?.startsWith('Card a Day: ') ? ' It comes off Card a Day too.' : ''}</p>
+          <div className="warn" style={{ marginTop: 10 }}>This is permanent. It can't be undone.</div>
+          <button className="btn danger lg block" style={{ marginTop: 12 }} onClick={() => removeTouch(delT)}>Delete it</button>
+          <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setDelT(null)}>Keep it</button>
+        </Sheet>
+      )}
       {carding && <CardSheet ctx={ctx} c={live} onClose={() => setCarding(false)} />}
       {bdPick && (
         <Sheet label={OCCASION_META[bdPick].name} onClose={() => setBdPick(null)}>
