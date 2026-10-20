@@ -816,3 +816,19 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .mdrow { display: grid; grid-template-columns: 1.6fr 1fr 1fr auto; gap: 8px; }
 .mdrow select, .mdrow input { min-width: 0; }
 .mdrow .btn { padding: 10px 12px; }
+
+/* People: counts at a glance, and exporting a group */
+.pcounts { display: flex; gap: 12px; margin: 2px 0 0; font-size: 13.5px; color: var(--muted); }
+.pcounts span { display: inline-flex; align-items: center; gap: 5px; }
+.pcounts .pav { width: 10px; height: 10px; min-width: 0; border-radius: 50%; font-size: 0; padding: 0; }
+.xsec { font: 600 13px var(--font); color: var(--muted); margin: 14px 0 6px; }
+.seg4.x5 { grid-template-columns: repeat(5, 1fr); }
+.xchecks { display: grid; gap: 8px; }
+.xchecks label { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.xchecks input, .xrow input { width: 20px; height: 20px; }
+.xpickhead { display: flex; justify-content: space-between; align-items: center; margin: 8px 2px; }
+.xpick { max-height: 38vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 14px; }
+.xrow { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 15px; }
+.xrow:last-child { border-bottom: 0; }
+.xrow .pav { width: 30px; height: 30px; font-size: 12px; }
+.pcounts b { color: var(--ink); font-weight: 600; }

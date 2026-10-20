@@ -2176,6 +2176,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const setSort = (v: PSort) => { setSortState(v); store.set('rs-psort', v) }
   const [sorting, setSorting] = useState(false)
   const [tools, setTools] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [edit, setEdit] = useState<Contact | null | 'new'>(null)
   const [view, setView] = useState<Contact | null>(null)
   const [addName, setAddName] = useState<string | null>(null)
@@ -2215,7 +2216,16 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   return (
     <section>
       <div className="ptitle">
-        <h2>People<small>{data.contacts.length}</small></h2>
+        <div>
+          <h2>People<small>{data.contacts.length}</small></h2>
+          {data.contacts.length > 0 && (
+            <p className="pcounts">
+              <span><i className="pav t-A" /><b>{data.contacts.filter((c) => tierOf(c) === 'A').length}</b> A's</span>
+              <span><i className="pav t-B" /><b>{data.contacts.filter((c) => tierOf(c) === 'B').length}</b> B's</span>
+              {untagged > 0 && <span><i className="pav t-U" /><b>{untagged}</b> need a tag</span>}
+            </p>
+          )}
+        </div>
         {!readOnly && (
           <span style={{ display: 'flex', gap: 8 }}>
             <button className="btn iconly" aria-label="More tools" onClick={() => setTools(true)}><IMore /></button>
@@ -2269,6 +2279,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         <button className="btn" style={{ marginTop: 12 }} onClick={() => setAddName(q.trim())}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
       )}
 
+      {exporting && <ExportSheet contacts={data.contacts} byContact={byContact} agent={agent} onClose={() => setExporting(false)} />}
       {sorting && (
         <Sheet label="Sort by" onClose={() => setSorting(false)}>
           <h3>Sort by</h3>
@@ -2287,8 +2298,8 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
           <div className="stack" style={{ marginTop: 10 }}>
             <div className="card stack">
               <h3>Download my people</h3>
-              <p className="note">A CSV file of everyone here, with their tier, touches this year and last touch. Opens in Excel, Google Sheets or Numbers.</p>
-              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => exportCsv(data.contacts, byContact, agent)}>Download CSV</button>
+              <p className="note">A CSV file of everyone, or just a group: A's, B's, people with an email, people with a mailing address, or people you pick. Opens in Excel, Google Sheets or Numbers.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setExporting(true) }}>Choose who to download</button>
             </div>
             <div className="card stack">
               <h3>Bring in a spreadsheet</h3>
@@ -2365,18 +2376,78 @@ function GroupSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   )
 }
 
-function exportCsv(contacts: Contact[], byContact: Map<string, string[]>, agent: Profile) {
+/** Dates saved without a year export as month/day. */
+const noYear = (d: string | null | undefined) => (d && !hasYear(d) ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : d)
+type XWho = 'all' | 'A' | 'B' | 'U' | 'pick'
+const hasMail = (c: Contact) => !!c.address?.trim() && !!(c.zip?.trim() || c.city?.trim())
+
+/** Download everyone, or just a group: by tier, by who has an email or mailing address, or hand-picked. */
+function ExportSheet({ contacts, byContact, agent, onClose }: { contacts: Contact[]; byContact: Map<string, string[]>; agent: Profile; onClose: () => void }) {
+  const [who, setWho] = useState<XWho>('all')
+  const [needEmail, setNeedEmail] = useState(false)
+  const [needMail, setNeedMail] = useState(false)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [q, setQ] = useState('')
+  const base = contacts.filter((c) => (needEmail ? !!c.email?.trim() : true) && (needMail ? hasMail(c) : true))
+  const group = who === 'pick' ? base.filter((c) => picked.has(c.id)) : who === 'all' ? base : base.filter((c) => tierOf(c) === who)
+  const term = q.trim().toLowerCase()
+  const shown = [...base].sort((a, b) => fullName(a).localeCompare(fullName(b))).filter((c) => !term || fullName(c).toLowerCase().includes(term))
+  const toggle = (id: string) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n) }
+  const allShown = shown.length > 0 && shown.every((c) => picked.has(c.id))
+  const label = who === 'all' ? 'everyone' : who === 'A' ? 'A' : who === 'B' ? 'B' : who === 'U' ? 'untagged' : 'picked'
+  return (
+    <Sheet label="Download my people" onClose={onClose}>
+      <h3>Download my people</h3>
+      <div className="xsec">Who</div>
+      <div className="seg4 x5" role="group" aria-label="Who to download">
+        {([['all', 'All'], ['A', "A's"], ['B', "B's"], ['U', 'No tag'], ['pick', 'Pick']] as [XWho, string][]).map(([k, l]) => (
+          <button type="button" key={k} aria-pressed={who === k} onClick={() => setWho(k)}>{l}</button>
+        ))}
+      </div>
+      <div className="xsec">Only people with</div>
+      <div className="xchecks">
+        <label><input type="checkbox" checked={needEmail} onChange={(e) => setNeedEmail(e.target.checked)} /> An email address</label>
+        <label><input type="checkbox" checked={needMail} onChange={(e) => setNeedMail(e.target.checked)} /> A mailing address</label>
+      </div>
+      {who === 'pick' && (
+        <>
+          <div className="search" style={{ marginTop: 12 }}><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="xpickhead">
+            <span className="note">{picked.size} picked</span>
+            <button type="button" className="link" onClick={() => { const n = new Set(picked); shown.forEach((c) => (allShown ? n.delete(c.id) : n.add(c.id))); setPicked(n) }}>{allShown ? 'Unpick these' : term ? 'Pick all these' : 'Pick everyone'}</button>
+          </div>
+          <div className="xpick">
+            {shown.slice(0, 300).map((c) => (
+              <label key={c.id} className="xrow">
+                <input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+                <span className={`pav t-${tierOf(c)}`}>{tierOf(c) === 'U' ? '?' : initialsOf(c)}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{fullName(c)}</span>
+              </label>
+            ))}
+            {shown.length > 300 && <p className="note" style={{ padding: 8 }}>Search to find more.</p>}
+          </div>
+        </>
+      )}
+      <button className="btn primary lg block" style={{ marginTop: 14 }} disabled={!group.length}
+        onClick={() => { exportCsv(group, byContact, agent, who === 'all' && !needEmail && !needMail ? '' : [label, needEmail ? 'email' : '', needMail ? 'mailing' : ''].filter(Boolean).join('-')); onClose() }}>
+        Download {group.length} {group.length === 1 ? 'person' : 'people'}
+      </button>
+    </Sheet>
+  )
+}
+
+function exportCsv(contacts: Contact[], byContact: Map<string, string[]>, agent: Profile, tag = '') {
   const q = (v: unknown) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
   const head = ['First Name', 'Last Name', 'Phone', 'Email', 'Address', 'City', 'State', 'Zip', 'Tier', 'Birthday', 'Home Anniversary', 'Wedding Anniversary', 'Notes', 'Touches (12 months)', 'Last Touch', 'Added On', 'Source']
   const rows = [...contacts].sort((a, b) => fullName(a).localeCompare(fullName(b))).map((c) => [
     c.first_name, c.last_name, c.phone, c.email, c.address, c.city, c.state, c.zip,
-    c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B', c.birthday, c.home_anniversary, c.wedding_anniversary, c.notes, score(c, byContact), c.last_touch_on, c.added_on, c.source,
+    c.tier === 'U' ? '?' : c.tier === 'A' ? 'A' : 'B', noYear(c.birthday), c.home_anniversary, noYear(c.wedding_anniversary), c.notes, score(c, byContact), c.last_touch_on, c.added_on, c.source,
   ])
   const csv = [head, ...rows].map((r) => r.map(q).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url
-  a.download = `${(agent.full_name || 'my').replace(/\s+/g, '-')}-people-${ymd(today())}.csv`
+  a.download = `${(agent.full_name || 'my').replace(/\s+/g, '-')}-people${tag ? `-${tag}` : ''}-${ymd(today())}.csv`
   document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
