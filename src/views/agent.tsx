@@ -4,7 +4,7 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, birthdaysToday, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
+  planNumbers, birthdaysToday, entryStillValid, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
@@ -119,8 +119,9 @@ function useBatch(ctx: Ctx) {
   // any extra birthdays show as a short line instead. Kept for the day, so a done one stays checked off.
   const bdKey = `rs-bd-${agent.id}-${day}`
   const bdAll = useMemo(() => {
-    const have = new Set(data.contacts.map((c) => c.id))
-    const seen = store.get<BdayEntry[]>(bdKey, []).filter((e) => have.has(e.id))
+    // Keep today's entries (so a done one stays checked off), but drop any whose date or choice changed.
+    const byId = new Map(data.contacts.map((c) => [c.id, c]))
+    const seen = store.get<BdayEntry[]>(bdKey, []).filter((e) => byId.has(e.id) && entryStillValid(byId.get(e.id)!, e))
     const now = birthdaysToday(data.contacts, data.touches).filter((e) => !seen.some((x) => x.id === e.id))
     return [...seen, ...now]
   }, [data.contacts, data.touches, bdKey])
@@ -165,6 +166,8 @@ function useBatch(ctx: Ctx) {
       ids = shuffled([...start, ...poolExcluding(start, size - start.length).map((c) => c.id)], `${agent.id}|${day}`)
       round = ids.length ? 1 : 0
     }
+    // A birthday came off the list (date changed or removed): fill its spot so the day stays full.
+    if (ids.length > 0 && ids.length < size && round <= 1) ids = [...ids, ...poolExcluding(ids, size - ids.length).map((c) => c.id)]
     const allDone = ids.length > 0 && ids.every((id) => touchedThisWeek.has(id))
     const waiting = poolExcluding(ids, 1).length
     return { ids, round, cleared, waiting, size: full, allDone, stopped: !!saved.stopped }

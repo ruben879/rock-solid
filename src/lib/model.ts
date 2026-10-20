@@ -405,6 +405,16 @@ export function yearsOn(c: Contact, o: Occasion, on: string) {
 }
 
 export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string; occ?: Occasion }
+
+/** Is a birthday or anniversary entry still right for this person? (The date or the choice may have changed since.) */
+export function entryStillValid(c: Contact, e: BdayEntry) {
+  const occ = e.occ ?? 'birthday'
+  const d = nextOccasion(c[OCCASION_META[occ].field])
+  if (!d || ymd(d) !== e.on) return false
+  if (c.skip_until && c.skip_until > ymd(today())) return false
+  const plan = planOf(c, occ)
+  return e.kind === 'card' ? plan === 'card' || plan === 'both' : plan === 'text' || plan === 'both' || c.follow_up_on === e.on
+}
 /**
  * Who has a birthday or anniversary to celebrate today: day-of texts (plan text or both, or a "remind me on the day"
  * follow-up), and card prompts 5 to 3 days before (plan card or both) until a card is logged.
