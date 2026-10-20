@@ -7,7 +7,7 @@ import {
   planNumbers, birthdaysToday, entryStillValid, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
-import { Celebrate, HeatTag, Rock, Sheet, Signal, store, useSwipeBack, useToast } from '../ui'
+import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { GoalWizardHost, openGoalWizard } from './goals'
 import { Together, type CadInfo } from './together'
@@ -1082,6 +1082,14 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       topRef.current?.closest('.in')?.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) { toast(`That didn't save: ${(e as Error).message}`) }
   }
+  async function removeTouch(t: Touch) {
+    try {
+      await api.deleteTouch(t, [...ctx.data.touches, ...older.touches], [...ctx.data.cards, ...older.cards])
+      setOlder((o) => ({ ...o, touches: o.touches.filter((x) => x.id !== t.id) }))
+      await ctx.reload()
+      toast(`${touchLabel(t)} on ${longDate(t.occurred_on)} removed.`)
+    } catch (e) { toast(`Couldn't remove: ${(e as Error).message}`) }
+  }
   async function undo(t: Touch) {
     setNoteOn(null)
     try { await api.deleteTouch(t, ctx.data.touches, ctx.data.cards); await ctx.reload(); toast('Undone.') } catch (e) { toast(`Couldn't undo: ${(e as Error).message}`) }
@@ -1160,7 +1168,8 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
             const k = cardFor(t)
             const sub = k ? [k.occasion, k.note].filter(Boolean).join(' · ') : t.note && t.note !== 'Group touch' ? t.note : ''
             return (
-              <button key={t.id} className="hrow tap" onClick={() => (canNote ? setNoteOn({ t }) : setInfo(t))}>
+<SwipeRow key={t.id} label={touchLabel(t)} onDelete={ctx.readOnly ? undefined : () => removeTouch(t)}>
+                              <button className="hrow tap" onClick={() => (canNote ? setNoteOn({ t }) : setInfo(t))}>
                 <span className={`hic k-${t.kind}`}>{KIND_ICON[t.kind] ?? <ICheck />}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <b>{touchLabel(t)}</b>
@@ -1168,6 +1177,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
                 </span>
                 <span className="note" style={{ whiteSpace: 'nowrap' }}>{longDate(t.occurred_on)}</span>
               </button>
+              </SwipeRow>
             )
           })}
         </div>
