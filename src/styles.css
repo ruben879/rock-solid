@@ -846,3 +846,12 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .selacts { position: fixed; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 16; max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 .btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .btn.danger:disabled { opacity: .45; }
+
+/* Person card: call or text right from here */
+.pcall { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.pcall .go { margin: 0; }
+.preach { margin-top: 12px; background: var(--ink); color: var(--surface); border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
+.preach p { margin: 0; font-size: 17px; font-weight: 600; }
+.preach div { display: flex; gap: 8px; }
+.preach .btn { flex: 1; border-color: transparent; }
+.qlabel { margin: 14px 2px -4px; font-size: 13px; color: var(--muted); }

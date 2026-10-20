@@ -1069,6 +1069,8 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
     ? allCards.find((k) => k.sent_on === t.occurred_on && k.recipient_name === t.note!.slice('Card a Day: '.length))
     : undefined
   const [carding, setCarding] = useState(false)
+  const [reachP, setReachP] = useState<'call' | 'text' | null>(null)
+  const topRef = useRef<HTMLDivElement>(null)
   async function quick(kind: TouchKind) {
     if (kind === 'card') { setCarding(true); return }
     try {
@@ -1076,6 +1078,8 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       await ctx.reload()
       setNoteOn({ t, fresh: true })
       if (!onTodaysList(ctx.agent.id, live.id)) toast(offListNote(live))
+      // Back to the top so the new touch and their bars are right there.
+      topRef.current?.closest('.in')?.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e) { toast(`That didn't save: ${(e as Error).message}`) }
   }
   async function undo(t: Touch) {
@@ -1087,10 +1091,25 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
   const shown = dates.filter(([, v]) => v)
   return (
     <Sheet label={fullName(live)} onClose={onClose}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div ref={topRef} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 22 }}>{fullName(live)}</h3>
         <span className={`ttag ${live.tier === 'U' ? 'q' : ''}`} style={{ marginLeft: 0 }}>{live.tier === 'U' ? '?' : live.tier === 'A' ? 'A' : 'B'}</span>
       </div>
+      {!ctx.readOnly && live.phone && (reachP ? (
+        <div className="preach" role="status">
+          <p>Did you {reachP} {live.first_name || fullName(live)}?</p>
+          <div>
+            <button className="btn gold" onClick={() => { const k = reachP; setReachP(null); quick(k) }}>Yes, record it</button>
+            <button className="btn" onClick={() => setReachP(null)}>Not yet</button>
+          </div>
+        </div>
+      ) : (
+        <div className="pcall">
+          <a className="go k-call" href={`tel:${telOf(live.phone)}`} onClick={() => setReachP('call')}><IPhone size={20} /> Call</a>
+          <a className="go k-text" href={`sms:${telOf(live.phone)}`} onClick={() => setReachP('text')}><IText size={20} /> Text</a>
+        </div>
+      ))}
+      {!ctx.readOnly && <div className="qlabel">{live.phone ? 'Already reached out? Record it:' : 'Record a touch:'}</div>}
       {!ctx.readOnly && (
         <div className="qlog" role="group" aria-label="Log a touch">
           {(['call', 'text', 'card', 'popby', 'facetoface'] as TouchKind[]).map((k) => (
