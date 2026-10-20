@@ -238,6 +238,17 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
+/** Is this person on today's list? Read from what Today saved on this phone. */
+function onTodaysList(agentId: string, contactId: string) {
+  const day = ymd(today())
+  const ids = store.get<{ ids: string[] }>(`rs-day3-${agentId}-${day}`, { ids: [] }).ids
+  const fu = store.get<string[]>(`rs-fu-${agentId}-${day}`, [])
+  const bd = store.get<{ id: string }[]>(`rs-bd-${agentId}-${day}`, []).map((e) => e.id)
+  return [...ids, ...fu, ...bd].includes(contactId)
+}
+/** Rocks only stack for people on today's list, so say so kindly when someone logs a touch with anyone else. */
+const offListNote = (c: Contact) => `Great job recording a touch with ${c.first_name || fullName(c)}! Reach someone on today's list to stack your rocks.`
+
 const longDay = (d: string) => parse(d).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 
 /** One short, plain line about why this person is on the list. */
@@ -413,7 +424,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       const t = await api.logTouch(ctx.me, c.id, kind, note)
       pendingCheck.current = before
       await ctx.reload()
-      toast(`${KIND_LABEL[kind]} recorded for ${c.first_name}.`, { label: 'Undo', run: () => { setNoteFor(null); undo(t) } })
+      const off = !rows.some((r) => r.id === c.id) && todo.some((r) => r.id !== c.id)
+      toast(off ? offListNote(c) : `${KIND_LABEL[kind]} recorded for ${c.first_name}.`, { label: 'Undo', run: () => { setNoteFor(null); undo(t) } })
       if (!note) setNoteFor({ t, c })
     } catch (e) {
       toast(`That didn't save: ${(e as Error).message}`)
@@ -1060,6 +1072,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
       const t = await api.logTouch(ctx.me, live.id, kind, '')
       await ctx.reload()
       setNoteOn({ t, fresh: true })
+      if (!onTodaysList(ctx.agent.id, live.id)) toast(offListNote(live))
     } catch (e) { toast(`That didn't save: ${(e as Error).message}`) }
   }
   async function undo(t: Touch) {
@@ -1553,9 +1566,14 @@ function cadInfo(cards: Card[]): CadInfo {
 
 /** Logging a card for someone always goes through Card a Day, so it counts there too. */
 function CardSheet({ ctx, c, occasion, onBefore, onClose }: { ctx: Ctx; c: Contact; occasion?: string; onBefore?: () => void; onClose: () => void }) {
+  const toast = useToast()
+  const logged = (r: { counts: boolean }) => {
+    if (r.counts && !ctx.readOnly && !onTodaysList(ctx.agent.id, c.id)) toast(`Card logged for ${c.first_name || fullName(c)}! Reach someone on today's list to stack your rocks.`)
+    onClose()
+  }
   return (
     <Sheet label={`Card for ${c.first_name || fullName(c)}`} onClose={onClose}>
-      <CardSteps ctx={ctx} preset={fullName(c)} occasion={occasion} onBefore={onBefore} onLogged={onClose} />
+      <CardSteps ctx={ctx} preset={fullName(c)} occasion={occasion} onBefore={onBefore} onLogged={logged} />
     </Sheet>
   )
 }

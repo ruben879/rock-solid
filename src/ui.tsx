@@ -17,7 +17,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setMsg(m)
     setAction(a ?? null)
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => { setMsg(''); setAction(null) }, a ? 6000 : 2600)
+    timer.current = window.setTimeout(() => { setMsg(''); setAction(null) }, Math.max(a ? 6000 : 2600, m.length * 60))
   }, [])
   return (
     <ToastCtx.Provider value={show}>
