@@ -2180,6 +2180,24 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [sorting, setSorting] = useState(false)
   const [tools, setTools] = useState(false)
   const [exporting, setExporting] = useState(false)
+  // Select mode: tap people to pick several, then tag or delete them together.
+  const [sel, setSel] = useState<Set<string> | null>(null)
+  const [confirmDel, setConfirmDel] = useState<'some' | 'all' | null>(null)
+  const [typed, setTyped] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const toastP = useToast()
+  const toggleSel = (id: string) => setSel((cur) => { const n = new Set(cur ?? []); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  async function bulkTag(t: Tier) {
+    if (!sel?.size) return
+    setBulkBusy(true)
+    try { await api.setTiers([...sel], t); await ctx.reload(); toastP(`${sel.size} tagged ${t}.`); setSel(null) } catch (e) { toastP((e as Error).message) }
+    setBulkBusy(false)
+  }
+  async function bulkDelete(ids: string[]) {
+    setBulkBusy(true)
+    try { await api.deleteContacts(ids); await ctx.reload(); toastP(`${ids.length} ${ids.length === 1 ? 'person' : 'people'} deleted.`); setSel(null); setConfirmDel(null); setTyped('') } catch (e) { toastP((e as Error).message) }
+    setBulkBusy(false)
+  }
   const [edit, setEdit] = useState<Contact | null | 'new'>(null)
   const [view, setView] = useState<Contact | null>(null)
   const [addName, setAddName] = useState<string | null>(null)
@@ -2231,6 +2249,22 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       </div>
 
       <div className="search"><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      {sel && (
+        <div className="selbar">
+          <b>{sel.size} selected</b>
+          <span style={{ display: 'flex', gap: 14 }}>
+            <button className="link" onClick={() => setSel(list.every((c) => sel.has(c.id)) ? new Set() : new Set([...sel, ...list.map((c) => c.id)]))}>{list.length && list.every((c) => sel.has(c.id)) ? 'Unselect all' : `Select all ${list.length}`}</button>
+            <button className="link" onClick={() => setSel(null)}>Done</button>
+          </span>
+        </div>
+      )}
+      {sel && sel.size > 0 && (
+        <div className="selacts">
+          <button className="btn" disabled={bulkBusy} onClick={() => bulkTag('A')}>Tag A</button>
+          <button className="btn" disabled={bulkBusy} onClick={() => bulkTag('B')}>Tag B</button>
+          <button className="btn danger" disabled={bulkBusy} onClick={() => setConfirmDel('some')}>Delete {sel.size}</button>
+        </div>
+      )}
       {!searching && (
         <div className="pfilter">
           <div className="seg mini" role="group" aria-label="Show">
@@ -2257,8 +2291,9 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
             return (
               <div key={c.id}>
                 {head && <div className="phead">{letter(c)}</div>}
-                <button className="prow" onClick={() => setView(c)}>
-                  <span className={`pav t-${t}`}>{t === 'U' ? '?' : initialsOf(c)}</span>
+                <button className={`prow ${sel?.has(c.id) ? 'picked' : ''}`} onClick={() => (sel ? toggleSel(c.id) : setView(c))}>
+                  {sel ? <span className={`selbox ${sel.has(c.id) ? 'on' : ''}`}>{sel.has(c.id) && <ICheck size={16} />}</span>
+                    : <span className={`pav t-${t}`}>{t === 'U' ? '?' : initialsOf(c)}</span>}
                   <span className="nm">
                     <b>{fullName(c)}</b>
                     <small>{t === 'U' ? 'Needs a tag' : talked(lastOf(c) || undefined)}</small>
@@ -2275,6 +2310,27 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         <button className="btn" style={{ marginTop: 12 }} onClick={() => setAddName(q.trim())}><IPlus size={18} /> Add "{q.trim()}" as a new person</button>
       )}
 
+      {confirmDel && (
+        <Sheet label="Delete people" onClose={() => { setConfirmDel(null); setTyped('') }}>
+          {confirmDel === 'some' ? (
+            <>
+              <h3>Delete {sel?.size} {sel?.size === 1 ? 'person' : 'people'}?</h3>
+              <p className="note">Their touch history goes with them. This can't be undone.</p>
+              <button className="btn danger lg block" style={{ marginTop: 12 }} disabled={bulkBusy} onClick={() => bulkDelete([...(sel ?? [])])}>{bulkBusy ? 'Deleting…' : `Yes, delete ${sel?.size}`}</button>
+            </>
+          ) : (
+            <>
+              <h3>Delete everyone?</h3>
+              <p className="note">All {data.contacts.length} people and their touch history will be deleted. Your cards and challenges stay. This can't be undone.</p>
+              <label className="field" style={{ marginTop: 10 }}><span>Type DELETE to confirm</span>
+                <input value={typed} autoCapitalize="characters" onChange={(e) => setTyped(e.target.value)} />
+              </label>
+              <button className="btn danger lg block" style={{ marginTop: 12 }} disabled={bulkBusy || typed.trim().toUpperCase() !== 'DELETE'} onClick={() => bulkDelete(data.contacts.map((c) => c.id))}>{bulkBusy ? 'Deleting…' : `Delete all ${data.contacts.length}`}</button>
+            </>
+          )}
+          <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => { setConfirmDel(null); setTyped('') }}>Cancel</button>
+        </Sheet>
+      )}
       {exporting && <ExportSheet contacts={data.contacts} byContact={byContact} agent={agent} onClose={() => setExporting(false)} />}
       {sorting && (
         <Sheet label="Sort by" onClose={() => setSorting(false)}>
@@ -2293,6 +2349,11 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
           <h3>More tools</h3>
           <div className="stack" style={{ marginTop: 10 }}>
             <div className="card stack">
+              <h3>Select several people</h3>
+              <p className="note">Tap people to pick them, then tag them A or B, or delete them, all at once.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setSel(new Set()) }}>Select people</button>
+            </div>
+            <div className="card stack">
               <h3>Download my people</h3>
               <p className="note">A CSV file of everyone, or just a group: A's, B's, people with an email, people with a mailing address, or people you pick. Opens in Excel, Google Sheets or Numbers.</p>
               <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setExporting(true) }}>Choose who to download</button>
@@ -2301,6 +2362,11 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
               <h3>Bring in a spreadsheet</h3>
               <p className="note">A CSV file, like a BoldTrail export. People already here are skipped.</p>
               <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setImporting(true) }}>Import CSV</button>
+            </div>
+            <div className="card stack">
+              <h3>Start over</h3>
+              <p className="note">Delete all {data.contacts.length} people and their touch history, then bring in a fresh list. Download a copy first if you might want it.</p>
+              <button className="btn danger" style={{ alignSelf: 'flex-start' }} disabled={!data.contacts.length} onClick={() => { setTools(false); setConfirmDel('all') }}>Delete everyone</button>
             </div>
             <div className="card stack">
               <h3>How often each tier comes up</h3>

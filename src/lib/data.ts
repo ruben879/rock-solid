@@ -231,6 +231,17 @@ export async function deleteContact(me: Profile, id: string) {
   await exec(me.id, [{ t: 'delete', table: 'contacts', id }])
 }
 
+/** Delete many people at once (their touch history goes with them). */
+export async function deleteContacts(ids: string[]) {
+  needOnline()
+  for (let i = 0; i < ids.length; i += 200) check(await supabase.from('contacts').delete().in('id', ids.slice(i, i + 200)))
+}
+/** Tag many people at once. */
+export async function setTiers(ids: string[], tier: Tier) {
+  needOnline()
+  for (let i = 0; i < ids.length; i += 200) check(await supabase.from('contacts').update({ tier }).in('id', ids.slice(i, i + 200)))
+}
+
 export async function importContacts(me: Profile, rows: ContactInput[]) {
   needOnline()
   const t = ymd(today())
