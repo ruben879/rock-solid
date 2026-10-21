@@ -3,8 +3,8 @@ import { admin, vapid } from './_push.js'
 
 /*
   Sends each person who turned on reminders one notification in the morning:
-  birthdays, home anniversaries and wedding anniversaries today, plus a heads-up for ones 3 days out
-  (time to get a card in the mail).
+  birthdays, home anniversaries and wedding anniversaries today, plus a heads-up 5 days out for the ones set to get a card
+  (the same day the card shows up on Today). Each person's Text / Card / Both / Off choice is followed.
 
   Runs every morning from the Vercel schedule in vercel.json. It is safe to call more than once a day:
   each phone gets at most one reminder per day.
@@ -21,19 +21,33 @@ export function todayParts(offsetDays = 0) {
   return { ymd: `${p.year}-${p.month}-${p.day}`, md: `${p.month}-${p.day}`, year: Number(p.year), weekday: p.weekday as string }
 }
 
-type Contact = { agent_id: string; first_name: string; last_name: string; birthday: string | null; home_anniversary: string | null; wedding_anniversary?: string | null }
+type Plan = 'text' | 'card' | 'both' | 'none'
+type Contact = {
+  agent_id: string; first_name: string; last_name: string; birthday: string | null; home_anniversary: string | null; wedding_anniversary?: string | null
+  birthday_plan?: Plan | null; home_plan?: Plan | null; wedding_plan?: Plan | null; follow_up_on?: string | null
+}
 const name = (c: Contact) => `${c.first_name} ${c.last_name}`.trim()
-const years = (date: string, year: number) => year - Number(date.slice(0, 4))
+// Dates saved without a year use 1904 as a placeholder: no year count for those.
+const years = (date: string, year: number) => (date.startsWith('1904') ? 0 : year - Number(date.slice(0, 4)))
 
-export function linesFor(cs: Contact[], md: string, year: number) {
+/**
+ * Lines for one day, following each person's choice in Rock Solid (the same as Today):
+ * 'day' is the day itself (text on the day, or both), 'card' is the heads-up to mail a card (card, or both).
+ */
+export function linesFor(cs: Contact[], md: string, year: number, kind: 'day' | 'card' = 'day') {
+  const ok = (p: Plan | null | undefined, on: string, c: Contact) => {
+    const plan = p ?? 'text'
+    return kind === 'card' ? plan === 'card' || plan === 'both' : plan === 'text' || plan === 'both' || c.follow_up_on === on
+  }
   const out: string[] = []
   for (const c of cs) {
-    if (c.birthday?.slice(5) === md) out.push(`${name(c)}'s birthday`)
-    if (c.home_anniversary?.slice(5) === md) {
+    const on = `${year}-${md}`
+    if (c.birthday?.slice(5) === md && ok(c.birthday_plan, on, c)) out.push(`${name(c)}'s birthday`)
+    if (c.home_anniversary?.slice(5) === md && ok(c.home_plan, on, c)) {
       const y = years(c.home_anniversary, year)
       out.push(`${name(c)}'s ${y > 0 ? `${y}-year ` : ''}home anniversary`)
     }
-    if (c.wedding_anniversary?.slice(5) === md) {
+    if (c.wedding_anniversary?.slice(5) === md && ok(c.wedding_plan, on, c)) {
       const y = years(c.wedding_anniversary, year)
       out.push(`${name(c)}'s ${y > 0 ? `${y}-year ` : ''}wedding anniversary`)
     }
@@ -65,7 +79,8 @@ export default async function handler(req: Req, res: Res) {
     if (!subs?.length) return res.status(200).json({ sent: 0, note: 'No phones signed up yet.' })
 
     const t = todayParts()
-    const soon = todayParts(3)
+    // Card heads-up 5 days out: the same day the card shows up on Today.
+    const soon = todayParts(5)
     const users = [...new Set(subs.map((s) => s.user_id))]
     const { data: contacts, error: cErr } = await db.from('contacts').select('*').in('agent_id', users)
     if (cErr) throw new Error(cErr.message)
@@ -86,7 +101,7 @@ export default async function handler(req: Req, res: Res) {
       } else {
         const mine = byAgent.get(s.user_id) ?? []
         const now = linesFor(mine, t.md, t.year)
-        const ahead = s.heads_up ? linesFor(mine, soon.md, soon.year) : []
+        const ahead = s.heads_up ? linesFor(mine, soon.md, soon.year, 'card') : []
         if (!now.length && !ahead.length) continue
         title = now.length ? `Today: ${join(now)}` : `Coming up ${soon.weekday}`
         body = [
