@@ -121,8 +121,10 @@ function useBatch(ctx: Ctx) {
   const bdAll = useMemo(() => {
     // Keep today's entries (so a done one stays checked off), but drop any whose date or choice changed.
     const byId = new Map(data.contacts.map((c) => [c.id, c]))
+    const fresh = birthdaysToday(data.contacts, data.touches)
     const seen = store.get<BdayEntry[]>(bdKey, []).filter((e) => byId.has(e.id) && entryStillValid(byId.get(e.id)!, e))
-    const now = birthdaysToday(data.contacts, data.touches).filter((e) => !seen.some((x) => x.id === e.id))
+      .map((e) => fresh.find((x) => x.id === e.id && x.kind === e.kind && x.occ === e.occ) ?? e)
+    const now = fresh.filter((e) => !seen.some((x) => x.id === e.id))
     return [...seen, ...now]
   }, [data.contacts, data.touches, bdKey])
   useEffect(() => { if (!readOnly) store.set(bdKey, bdAll) }, [bdAll, bdKey, readOnly])
@@ -355,13 +357,27 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     } catch (e) { toast((e as Error).message) }
   }
   const bdBadge = (c: Contact, bd: BdayEntry, long = false) => {
-    const m = OCCASION_META[bd.occ ?? 'birthday']
-    const yrs = m.years ? yearsOn(c, bd.occ!, bd.on) : 0
-    const label = bd.kind === 'day' ? `${m.name} today` : `${m.name} ${fmt(bd.on)}${long ? ': mail a card' : ''}`
-    return <span className={`fubadge bdbadge occ-${bd.occ ?? 'birthday'}`}>{m.icon} {label}{yrs > 0 ? ` · ${yrs} ${yrs === 1 ? 'year' : 'years'}` : ''}</span>
+    const one = (o: Occasion, first: boolean) => {
+      const m = OCCASION_META[o]
+      const yrs = m.years ? yearsOn(c, o, bd.on) : 0
+      const label = bd.kind === 'day' ? `${m.name} today` : `${m.name} ${fmt(bd.on)}${long && first ? ': mail a card' : ''}`
+      return <span key={o} className={`fubadge bdbadge occ-${o}`}>{m.icon} {label}{yrs > 0 ? ` · ${yrs} ${yrs === 1 ? 'year' : 'years'}` : ''}</span>
+    }
+    const all = [bd.occ ?? 'birthday', ...(bd.also ?? [])]
+    return all.length > 1 ? <span className="bdbadges">{all.map((o, i) => one(o, i === 0))}</span> : one(all[0], true)
   }
+  const occPhrase = (c: Contact, o: Occasion, on: string) => {
+    const y = o === 'birthday' ? 0 : yearsOn(c, o, on)
+    return o === 'birthday' ? 'birthday' : o === 'home' ? (y > 0 ? `${y}-year home anniversary` : 'home anniversary') : (y > 0 ? `${y}-year wedding anniversary` : 'wedding anniversary')
+  }
+  const andJoin = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`)
   const bdWhy = (c: Contact, bd: BdayEntry) => {
     const name = c.first_name || fullName(c)
+    if (bd.also?.length) {
+      const what = andJoin([bd.occ ?? 'birthday', ...bd.also].map((o) => occPhrase(c, o, bd.on)))
+      if (bd.kind === 'card') return `Their ${what} on ${longDay(bd.on)}. One card can celebrate them all. Mail it today so it lands in time.`
+      return `It's ${name}'s ${what} today! Send a text to celebrate.`
+    }
     const o = bd.occ ?? 'birthday'
     if (bd.kind === 'card') {
       const yrs = o === 'birthday' ? 0 : yearsOn(c, o, bd.on)

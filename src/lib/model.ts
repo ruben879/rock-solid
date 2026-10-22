@@ -404,7 +404,7 @@ export function yearsOn(c: Contact, o: Occasion, on: string) {
   return parse(on).getFullYear() - parse(v).getFullYear()
 }
 
-export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string; occ?: Occasion }
+export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string; occ?: Occasion; also?: Occasion[] }
 
 /** Is a birthday or anniversary entry still right for this person? (The date or the choice may have changed since.) */
 export function entryStillValid(c: Contact, e: BdayEntry) {
@@ -425,6 +425,7 @@ export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry
   const out: BdayEntry[] = []
   for (const c of contacts) {
     if (c.skip_until && c.skip_until > t) continue
+    const mine: BdayEntry[] = []
     for (const occ of OCCASION_LIST) {
       const d = nextOccasion(c[OCCASION_META[occ].field], now)
       if (!d) continue
@@ -438,8 +439,13 @@ export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry
         const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
         if (!sent) e = { id: c.id, kind: 'card', on, occ }
       }
-      // One spot per person: if two land together, the first one (birthday, then home, then wedding) wins.
-      if (e) { out.push(e); break }
+      if (e) mine.push(e)
+    }
+    // One spot per person. If several land together (birthday and anniversary the same day), they share it.
+    if (mine.length) {
+      const first = mine.find((x) => x.kind === 'day') ?? mine[0]
+      const also = mine.filter((x) => x !== first && x.kind === first.kind && x.on === first.on).map((x) => x.occ!)
+      out.push(also.length ? { ...first, also } : first)
     }
   }
   // Today's first, then the nearest cards.

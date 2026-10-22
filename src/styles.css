@@ -855,3 +855,6 @@ button.ghostnote u { color: var(--navy); text-underline-offset: 2px; }
 .preach div { display: flex; gap: 8px; }
 .preach .btn { flex: 1; border-color: transparent; }
 .qlabel { margin: 14px 2px -4px; font-size: 13px; color: var(--muted); }
+.bdbadges { display: flex; flex-wrap: wrap; gap: 6px; }
+.bdbadges .fubadge { margin-bottom: 0; }
+.bdbadges { margin-bottom: 6px; }
