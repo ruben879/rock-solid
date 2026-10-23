@@ -412,7 +412,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const g = goalState(ctx)
 
   // Which goals are met right now: all caught up, weekly, daily, Card a Day.
-  const flags = () => [rows.length > 0 && done === rows.length && b.waiting === 0, g.week >= agent.weekly_goal, g.today >= agent.daily_goal, g.card]
+  // The daily goal is met when every rock at the top is filled (everyone on today's list reached).
+  const flags = () => [rows.length > 0 && done === rows.length && b.waiting === 0, g.week >= agent.weekly_goal, rows.length > 0 && done === rows.length, g.card]
   const snapshot = () => { pendingCheck.current = flags() }
 
   // Celebrate only a goal that THIS log just completed, once per day/week.
@@ -427,7 +428,7 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     const list: [string, string, string, string][] = [
       [`caught-${wk}`, 'Congratulations', "You're all caught up!", "Everyone due this week has been touched. That's a rock solid week."],
       [`week-${wk}`, 'Weekly goal', 'You hit your weekly goal!', `${g.week} touches this week. Every one is a vote for the business you're building.`],
-      [`day-${dk}`, 'Daily goal', 'You hit your daily goal!', `${g.today} touches today. Same time tomorrow?`],
+      [`day-${dk}`, 'Daily goal', 'Every rock is stacked!', `All ${rows.length} on today's list reached. That's a rock solid day. Same time tomorrow?`],
       [`card-${dk}`, 'Card a Day', 'Card a Day: done!', "Today's card is written and logged."],
     ]
     const hit = list.find(([k], i) => now[i] && !before[i] && !seen[k])
