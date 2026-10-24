@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles.css'
 
+// The look someone picked (Classic or Clean), applied before the first paint.
+try { document.documentElement.dataset.skin = localStorage.getItem('rs-skin') === 'clean' ? 'clean' : 'classic' } catch { /* private mode */ }
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

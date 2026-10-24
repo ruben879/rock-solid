@@ -386,6 +386,7 @@ function Signed({ session }: { session: Session }) {
         <Sheet label="Account" onClose={() => setMenu(false)}>
           <h3>{me.full_name || me.email}</h3>
           <p className="note">{me.email} · {me.role === 'broker' ? 'Broker' : me.role === 'coach' ? 'Coach' : 'Agent'} · {brokerage?.name ?? 'Clear Rock Realty'}</p>
+          <SkinPicker />
           <PasswordSetup email={me.email} />
           <Reminders me={me} />
           <div className="menu" style={{ marginTop: 12 }}>
@@ -397,5 +398,24 @@ function Signed({ session }: { session: Session }) {
         </Sheet>
       )}
     </>
+  )
+}
+
+/** Two looks for the whole app: Classic (warm, gold rocks) and Clean (white, gray and navy). Saved on this phone. */
+function SkinPicker() {
+  const [skin, setSkin] = useState(() => (document.documentElement.dataset.skin === 'clean' ? 'clean' : 'classic'))
+  const pick = (v: 'classic' | 'clean') => {
+    setSkin(v)
+    document.documentElement.dataset.skin = v
+    try { localStorage.setItem('rs-skin', v) } catch { /* private mode */ }
+  }
+  return (
+    <div className="skinpick">
+      <span>Look</span>
+      <div className="seg4 x2" role="group" aria-label="App look">
+        <button type="button" aria-pressed={skin === 'classic'} onClick={() => pick('classic')}><i className="sw sw-classic" /> Classic</button>
+        <button type="button" aria-pressed={skin === 'clean'} onClick={() => pick('clean')}><i className="sw sw-clean" /> Clean</button>
+      </div>
+    </div>
   )
 }
