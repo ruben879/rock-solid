@@ -360,7 +360,10 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     const one = (o: Occasion, first: boolean) => {
       const m = OCCASION_META[o]
       const yrs = m.years ? yearsOn(c, o, bd.on) : 0
-      const label = bd.kind === 'day' ? `${m.name} today` : `${m.name} ${fmt(bd.on)}${long && first ? ': mail a card' : ''}`
+      const ago = daysBetween(parse(bd.on), today())
+      const label = bd.kind === 'day'
+        ? (ago > 0 ? `${m.name} was ${fmt(bd.on)}` : `${m.name} today`)
+        : `${m.name} ${ago > 0 ? `was ${fmt(bd.on)}` : fmt(bd.on)}${long && first ? (ago > 0 ? ': belated card' : ': mail a card') : ''}`
       return <span key={o} className={`fubadge bdbadge occ-${o}`}>{m.icon} {label}{yrs > 0 ? ` · ${yrs} ${yrs === 1 ? 'year' : 'years'}` : ''}</span>
     }
     const all = [bd.occ ?? 'birthday', ...(bd.also ?? [])]
@@ -373,8 +376,14 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const andJoin = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`)
   const bdWhy = (c: Contact, bd: BdayEntry) => {
     const name = c.first_name || fullName(c)
+    const left = daysBetween(today(), parse(bd.on))
+    const what = andJoin([bd.occ ?? 'birthday', ...(bd.also ?? [])].map((o) => occPhrase(c, o, bd.on)))
+    // Missed or close: it stays until it's handled, with honest wording.
+    if (bd.kind === 'day' && left < 0) return `Their ${what} was ${longDay(bd.on)}. It's not too late for a happy belated text.`
+    if (bd.kind === 'card' && left < 0) return `Their ${what} was ${longDay(bd.on)}. A belated card still says you remembered.`
+    if (bd.kind === 'card' && left === 0) return `Their ${what} is today. A card that shows up a little late still means a lot.`
+    if (bd.kind === 'card' && left < 3) return `Their ${what} is ${longDay(bd.on)}. Mail a card today; a day or two late is still a happy surprise.`
     if (bd.also?.length) {
-      const what = andJoin([bd.occ ?? 'birthday', ...bd.also].map((o) => occPhrase(c, o, bd.on)))
       if (bd.kind === 'card') return `Their ${what} on ${longDay(bd.on)}. One card can celebrate them all. Mail it today so it lands in time.`
       return `It's ${name}'s ${what} today! Send a text to celebrate.`
     }
@@ -397,15 +406,17 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     try {
       await api.setFollowUp(c, bd.on, `${SKIP_CARD_NOTE} ${o === 'birthday' ? 'Wish them a happy birthday.' : o === 'home' ? 'Happy home anniversary.' : 'Happy anniversary.'}`)
       await ctx.reload()
-      toast(`No card this time. ${c.first_name || fullName(c)} will be back on Today on their ${occWord(bd)}.`)
+      toast(daysBetween(today(), parse(bd.on)) <= 0
+        ? `No card this time. ${c.first_name || fullName(c)} stays on Today for a text.`
+        : `No card this time. ${c.first_name || fullName(c)} will be back on Today on their ${occWord(bd)}.`)
     } catch (e) { toast((e as Error).message) }
   }
   const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && (
     <div className="bdopts">
-      {planOf(c, bd.occ ?? 'birthday') !== 'both' && (c.follow_up_on === bd.on
+      {planOf(c, bd.occ ?? 'birthday') !== 'both' && daysBetween(today(), parse(bd.on)) > 0 && (c.follow_up_on === bd.on
         ? <p className="bdagain on"><ICheck size={14} /> They'll be back on Today on their {occWord(bd)}</p>
         : <button className="bdagain" onClick={() => remindOnDay(c, bd)}>🔔 Send a card and remind me on the day</button>)}
-      <button className="bdagain skip" onClick={() => skipCard(c, bd)}>Skip the card, just remind me on the day</button>
+      <button className="bdagain skip" onClick={() => skipCard(c, bd)}>{daysBetween(today(), parse(bd.on)) <= 0 ? "Skip the card, I'll send a text instead" : 'Skip the card, just remind me on the day'}</button>
     </div>
   )
   const todo = rows.filter((c) => !isDone(c))

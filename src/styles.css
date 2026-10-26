@@ -927,3 +927,4 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .bdopts { display: grid; gap: 8px; margin-top: 10px; }
 .bdopts .bdagain { margin-top: 0; }
 .bdagain.skip { border-style: solid; border-color: var(--line); color: var(--muted); }
+.person.bd .why { white-space: normal; }

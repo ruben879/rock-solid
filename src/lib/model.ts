@@ -392,10 +392,15 @@ export const birthdayPlanOf = (c: Contact) => planOf(c, 'birthday')
 export function nextOccasion(date: string | null | undefined, from = today()): Date | null {
   if (!date) return null
   const b = parse(date)
-  let d = new Date(from.getFullYear(), b.getMonth(), b.getDate(), 12)
-  if (daysBetween(from, d) < -7) d = new Date(from.getFullYear() + 1, b.getMonth(), b.getDate(), 12)
-  return d
+  // The most recent one still being worked on (up to LOOKBACK days ago), otherwise the next one.
+  for (const y of [from.getFullYear() - 1, from.getFullYear(), from.getFullYear() + 1]) {
+    const d = new Date(y, b.getMonth(), b.getDate(), 12)
+    if (daysBetween(from, d) >= -LOOKBACK) return d
+  }
+  return null
 }
+/** A missed birthday or anniversary stays on Today until it's handled, for up to this many days after. */
+export const LOOKBACK = 30
 export const nextBirthday = (c: Contact, from = today()) => nextOccasion(c.birthday, from)
 /** Years since the original date, on this year's date (home and wedding anniversaries). */
 export function yearsOn(c: Contact, o: Occasion, on: string) {
@@ -436,14 +441,16 @@ export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry
       const on = ymd(d)
       const left = daysBetween(now, d)
       const plan = planOf(c, occ)
-      let e: BdayEntry | null = null
-      if (left === 0 && (plan === 'text' || plan === 'both' || c.follow_up_on === on)) e = { id: c.id, kind: 'day', on, occ }
-      else if (left <= CARD_EARLY.from && left >= CARD_EARLY.to && (plan === 'card' || plan === 'both') && !skippedCard(c, on)) {
+      // Day-of: on the day, and after it until they've been reached (a happy belated text).
+      const reached = touches.some((x) => x.contact_id === c.id && !x.is_group && x.occurred_on >= on)
+      const dayOk = plan === 'text' || plan === 'both' || c.follow_up_on === on
+      if (dayOk && (left === 0 || (left < 0 && !reached))) mine.push({ id: c.id, kind: 'day', on, occ })
+      // Card: from 5 days before until a card is logged or skipped, even after the day (a belated card).
+      if (left <= CARD_EARLY.from && (plan === 'card' || plan === 'both') && !skippedCard(c, on)) {
         const since = ymd(addDays(d, -10))
         const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
-        if (!sent) e = { id: c.id, kind: 'card', on, occ }
+        if (!sent) mine.push({ id: c.id, kind: 'card', on, occ })
       }
-      if (e) mine.push(e)
     }
     // One spot per person. If several land together (birthday and anniversary the same day), they share it.
     if (mine.length) {
