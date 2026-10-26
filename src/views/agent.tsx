@@ -419,6 +419,13 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       <button className="bdagain skip" onClick={() => skipCard(c, bd)}>{daysBetween(today(), parse(bd.on)) <= 0 ? "Skip the card, I'll send a text instead" : 'Skip the card, just remind me on the day'}</button>
     </div>
   )
+  // Extra birthdays and anniversaries roll off once they've been handled (texted, called, or a card for a card).
+  const moreOpen = b.bdMore.filter((e) => {
+    const c = byId.get(e.id)
+    if (!c) return false
+    if (e.kind === 'card') return !cardSent(c, e.on)
+    return !data.touches.some((t) => t.contact_id === c.id && !t.is_group && t.occurred_on >= e.on)
+  })
   const todo = rows.filter((c) => !isDone(c))
   const doneRows = rows.filter((c) => isDone(c))
   const done = doneRows.length
@@ -708,9 +715,9 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </>
       )}
 
-      {b.bdMore.length > 0 && (
+      {moreOpen.length > 0 && (
         <p className="bdmore">🎉 Also celebrating:{' '}
-          {b.bdMore.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.occ && e.occ !== 'birthday' ? ` ${OCCASION_META[e.occ].icon}` : ''}{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
+          {moreOpen.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.occ && e.occ !== 'birthday' ? ` ${OCCASION_META[e.occ].icon}` : ''}{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
         </p>
       )}
       {doneRows.length > 0 && (
