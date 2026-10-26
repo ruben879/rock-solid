@@ -379,8 +379,8 @@ export const hasYear = (d: string | null | undefined) => !!d && !d.startsWith(NO
 export type Occasion = 'birthday' | 'home' | 'wedding'
 export const OCCASION_META: Record<Occasion, { field: 'birthday' | 'home_anniversary' | 'wedding_anniversary'; plan: 'birthday_plan' | 'home_plan' | 'wedding_plan'; name: string; icon: string; card: string; years: boolean }> = {
   birthday: { field: 'birthday', plan: 'birthday_plan', name: 'Birthday', icon: '🎂', card: 'Birthday', years: false },
-  home: { field: 'home_anniversary', plan: 'home_plan', name: 'Home anniversary', icon: '🏡', card: 'Anniversary', years: true },
-  wedding: { field: 'wedding_anniversary', plan: 'wedding_plan', name: 'Wedding anniversary', icon: '💍', card: 'Anniversary', years: true },
+  home: { field: 'home_anniversary', plan: 'home_plan', name: 'Home anniversary', icon: '🏡', card: 'Home Anniversary', years: true },
+  wedding: { field: 'wedding_anniversary', plan: 'wedding_plan', name: 'Wedding anniversary', icon: '💍', card: 'Wedding Anniversary', years: true },
 }
 export const OCCASION_LIST: Occasion[] = ['birthday', 'home', 'wedding']
 /** Card prompts show this many days before the day, until a card is logged. */

@@ -1516,7 +1516,7 @@ function DateField({ label, value, onChange, ro }: { label: string; value: strin
 // Card a Day: one question at a time, like the Shortcut
 // ======================================================================
 const RELS = ['Friend', 'Family', 'Client', 'Agent/Colleague', 'Vendor', 'Other']
-const OCCASIONS = ['Thank You', 'Birthday', 'Anniversary', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
+const OCCASIONS = ['Thank You', 'Birthday', 'Home Anniversary', 'Wedding Anniversary', 'Just Because', 'Congratulations', 'Encouragement', 'Follow-Up', 'Other']
 
 function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; preset?: string; occasion?: string; onBefore?: () => void; onLogged?: (r: { counts: boolean; firstToday: boolean }) => void }) {
   const { data, agent } = ctx
@@ -1526,6 +1526,7 @@ function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; pr
   const [name, setName] = useState(preset ?? '')
   const [rel, setRel] = useState('')
   const [occ, setOcc] = useState(occasion ?? '')
+  const [otherOn, setOtherOn] = useState(false)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -1560,7 +1561,7 @@ function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; pr
       const r = await api.logCard(ctx.me, data.cards, data.contacts, { name, relationship: rel, occasion: occ, note })
       await ctx.reload()
       toast(r.repeat ? `Card logged for ${who}. It counts as a touch, not toward Card a Day.` : `Card logged for ${who}!`)
-      setName(preset ?? ''); setRel(''); setOcc(''); setNote(''); setStep(start)
+      setName(preset ?? ''); setRel(''); setOcc(''); setOtherOn(false); setNote(''); setStep(start)
       onLogged?.({ counts: !r.repeat, firstToday: !r.repeat && !hadCardToday })
     } catch (err) {
       toast(`That didn't save: ${(err as Error).message}`)
@@ -1600,8 +1601,16 @@ function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; pr
       )}
       {step === 2 && (
         <>
-          <p className="q">What kind of card?</p>
-          <div className="big-opts">{OCCASIONS.map((r) => <button key={r} aria-pressed={occ === r} onClick={() => { setOcc(r); setStep(3) }}>{r}</button>)}</div>
+          <p className="q">What's the reason for this card?</p>
+          <div className="big-opts">{OCCASIONS.map((r) => <button key={r} aria-pressed={r === 'Other' ? otherOn : occ === r} onClick={() => { if (r === 'Other') { setOtherOn(true); setOcc('') } else { setOtherOn(false); setOcc(r); setStep(3) } }}>{r}</button>)}</div>
+          {otherOn && (
+            <form className="stack" style={{ marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); if (occ.trim()) setStep(3) }}>
+              <label className="field"><span>What's it for?</span>
+                <input autoFocus placeholder="New baby, get well, new job…" maxLength={60} value={occ} onChange={(e) => setOcc(e.target.value)} />
+              </label>
+              <button className="btn primary" disabled={!occ.trim()}>Next</button>
+            </form>
+          )}
         </>
       )}
       {step === 3 && (
