@@ -337,9 +337,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     const since = ymd(addDays(parse(on), -10))
     return data.touches.some((t) => t.contact_id === c.id && !t.is_group && t.kind === 'card' && t.occurred_on >= since)
   }
+  // Reached on or after the day itself (only counts once the day has come).
+  const reachedSince = (c: Contact, on: string) => on <= tk && data.touches.some((t) => t.contact_id === c.id && !t.is_group && t.occurred_on >= on)
   const isDone = (c: Contact) => {
     const bd = bdOf(c)
-    if (bd) return bd.kind === 'card' ? cardSent(c, bd.on) : touchedToday.has(c.id)
+    if (bd) return bd.kind === 'card' ? cardSent(c, bd.on) || reachedSince(c, bd.on) : touchedToday.has(c.id)
     return isFu(c) ? touchedToday.has(c.id) : b.touchedThisWeek.has(c.id)
   }
   const rows = [...b.bdays.map((e) => e.id), ...b.fuIds, ...b.ids].map((id) => byId.get(id)).filter(Boolean) as Contact[]
@@ -423,8 +425,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   const moreOpen = b.bdMore.filter((e) => {
     const c = byId.get(e.id)
     if (!c) return false
-    if (e.kind === 'card') return !cardSent(c, e.on)
-    return !data.touches.some((t) => t.contact_id === c.id && !t.is_group && t.occurred_on >= e.on)
+    if (e.kind === 'card') return !cardSent(c, e.on) && !reachedSince(c, e.on)
+    return !reachedSince(c, e.on)
   })
   const todo = rows.filter((c) => !isDone(c))
   const doneRows = rows.filter((c) => isDone(c))

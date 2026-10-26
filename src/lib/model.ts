@@ -449,7 +449,8 @@ export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry
       if (left <= CARD_EARLY.from && (plan === 'card' || plan === 'both') && !skippedCard(c, on)) {
         const since = ymd(addDays(d, -10))
         const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
-        if (!sent) mine.push({ id: c.id, kind: 'card', on, occ })
+        // Once the day has come, reaching them any way (a text on the day, a call) settles it too.
+        if (!sent && !(left <= 0 && reached)) mine.push({ id: c.id, kind: 'card', on, occ })
       }
     }
     // One spot per person. If several land together (birthday and anniversary the same day), they share it.
