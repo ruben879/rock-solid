@@ -924,3 +924,6 @@ html[data-skin="clean"] .mquote cite { color: #c9d6ee; }
 html[data-skin="clean"] .toast-act { color: #c9d6ee; }
 html[data-skin="clean"] .reach .btn.gold, html[data-skin="clean"] .preach .btn.gold { background: #fff; color: #1b2d50; }
 html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bdopts { display: grid; gap: 8px; margin-top: 10px; }
+.bdopts .bdagain { margin-top: 0; }
+.bdagain.skip { border-style: solid; border-color: var(--line); color: var(--muted); }

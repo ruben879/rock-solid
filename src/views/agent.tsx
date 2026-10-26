@@ -4,7 +4,7 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, birthdaysToday, entryStillValid, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
+  planNumbers, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
@@ -392,10 +392,21 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     const wy = yearsOn(c, 'wedding', bd.on)
     return wy > 0 ? `${wy} years married today. Send ${name} a happy anniversary text.` : `Send ${name} a happy anniversary text.`
   }
-  const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && planOf(c, bd.occ ?? 'birthday') !== 'both' && (
-    c.follow_up_on === bd.on
-      ? <p className="bdagain on"><ICheck size={14} /> They'll be back on Today on their {occWord(bd)}</p>
-      : <button className="bdagain" onClick={() => remindOnDay(c, bd)}>🔔 Remind me again on their {occWord(bd)}</button>
+  const skipCard = async (c: Contact, bd: BdayEntry) => {
+    const o = bd.occ ?? 'birthday'
+    try {
+      await api.setFollowUp(c, bd.on, `${SKIP_CARD_NOTE} ${o === 'birthday' ? 'Wish them a happy birthday.' : o === 'home' ? 'Happy home anniversary.' : 'Happy anniversary.'}`)
+      await ctx.reload()
+      toast(`No card this time. ${c.first_name || fullName(c)} will be back on Today on their ${occWord(bd)}.`)
+    } catch (e) { toast((e as Error).message) }
+  }
+  const bdRemind = (c: Contact, bd: BdayEntry) => bd.kind === 'card' && !readOnly && (
+    <div className="bdopts">
+      {planOf(c, bd.occ ?? 'birthday') !== 'both' && (c.follow_up_on === bd.on
+        ? <p className="bdagain on"><ICheck size={14} /> They'll be back on Today on their {occWord(bd)}</p>
+        : <button className="bdagain" onClick={() => remindOnDay(c, bd)}>🔔 Send a card and remind me on the day</button>)}
+      <button className="bdagain skip" onClick={() => skipCard(c, bd)}>Skip the card, just remind me on the day</button>
+    </div>
   )
   const todo = rows.filter((c) => !isDone(c))
   const doneRows = rows.filter((c) => isDone(c))

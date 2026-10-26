@@ -404,6 +404,10 @@ export function yearsOn(c: Contact, o: Occasion, on: string) {
   return parse(on).getFullYear() - parse(v).getFullYear()
 }
 
+/** A follow-up note that means "no card this year, just remind me on the day". */
+export const SKIP_CARD_NOTE = 'No card this year.'
+const skippedCard = (c: Contact, on: string) => c.follow_up_on === on && !!c.follow_up_note?.startsWith(SKIP_CARD_NOTE)
+
 export type BdayEntry = { id: string; kind: 'day' | 'card'; on: string; occ?: Occasion; also?: Occasion[] }
 
 /** Is a birthday or anniversary entry still right for this person? (The date or the choice may have changed since.) */
@@ -413,7 +417,7 @@ export function entryStillValid(c: Contact, e: BdayEntry) {
   if (!d || ymd(d) !== e.on) return false
   if (c.skip_until && c.skip_until > ymd(today())) return false
   const plan = planOf(c, occ)
-  return e.kind === 'card' ? plan === 'card' || plan === 'both' : plan === 'text' || plan === 'both' || c.follow_up_on === e.on
+  return e.kind === 'card' ? (plan === 'card' || plan === 'both') && !skippedCard(c, e.on) : plan === 'text' || plan === 'both' || c.follow_up_on === e.on
 }
 /**
  * Who has a birthday or anniversary to celebrate today: day-of texts (plan text or both, or a "remind me on the day"
@@ -434,7 +438,7 @@ export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry
       const plan = planOf(c, occ)
       let e: BdayEntry | null = null
       if (left === 0 && (plan === 'text' || plan === 'both' || c.follow_up_on === on)) e = { id: c.id, kind: 'day', on, occ }
-      else if (left <= CARD_EARLY.from && left >= CARD_EARLY.to && (plan === 'card' || plan === 'both')) {
+      else if (left <= CARD_EARLY.from && left >= CARD_EARLY.to && (plan === 'card' || plan === 'both') && !skippedCard(c, on)) {
         const since = ymd(addDays(d, -10))
         const sent = touches.some((x) => x.contact_id === c.id && !x.is_group && x.kind === 'card' && x.occurred_on >= since)
         if (!sent) e = { id: c.id, kind: 'card', on, occ }
