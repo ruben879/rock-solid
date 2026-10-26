@@ -539,11 +539,6 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
       )}
       {gapInfo && <GapSheet have={data.contacts.length} need={plan.dbNeeded} today={rows.length} atPlan={Math.min(30, dailyForPeople(plan.dbNeeded, data.contacts, agent))}
         onClose={() => setGapInfo(false)} onAdd={() => { setGapInfo(false); onGo?.('db') }} onGoals={() => { setGapInfo(false); openGoalWizard() }} />}
-      {b.bdMore.length > 0 && (
-        <p className="bdmore">🎉 Also celebrating:{' '}
-          {b.bdMore.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.occ && e.occ !== 'birthday' ? ` ${OCCASION_META[e.occ].icon}` : ''}{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
-        </p>
-      )}
       <div className="todayrow">
         {rows.length > 0 ? <p className="stones-l"><b>{done} of {rows.length}</b> done{b.round > 1 ? ` (set ${b.round})` : ''}</p> : <span />}
         {!readOnly && <button className="recpill" onClick={() => setRecording(true)}><IPlus size={18} /> Record a touch</button>}
@@ -713,6 +708,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         </>
       )}
 
+      {b.bdMore.length > 0 && (
+        <p className="bdmore">🎉 Also celebrating:{' '}
+          {b.bdMore.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.occ && e.occ !== 'birthday' ? ` ${OCCASION_META[e.occ].icon}` : ''}{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
+        </p>
+      )}
       {doneRows.length > 0 && (
         <details className="donelist">
           <summary>Done this week ({doneRows.length})</summary>
