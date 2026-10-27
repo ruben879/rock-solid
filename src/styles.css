@@ -983,3 +983,6 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .couple b { display: block; font-weight: 600; }
 .couple small { color: var(--muted); font-size: 13px; }
 .couplechip { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.calnav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.calnav > span { flex: 1; text-align: center; }
+.calnav .iconbtn:disabled { opacity: .3; }

@@ -1790,6 +1790,7 @@ function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfile
   for (let d = monthStart(); ymd(d) <= tk; d = addDays(d, 1)) if (cov.has(ymd(d))) monthDays++
   const bankedAhead = [...cov.covered.keys()].filter((k) => k > tk).length
   const [dayOpen, setDayOpen] = useState<string | null>(null)
+  const [monthOff, setMonthOff] = useState(0)
   const yearCount = counting.filter((c) => c.sent_on.startsWith(String(today().getFullYear()))).length
 
   function logged(r: { firstToday: boolean }) {
@@ -1806,7 +1807,9 @@ function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfile
     onProfileChange?.()
   }
 
-  const first = monthStart()
+  // Look back or ahead a month at a time (ahead shows days already covered by extra cards).
+  const base = monthStart()
+  const first = new Date(base.getFullYear(), base.getMonth() + monthOff, 1, 12)
   const pad = first.getDay() // Sunday first
   const dim = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   return (
@@ -1828,7 +1831,19 @@ function CardADay({ ctx, onProfileChange, onBack, extra }: { ctx: Ctx; onProfile
         </div>
       )}
 
-      <div className="grp">{today().toLocaleDateString('en-US', { month: 'long' })}: {monthDays} of {today().getDate()} days</div>
+      <div className="grp calnav">
+        <button className="iconbtn" aria-label="Previous month" disabled={monthOff <= -11} onClick={() => setMonthOff(monthOff - 1)}><IChevL /></button>
+        <span>{(() => {
+          const label = first.toLocaleDateString('en-US', { month: 'long', ...(first.getFullYear() !== today().getFullYear() ? { year: 'numeric' } : {}) })
+          const dimN = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+          let n = 0
+          for (let i = 1; i <= dimN; i++) if (cov.has(ymd(new Date(first.getFullYear(), first.getMonth(), i, 12)))) n++
+          if (monthOff === 0) return `${label}: ${monthDays} of ${today().getDate()} days`
+          if (monthOff < 0) return `${label}: ${n} of ${dimN} days`
+          return n ? `${label}: ${n} ${n === 1 ? 'day' : 'days'} covered ahead` : `${label}: nothing banked yet`
+        })()}</span>
+        <button className="iconbtn" aria-label="Next month" disabled={monthOff >= 3} onClick={() => setMonthOff(monthOff + 1)}><IChevR /></button>
+      </div>
       <div className="card">
         <div className="cal">
           {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x, i) => <div key={i} className="h">{x}</div>)}
