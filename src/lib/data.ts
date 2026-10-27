@@ -153,7 +153,7 @@ export function splitSpheres(d: AgentData): { client: AgentData; recruit: Recrui
 }
 
 // ---------- Recruiting ----------
-const recruitErr = (m: string) => (/sphere|stage|temperature|kind_check|joined_on|meeting_on/.test(m) ? 'Recruiting needs the 0016 SQL run in Supabase first.' : m)
+const recruitErr = (m: string) => (/sphere|stage|temperature|kind_check|joined_on|meeting_on/.test(m) ? 'The Agents view needs the 0016 SQL run in Supabase first.' : m)
 /** Add or change a recruit. */
 export async function saveRecruit(me: Profile, input: ContactInput, id?: string) {
   needOnline()

@@ -74,7 +74,7 @@ export function AgentsOverview({ me, team, brokerage, onOpen, onCheer }: { me: P
 // ======================================================================
 // Team admin (broker): invites, roles, coaches
 // ======================================================================
-export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]; onChange: () => void }) {
+export function TeamAdmin({ me, team, brokerage, onChange }: { me: Profile; team: Profile[]; brokerage: Brokerage | null; onChange: () => void }) {
   const toast = useToast()
   const [invites, setInvites] = useState<api.Invite[]>([])
   const [f, setF] = useState<api.Invite>({ email: '', full_name: '', role: 'agent', coach_email: '' })
@@ -163,7 +163,7 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
       <div className="grp">Signed in ({team.length})</div>
       <div className="tblwrap">
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Coach</th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Coach</th><th>Agents view</th></tr></thead>
           <tbody>
             {team.map((p) => (
               <tr key={p.id}>
@@ -179,6 +179,19 @@ export function TeamAdmin({ me, team, onChange }: { me: Profile; team: Profile[]
                     <option value="">None</option>
                     {coaches.filter((c) => c.id !== p.id).map((c) => <option key={c.id} value={c.id}>{nameOf(c)}</option>)}
                   </select>
+                </td>
+                <td>
+                  {/* Recruiting and retention: always on for brokers, and for anyone the broker turns it on for (like a recruiter). */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                    <input type="checkbox" style={{ width: 20, height: 20 }} disabled={p.role === 'broker' || !brokerage}
+                      checked={p.role === 'broker' || !!brokerage?.settings?.recruiters?.includes(p.id)}
+                      onChange={(e) => {
+                        const cur = brokerage?.settings?.recruiters ?? []
+                        const next = e.target.checked ? [...new Set([...cur, p.id])] : cur.filter((x) => x !== p.id)
+                        if (brokerage) act(() => api.saveBrokerageSettings(brokerage, { recruiters: next }), e.target.checked ? `${nameOf(p)} can use the Agents view.` : `Agents view turned off for ${nameOf(p)}.`)
+                      }} />
+                    {p.role === 'broker' ? 'Always' : 'On'}
+                  </label>
                 </td>
               </tr>
             ))}

@@ -14,6 +14,8 @@ export interface Brokerage {
     touch_mix?: Record<string, number>
     monthly_goals?: { call?: number; text?: number; card?: number }
     morning_note?: { id: string; text: string; from: string; starts: string; ends: string } | null
+    /** People (besides brokers) the broker has given the Agents view (recruiting and retention). */
+    recruiters?: string[]
   }
 }
 
@@ -559,3 +561,6 @@ export function joinAnniversaries(recruits: Contact[]) {
     .filter((c) => c.stage === 'joined' && c.joined_on && c.joined_on.slice(5) === md && Number(c.joined_on.slice(0, 4)) < y)
     .map((c) => ({ c, years: y - Number(c.joined_on!.slice(0, 4)) }))
 }
+
+/** The Agents view (recruiting and retention) is for brokers and anyone the broker turns it on for. */
+export const canRecruit = (me: Profile, b: Brokerage | null) => me.role === 'broker' || !!b?.settings?.recruiters?.includes(me.id)

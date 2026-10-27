@@ -30,7 +30,7 @@ export function SphereSwitch({ value, onChange }: { value: Sphere; onChange: (s:
   return (
     <div className="seg4 x2 sphereswitch" role="group" aria-label="Which people">
       <button type="button" aria-pressed={value === 'client'} onClick={() => onChange('client')}>My Sphere</button>
-      <button type="button" aria-pressed={value === 'recruit'} onClick={() => onChange('recruit')}>Recruiting</button>
+      <button type="button" aria-pressed={value === 'recruit'} onClick={() => onChange('recruit')}>Agents</button>
     </div>
   )
 }
@@ -75,16 +75,16 @@ export function RecruitToday({ rc, onBoard }: { rc: RCtx; onBoard: () => void })
   return (
     <section>
       <div className="rhead">
-        <h2>Recruiting</h2>
-        <button className="btn primary" onClick={() => setAdding(true)}><IPlus size={18} /> Add recruit</button>
+        <h2>Agents</h2>
+        <button className="btn primary" onClick={() => setAdding(true)}><IPlus size={18} /> Add agent</button>
       </div>
       {cooling > 0 && <p className="rcool">🧊 <b>{cooling} {cooling === 1 ? 'conversation' : 'conversations'} cooling off.</b> A quick touch keeps them warm.</p>}
 
       {recruits.contacts.length === 0 ? (
         <div className="card empty" style={{ marginTop: 16 }}>
-          <h3 style={{ color: 'var(--ink)', marginBottom: 6 }}>Your recruiting pipeline starts here</h3>
-          <p>Add agents you've met, been referred to, or done a deal across from. Rock Solid keeps the conversation from going cold.</p>
-          <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setAdding(true)}>Add a recruit</button>
+          <h3 style={{ color: 'var(--ink)', marginBottom: 6 }}>Your agent pipeline starts here</h3>
+          <p>Add agents you'd love to have in the office: people you've met, been referred to, or done a deal across from. Rock Solid keeps the conversation from going cold, and keeps you close to the agents who join.</p>
+          <button className="btn primary" style={{ marginTop: 14 }} onClick={() => setAdding(true)}>Add an agent</button>
         </div>
       ) : (
         <>
@@ -203,14 +203,14 @@ export function RecruitBoard({ rc }: { rc: RCtx }) {
     <section>
       <div className="rhead">
         <h2>Pipeline<small>{recruits.contacts.length}</small></h2>
-        <button className="btn primary" onClick={() => setAdding(true)}><IPlus size={18} /> Add recruit</button>
+        <button className="btn primary" onClick={() => setAdding(true)}><IPlus size={18} /> Add agent</button>
       </div>
       <div className="stats rstats">
-        <div className="stat"><div className="n">{recruits.contacts.filter((c) => c.stage !== 'nofit').length}</div><div className="l">Recruits</div></div>
+        <div className="stat"><div className="n">{recruits.contacts.filter((c) => c.stage !== 'nofit').length}</div><div className="l">In the pipeline</div></div>
         <div className="stat"><div className="n">{talking}</div><div className="l">In conversation</div></div>
         <div className="stat"><div className="n">{joinedYear}</div><div className="l">Joined in {y}</div></div>
       </div>
-      <div className="search" style={{ marginTop: 12 }}><ISearch size={20} /><input type="search" placeholder="Find a recruit or brokerage" aria-label="Find a recruit" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+      <div className="search" style={{ marginTop: 12 }}><ISearch size={20} /><input type="search" placeholder="Find an agent or brokerage" aria-label="Find an agent" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       <div className="rboard">
         {STAGES.map((s) => {
           const col = list.filter((c) => (c.stage ?? 'cold') === s).sort((a, b) => (lastRecruitTouch(a, recruits.touches) ?? '').localeCompare(lastRecruitTouch(b, recruits.touches) ?? ''))
@@ -351,7 +351,7 @@ function RecruitSheet({ rc, c, onClose }: { rc: RCtx; c: Contact; onClose: () =>
       {moving && (
         <Sheet label="Move to My Sphere" onClose={() => setMoving(false)}>
           <h3>Move {name} to My Sphere?</h3>
-          <p className="note">They'll leave Recruiting and show up in your People and Today like any client. Their history and notes come along.</p>
+          <p className="note">They'll leave Agents and show up in your People and Today like any client. Their history and notes come along.</p>
           <button className="btn primary lg block" style={{ marginTop: 12 }} onClick={async () => { try { await api.moveSphere(c, 'client'); await rc.reload(); toast(`${name} moved to My Sphere.`); onClose() } catch (e) { toast((e as Error).message) } }}>Move to My Sphere</button>
           <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setMoving(false)}>Cancel</button>
         </Sheet>
@@ -419,14 +419,14 @@ function RecruitEdit({ rc, c, onClose }: { rc: RCtx; c: Contact | null; onClose:
       }
       await api.saveRecruit(rc.me, input, c?.id)
       await rc.reload()
-      toast(c ? 'Saved.' : `${f.first_name.trim()} added to Recruiting.`)
+      toast(c ? 'Saved.' : `${f.first_name.trim()} added to Agents.`)
       onClose()
     } catch (err) { toast((err as Error).message); setBusy(false) }
   }
   return (
-    <Sheet label={c ? 'Recruit details' : 'Add a recruit'} onClose={onClose}>
+    <Sheet label={c ? 'Agent details' : 'Add an agent'} onClose={onClose}>
       <form onSubmit={submit} className="stack">
-        <h3>{c ? fullName(c) : 'Add a recruit'}</h3>
+        <h3>{c ? fullName(c) : 'Add an agent'}</h3>
         {!c && <p className="note" style={{ marginTop: -6 }}>Someone you've met, been referred to, or done a deal across from.</p>}
         <div className="ed">
           <label className="field"><span>First name</span><input required value={f.first_name} onChange={set('first_name')} /></label>
@@ -453,7 +453,7 @@ function RecruitEdit({ rc, c, onClose }: { rc: RCtx; c: Contact | null; onClose:
         )}
         <MonthDayField label="Birthday" ro={false} value={f.birthday} onChange={(v) => setF({ ...f, birthday: v })} />
         <label className="field"><span>Notes</span><textarea value={f.notes} onChange={set('notes')} placeholder="What they care about, what they've said about their brokerage" /></label>
-        <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : c ? 'Save' : 'Add recruit'}</button>
+        <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : c ? 'Save' : 'Add agent'}</button>
         <button type="button" className="btn ghost block" onClick={onClose}>Cancel</button>
       </form>
     </Sheet>

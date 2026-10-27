@@ -355,7 +355,7 @@ function Signed({ session }: { session: Session }) {
               </div>
             )}
             {(me.role !== 'broker' || teamView === 'agents') && <AgentsOverview me={me} team={team} brokerage={brokerage} onOpen={(p) => { setViewing(p); go('week') }} onCheer={setCheering} />}
-            {me.role === 'broker' && teamView === 'invite' && <TeamAdmin me={me} team={team} onChange={loadProfile} />}
+            {me.role === 'broker' && teamView === 'invite' && <TeamAdmin me={me} team={team} brokerage={brokerage} onChange={loadProfile} />}
             {me.role === 'broker' && teamView === 'draw' && <DrawingView me={me} team={team} brokerage={brokerage} />}
             {me.role === 'broker' && teamView === 'note' && <MorningNoteEditor me={me} brokerage={brokerage} onSaved={loadProfile} />}
           </>

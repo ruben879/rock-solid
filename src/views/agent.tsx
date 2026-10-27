@@ -4,7 +4,7 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
+  planNumbers, canRecruit, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
@@ -60,22 +60,22 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
   if (!data) return <p className="muted" style={{ marginTop: 24 }}>Loading…</p>
   const agent = auto && fromPeople ? { ...props.agent, daily_goal: fromPeople, weekly_goal: fromPeople * 5 } : props.agent
   const ctx: Ctx = { ...props, agent, data, reload, goal: props.brokerage?.settings?.touch_goal ?? 36 }
-  const canRecruit = own && props.me.role === 'broker'
+  const canRec = own && canRecruit(props.me, props.brokerage)
   const rc: RCtx = { me: props.me, recruits: recruits ?? { contacts: [], touches: [] }, reload }
   return (
     <>
-      {props.tab === 'week' && (canRecruit && sToday === 'recruit'
+      {props.tab === 'week' && (canRec && sToday === 'recruit'
         ? <><SphereSwitch value={sToday} onChange={setSToday} /><RecruitToday rc={rc} onBoard={() => { setSPeople('recruit'); props.onGo?.('db') }} /></>
-        : <>{canRecruit && <SphereSwitch value={sToday} onChange={setSToday} />}<Today ctx={ctx} onGo={props.onGo} /></>)}
+        : <>{canRec && <SphereSwitch value={sToday} onChange={setSToday} />}<Today ctx={ctx} onGo={props.onGo} /></>)}
       {props.tab === 'cards' && (props.readOnly
         ? <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />
         : <Together me={props.me} cad={cadInfo(data.cards)}
             renderCad={(back, feed) => <CardADay ctx={ctx} onProfileChange={props.onProfileChange} onBack={back} extra={feed} />}
             renderLog={(kinds, close) => <ChallengeLog ctx={ctx} kinds={kinds} onClose={close} />} />)}
       {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
-      {props.tab === 'db' && (canRecruit && sPeople === 'recruit'
+      {props.tab === 'db' && (canRec && sPeople === 'recruit'
         ? <><SphereSwitch value={sPeople} onChange={setSPeople} /><RecruitBoard rc={rc} /></>
-        : <>{canRecruit && <SphereSwitch value={sPeople} onChange={setSPeople} />}<People ctx={ctx} onProfileChange={props.onProfileChange} /></>)}
+        : <>{canRec && <SphereSwitch value={sPeople} onChange={setSPeople} />}<People ctx={ctx} onProfileChange={props.onProfileChange} /></>)}
       {props.tab === 'stool' && <StoolPage agent={agent} data={data} onBack={() => props.onGo?.('week')} />}
       {own && <GoalWizardHost me={props.me} agent={props.agent} contacts={data.contacts} onSaved={props.onProfileChange} />}
     </>
@@ -1248,14 +1248,14 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         {!ctx.readOnly && <button className="btn primary" style={{ flex: 1 }} onClick={onEdit}>Edit details</button>}
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>Close</button>
       </div>
-      {!ctx.readOnly && ctx.me.role === 'broker' && ctx.agent.id === ctx.me.id && (
-        <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setToRecruit(true)}>Move to Recruiting</button>
+      {!ctx.readOnly && canRecruit(ctx.me, ctx.brokerage) && ctx.agent.id === ctx.me.id && (
+        <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setToRecruit(true)}>Move to Agents</button>
       )}
       {toRecruit && (
-        <Sheet label="Move to Recruiting" onClose={() => setToRecruit(false)}>
-          <h3>Move {live.first_name || fullName(live)} to Recruiting?</h3>
-          <p className="note">They'll leave your client People, Today and counts, and start in your pipeline at Cold, on Watch. Their history and notes come along. You can move them back any time.</p>
-          <button className="btn primary lg block" style={{ marginTop: 12 }} onClick={async () => { try { await api.moveSphere(live, 'recruit'); await ctx.reload(); toast(`${live.first_name} moved to Recruiting.`); onClose() } catch (e) { toast((e as Error).message) } }}>Move to Recruiting</button>
+        <Sheet label="Move to Agents" onClose={() => setToRecruit(false)}>
+          <h3>Move {live.first_name || fullName(live)} to Agents?</h3>
+          <p className="note">They'll leave your client People, Today and counts, and start in your Agents pipeline at Cold, on Watch. Their history and notes come along. You can move them back any time.</p>
+          <button className="btn primary lg block" style={{ marginTop: 12 }} onClick={async () => { try { await api.moveSphere(live, 'recruit'); await ctx.reload(); toast(`${live.first_name} moved to Agents.`); onClose() } catch (e) { toast((e as Error).message) } }}>Move to Agents</button>
           <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setToRecruit(false)}>Cancel</button>
         </Sheet>
       )}
