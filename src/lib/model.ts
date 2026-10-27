@@ -61,6 +61,8 @@ export interface Contact {
   birthday_plan?: BirthdayPlan | null
   home_plan?: BirthdayPlan | null
   wedding_plan?: BirthdayPlan | null
+  /** Spouse or partner (linked both ways). One card addressed to both counts for both. */
+  partner_id?: string | null
   /** Recruit mode: 'recruit' people live only in the broker's Recruiting views. */
   sphere?: 'client' | 'recruit'
   current_brokerage?: string | null
@@ -588,4 +590,9 @@ export function licenseCards(recruits: Contact[], touches: Touch[]) {
     out.push({ c, on, years, left })
   }
   return out.sort((a, b) => a.on.localeCompare(b.on))
+}
+
+/** "Tom & Jane Smith", or "Tom Smith & Jane Doe" when the last names differ. */
+export function coupleName(a: Contact, b: Contact) {
+  return a.last_name && a.last_name === b.last_name ? `${a.first_name} & ${b.first_name} ${a.last_name}` : `${fullName(a)} & ${fullName(b)}`
 }

@@ -978,3 +978,8 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .fubadge.licbadge { background: #6b4fb3; }
 .person.lic .why { white-space: normal; }
 .sphereswitch .swn { display: inline-block; min-width: 20px; height: 20px; margin-left: 7px; padding: 0 6px; border-radius: 10px; background: var(--urgent); color: #fff; font: 600 12px/20px var(--font); text-align: center; vertical-align: 1px; }
+.couple { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--card) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--card) 30%, var(--line)); }
+.couple input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
+.couple b { display: block; font-weight: 600; }
+.couple small { color: var(--muted); font-size: 13px; }
+.couplechip { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }

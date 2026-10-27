@@ -266,6 +266,17 @@ export async function setOccasionPlan(c: Contact, occ: Occasion, plan: BirthdayP
   const { error } = await supabase.from('contacts').update({ [col]: plan }).eq('id', c.id)
   if (error) throw new Error(/_plan/.test(error.message) ? `These choices need the ${occ === 'birthday' ? '0014' : '0015'} SQL run in Supabase first.` : error.message)
 }
+/** Link two people as spouses or partners (both ways), or unlink. Anyone they were linked to before is let go. */
+export async function setPartner(me: Profile, a: Contact, b: Contact | null, all: Contact[]) {
+  const ops: Parameters<typeof exec>[1] = []
+  const free = (id: string | null | undefined) => { if (id && id !== b?.id && id !== a.id) ops.push({ t: 'update', table: 'contacts', id, fields: { partner_id: null } }) }
+  free(a.partner_id)
+  if (b) {
+    free(all.find((x) => x.id === b.id)?.partner_id)
+    ops.push({ t: 'update', table: 'contacts', id: a.id, fields: { partner_id: b.id } }, { t: 'update', table: 'contacts', id: b.id, fields: { partner_id: a.id } })
+  } else ops.push({ t: 'update', table: 'contacts', id: a.id, fields: { partner_id: null } })
+  await exec(me.id, ops)
+}
 /** Clears a follow-up once it's done (works offline, sends when back online). */
 export async function clearFollowUp(c: Contact) {
   await exec(c.agent_id, [{ t: 'update', table: 'contacts', id: c.id, fields: { follow_up_on: null, follow_up_note: null } }])
@@ -318,17 +329,19 @@ export async function updateContacts(list: { id: string; fields: Partial<Contact
   }
 }
 
-export async function logCard(me: Profile, cards: Card[], contacts: Contact[], input: { name: string; relationship: string; occasion: string; note: string }) {
+export async function logCard(me: Profile, cards: Card[], contacts: Contact[], input: { name: string; relationship: string; occasion: string; note: string; contactId?: string; alsoIds?: string[] }) {
   const repeat = me.card_rule && !!cardWithin12Months(cards, input.name)
   const n = input.name.toLowerCase().replace(/\s+/g, ' ').trim()
-  const match = contacts.find((c) => fullName(c).toLowerCase().replace(/\s+/g, ' ') === n)
+  const match = (input.contactId ? contacts.find((c) => c.id === input.contactId) : undefined) ?? contacts.find((c) => fullName(c).toLowerCase().replace(/\s+/g, ' ') === n)
   const card = {
     id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: match?.id ?? null,
     recipient_name: input.name.trim(), relationship: input.relationship, occasion: input.occasion,
     note: input.note || null, counts_for_challenge: !repeat, sent_on: ymd(today()),
   }
   const touch = { id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: match?.id ?? null, kind: 'card', is_group: false, note: `Card a Day: ${input.name.trim()}`, occurred_on: ymd(today()) }
-  await exec(me.id, [{ t: 'insert', table: 'cards', rows: [card] }, { t: 'insert', table: 'touches', rows: [touch] }])
+  // Addressed to a couple: one card for Card a Day, a card touch for each of them.
+  const also = (input.alsoIds ?? []).filter((id) => id !== match?.id).map((id) => ({ ...touch, id: uuid(), contact_id: id }))
+  await exec(me.id, [{ t: 'insert', table: 'cards', rows: [card] }, { t: 'insert', table: 'touches', rows: [touch, ...also] }])
   return { repeat, match }
 }
 

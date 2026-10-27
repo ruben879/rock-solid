@@ -4,7 +4,7 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, canRecruit, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
+  planNumbers, canRecruit, coupleName, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
@@ -1221,6 +1221,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         )}
         {live.email && <div><span>Email</span><b>{ctx.readOnly ? live.email : <a href={`mailto:${live.email}`}>{live.email}</a>}</b></div>}
         {where && <div><span>Address</span><b><a href={`https://maps.apple.com/?q=${encodeURIComponent(where)}`} target="_blank" rel="noreferrer">{where}</a></b></div>}
+        {live.partner_id && (() => { const p = ctx.data.contacts.find((x) => x.id === live.partner_id); return p ? <div><span>Spouse or partner</span><b>💞 {fullName(p)}</b></div> : null })()}
         {shown.map(([l, v, o]) => (
           <div key={l}><span>{l}</span>
             <b>{o === 'birthday' ? monthDay(v as string) : longDate(v as string)}
@@ -1365,6 +1366,10 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
   })
   const [confirmDel, setConfirmDel] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Spouse or partner, linked both ways when saved.
+  const [partner, setPartnerSel] = useState<Contact | null>(() => (c?.partner_id ? ctx.data.contacts.find((x) => x.id === c.partner_id) ?? null : null))
+  const [pq, setPq] = useState('')
+  const pMatches = pq.trim() ? ctx.data.contacts.filter((x) => x.id !== c?.id && fullName(x).toLowerCase().includes(pq.trim().toLowerCase())).slice(0, 5) : []
   const [plans, setPlans] = useState<Record<Occasion, BirthdayPlan>>(() => ({ birthday: c ? planOf(c, 'birthday') : 'text', home: c ? planOf(c, 'home') : 'text', wedding: c ? planOf(c, 'wedding') : 'text' }))
   // New people: let the phone offer to fill in from its contacts (iPhone AutoFill Contact). Existing people: no autofill.
   const ac = (v: string) => (c ? 'off' : v)
@@ -1390,6 +1395,10 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
       for (const o of OCCASION_LIST) {
         const was = c ? planOf(c, o) : 'text'
         if (plans[o] !== was) await api.setOccasionPlan({ ...(c ?? {}), id } as Contact, o, plans[o]).catch((e) => toast((e as Error).message))
+      }
+      if ((partner?.id ?? null) !== (c?.partner_id ?? null)) {
+        await api.setPartner(ctx.me, { ...(c ?? {}), ...input, id } as Contact, partner, ctx.data.contacts)
+          .catch((e) => toast(/partner_id/.test((e as Error).message) ? 'Linking a spouse needs the 0018 SQL run in Supabase first.' : (e as Error).message))
       }
       await ctx.reload()
       if (onSaved) {
@@ -1443,6 +1452,17 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
           </div>
         </div>
         <label className="field"><span>Notes</span><textarea disabled={ro} value={f.notes} onChange={set('notes')} placeholder="Kids, pets, what they care about" /></label>
+        <div className="field"><span>Spouse or partner</span>
+          {partner ? (
+            <div className="couplechip"><span>💞 {fullName(partner)}</span>{!ro && <button type="button" className="link" onClick={() => setPartnerSel(null)}>Unlink</button>}</div>
+          ) : !ro && (
+            <>
+              <input placeholder="Find them in your people" value={pq} onChange={(e) => setPq(e.target.value)} autoComplete="off" />
+              {pMatches.length > 0 && <div className="sugs">{pMatches.map((x) => <button type="button" key={x.id} onClick={() => { setPartnerSel(x); setPq('') }}>{fullName(x)}{x.partner_id && x.partner_id !== c?.id ? <span className="note" style={{ marginLeft: 8 }}>linked to someone else</span> : null}</button>)}</div>}
+              <small className="note">Link them so one card addressed to both counts for both.</small>
+            </>
+          )}
+        </div>
         <div className="grp" style={{ marginTop: 6 }}>Email, address and special dates</div>
         <div className="ed">
           <label className="field full"><span>Email</span><input type="email" disabled={ro} value={f.email} onChange={set('email')} autoComplete={ac('email')} /></label>
@@ -1571,12 +1591,16 @@ function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; pr
   const [rel, setRel] = useState('')
   const [occ, setOcc] = useState(occasion ?? '')
   const [otherOn, setOtherOn] = useState(false)
+  // A couple: one card addressed to both counts as a touch for each of them (on by default).
+  const [both, setBoth] = useState(true)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [adding, setAdding] = useState(false)
   const dup = name.trim() ? cardWithin12Months(data.cards, name) : undefined
   const q = name.trim().toLowerCase()
   const known = data.contacts.some((c) => fullName(c).toLowerCase() === q)
+  const person = data.contacts.find((c) => fullName(c).toLowerCase() === q)
+  const partner = person?.partner_id ? data.contacts.find((c) => c.id === person.partner_id) : undefined
   const matches = q ? data.contacts.filter((c) => fullName(c).toLowerCase().includes(q) && fullName(c).toLowerCase() !== q).slice(0, 5) : []
   const who = name.trim().split(' ')[0] || 'them'
   const total = 4 - start
@@ -1602,9 +1626,14 @@ function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; pr
     try {
       const hadCardToday = data.cards.some((c) => c.sent_on === ymd(today()) && c.counts_for_challenge)
       onBefore?.()
-      const r = await api.logCard(ctx.me, data.cards, data.contacts, { name, relationship: rel, occasion: occ, note })
+      const toBoth = !!(person && partner && both)
+      const r = await api.logCard(ctx.me, data.cards, data.contacts, {
+        name: toBoth ? coupleName(person!, partner!) : name, relationship: rel, occasion: occ, note,
+        contactId: person?.id, alsoIds: toBoth ? [partner!.id] : [],
+      })
       await ctx.reload()
-      toast(r.repeat ? `Card logged for ${who}. It counts as a touch, not toward Card a Day.` : `Card logged for ${who}!`)
+      const to = toBoth ? `${person!.first_name} & ${partner!.first_name}` : who
+      toast(r.repeat ? `Card logged for ${to}. It counts as a touch, not toward Card a Day.` : `Card logged for ${to}!`)
       setName(preset ?? ''); setRel(''); setOcc(''); setOtherOn(false); setNote(''); setStep(start)
       onLogged?.({ counts: !r.repeat, firstToday: !r.repeat && !hadCardToday })
     } catch (err) {
@@ -1660,7 +1689,13 @@ function CardSteps({ ctx, preset, occasion, onBefore, onLogged }: { ctx: Ctx; pr
       {step === 3 && (
         <div className="stack">
           <p className="q" style={{ margin: 0 }}>Anything to remember?</p>
-          <p className="note" style={{ marginTop: -8 }}>{occ} card to {name.trim()} ({rel.toLowerCase()})</p>
+          <p className="note" style={{ marginTop: -8 }}>{occ} card to {person && partner && both ? coupleName(person, partner) : name.trim()} ({rel.toLowerCase()})</p>
+          {person && partner && (
+            <label className="couple">
+              <input type="checkbox" checked={both} onChange={(e) => setBoth(e.target.checked)} />
+              <span><b>Addressed to both {person.first_name} and {partner.first_name}</b><small>One card for Card a Day, and a touch for each of them.</small></span>
+            </label>
+          )}
           <textarea aria-label="Note" placeholder="Optional" value={note} onChange={(e) => setNote(e.target.value)} />
           {dup && agent.card_rule && (
             <div className="warn">You wrote {who} a card on {fmt(dup.sent_on)}. This one still counts as a touch, just not toward Card a Day until {fmt(addDays(parse(dup.sent_on), 365))}.</div>
