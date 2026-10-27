@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Contact, Profile, Stage, Temp, Touch, TouchKind } from '../lib/model'
 import {
   KIND_LABEL, RECRUIT_KINDS, RETAIN_KINDS, STAGES, STAGE_HINT, STAGE_NAME, TEMP_NAME,
@@ -19,18 +19,34 @@ import { DateField, MonthDayField } from './agent'
 export type Sphere = 'client' | 'recruit'
 export interface RCtx { me: Profile; recruits: RecruitData; reload: () => Promise<void> }
 
-/** Remembers the last sphere used on each screen. */
+/** Which side each screen is on. Kept while the app is open; every fresh open starts on My Sphere. */
+const sphereNow = new Map<string, Sphere>()
 export function useSphere(screen: string): [Sphere, (s: Sphere) => void] {
-  const key = `rs-sphere-${screen}`
-  const [v, setV] = useState<Sphere>(() => (store.get<string>(key, 'client') === 'recruit' ? 'recruit' : 'client'))
-  return [v, (s) => { setV(s); store.set(key, s) }]
+  const [v, setV] = useState<Sphere>(() => sphereNow.get(screen) ?? 'client')
+  return [v, (s) => { setV(s); sphereNow.set(screen, s) }]
 }
 
-export function SphereSwitch({ value, onChange }: { value: Sphere; onChange: (s: Sphere) => void }) {
+/** How many on the Agents side need a touch today: pipeline, retention, license cards and join anniversaries. */
+export function agentsDueCount(contacts: Contact[], touches: Touch[]) {
+  const q = recruitQueue(contacts, touches)
+  const ids = new Set([...q.pipeline, ...q.retention].map((x) => x.c.id))
+  for (const l of licenseCards(contacts, touches)) ids.add(l.c.id)
+  for (const a of joinAnniversaries(contacts)) ids.add(a.c.id)
+  return ids.size
+}
+
+export function SphereSwitch({ value, onChange, counts, badge }: { value: Sphere; onChange: (s: Sphere) => void; counts?: { client: number; recruit: number }; badge?: boolean }) {
+  // The Today bubble follows whichever side is showing.
+  useEffect(() => {
+    if (!badge) return
+    if (value === 'recruit' && counts) window.dispatchEvent(new CustomEvent('rs-open', { detail: counts.recruit }))
+    if (value === 'client' && counts) window.dispatchEvent(new CustomEvent('rs-open', { detail: counts.client }))
+  }, [badge, value, counts?.client, counts?.recruit]) // eslint-disable-line react-hooks/exhaustive-deps
+  const n = (k: Sphere) => (counts && counts[k] > 0 ? <b className="swn">{counts[k]}</b> : null)
   return (
     <div className="seg4 x2 sphereswitch" role="group" aria-label="Which people">
-      <button type="button" aria-pressed={value === 'client'} onClick={() => onChange('client')}>My Sphere</button>
-      <button type="button" aria-pressed={value === 'recruit'} onClick={() => onChange('recruit')}>Agents</button>
+      <button type="button" aria-pressed={value === 'client'} onClick={() => onChange('client')}>My Sphere{n('client')}</button>
+      <button type="button" aria-pressed={value === 'recruit'} onClick={() => onChange('recruit')}>Agents{n('recruit')}</button>
     </div>
   )
 }

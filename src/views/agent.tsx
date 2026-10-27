@@ -10,7 +10,7 @@ import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { GoalWizardHost, openGoalWizard } from './goals'
-import { RecruitBoard, RecruitToday, SphereSwitch, useSphere, type RCtx } from './recruit'
+import { RecruitBoard, RecruitToday, SphereSwitch, agentsDueCount, useSphere, type RCtx } from './recruit'
 import { Together, type CadInfo } from './together'
 import { MiniStool, StoolPage } from './stool'
 import { IBell, ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
@@ -32,6 +32,16 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
   // Recruit mode: the broker's second sphere, switched at the top of Today and People.
   const [sToday, setSToday] = useSphere('today')
   const [sPeople, setSPeople] = useSphere('people')
+  // How many are due on each side, for the switch and the Today bubble.
+  const [clientDue, setClientDue] = useState(() => store.get<number>('rs-client-open', 0))
+  useEffect(() => {
+    // Today may have counted before this listener was attached, so pick up what it saved too.
+    setClientDue(store.get<number>('rs-client-open', 0))
+    const on = (e: Event) => setClientDue((e as CustomEvent<number>).detail)
+    window.addEventListener('rs-client-open', on)
+    return () => window.removeEventListener('rs-client-open', on)
+  }, [])
+  const agentsDue = useMemo(() => (recruits ? agentsDueCount(recruits.contacts, recruits.touches) : 0), [recruits])
   // The daily goal follows the people you actually have (unless you've set your own number).
   const auto = props.agent.plan?.auto_goals !== 0
   const fromPeople = data ? dailyFromPeople(data.contacts, props.agent) : 0
@@ -61,12 +71,13 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
   const agent = auto && fromPeople ? { ...props.agent, daily_goal: fromPeople, weekly_goal: fromPeople * 5 } : props.agent
   const ctx: Ctx = { ...props, agent, data, reload, goal: props.brokerage?.settings?.touch_goal ?? 36 }
   const canRec = own && canRecruit(props.me, props.brokerage)
+  const counts = { client: clientDue, recruit: agentsDue }
   const rc: RCtx = { me: props.me, recruits: recruits ?? { contacts: [], touches: [] }, reload }
   return (
     <>
       {props.tab === 'week' && (canRec && sToday === 'recruit'
-        ? <><SphereSwitch value={sToday} onChange={setSToday} /><RecruitToday rc={rc} onBoard={() => { setSPeople('recruit'); props.onGo?.('db') }} /></>
-        : <>{canRec && <SphereSwitch value={sToday} onChange={setSToday} />}<Today ctx={ctx} onGo={props.onGo} /></>)}
+        ? <><SphereSwitch value={sToday} onChange={setSToday} counts={counts} badge /><RecruitToday rc={rc} onBoard={() => { setSPeople('recruit'); props.onGo?.('db') }} /></>
+        : <>{canRec && <SphereSwitch value={sToday} onChange={setSToday} counts={counts} badge />}<Today ctx={ctx} onGo={props.onGo} /></>)}
       {props.tab === 'cards' && (props.readOnly
         ? <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />
         : <Together me={props.me} cad={cadInfo(data.cards)}
@@ -74,8 +85,8 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
             renderLog={(kinds, close) => <ChallengeLog ctx={ctx} kinds={kinds} onClose={close} />} />)}
       {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
       {props.tab === 'db' && (canRec && sPeople === 'recruit'
-        ? <><SphereSwitch value={sPeople} onChange={setSPeople} /><RecruitBoard rc={rc} /></>
-        : <>{canRec && <SphereSwitch value={sPeople} onChange={setSPeople} />}<People ctx={ctx} onProfileChange={props.onProfileChange} /></>)}
+        ? <><SphereSwitch value={sPeople} onChange={setSPeople} counts={counts} /><RecruitBoard rc={rc} /></>
+        : <>{canRec && <SphereSwitch value={sPeople} onChange={setSPeople} counts={counts} />}<People ctx={ctx} onProfileChange={props.onProfileChange} /></>)}
       {props.tab === 'stool' && <StoolPage agent={agent} data={data} onBack={() => props.onGo?.('week')} />}
       {own && <GoalWizardHost me={props.me} agent={props.agent} contacts={data.contacts} onSaved={props.onProfileChange} />}
     </>
@@ -527,6 +538,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   useEffect(() => {
     if (open < 0) return
     window.dispatchEvent(new CustomEvent('rs-open', { detail: open }))
+    store.set('rs-client-open', open)
+    window.dispatchEvent(new CustomEvent('rs-client-open', { detail: open }))
     const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
     if (open > 0) nav.setAppBadge?.(open).catch(() => {})
     else nav.clearAppBadge?.().catch(() => {})
