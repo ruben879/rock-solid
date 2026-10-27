@@ -10,6 +10,7 @@ import { formatPhone, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { GoalWizardHost, openGoalWizard } from './goals'
+import { RecruitBoard, RecruitToday, SphereSwitch, useSphere, type RCtx } from './recruit'
 import { Together, type CadInfo } from './together'
 import { MiniStool, StoolPage } from './stool'
 import { IBell, ICard, ICards, ICheck, IChevL, IChevR, IDoor, IFace, IFlame, IList, IMore, IPeople, IPhone, IPlus, ISearch, IText } from '../icons'
@@ -27,7 +28,10 @@ interface Ctx {
 }
 
 export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: Brokerage | null; tab: AgentTab; readOnly: boolean; onProfileChange?: () => void; onGo?: (t: AgentTab) => void }) {
-  const { data, error, reload } = useAgentData1(props.agent.id)
+  const { data, recruits, error, reload } = useAgentData1(props.agent.id)
+  // Recruit mode: the broker's second sphere, switched at the top of Today and People.
+  const [sToday, setSToday] = useSphere('today')
+  const [sPeople, setSPeople] = useSphere('people')
   // The daily goal follows the people you actually have (unless you've set your own number).
   const auto = props.agent.plan?.auto_goals !== 0
   const fromPeople = data ? dailyFromPeople(data.contacts, props.agent) : 0
@@ -56,16 +60,22 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
   if (!data) return <p className="muted" style={{ marginTop: 24 }}>Loading…</p>
   const agent = auto && fromPeople ? { ...props.agent, daily_goal: fromPeople, weekly_goal: fromPeople * 5 } : props.agent
   const ctx: Ctx = { ...props, agent, data, reload, goal: props.brokerage?.settings?.touch_goal ?? 36 }
+  const canRecruit = own && props.me.role === 'broker'
+  const rc: RCtx = { me: props.me, recruits: recruits ?? { contacts: [], touches: [] }, reload }
   return (
     <>
-      {props.tab === 'week' && <Today ctx={ctx} onGo={props.onGo} />}
+      {props.tab === 'week' && (canRecruit && sToday === 'recruit'
+        ? <><SphereSwitch value={sToday} onChange={setSToday} /><RecruitToday rc={rc} onBoard={() => { setSPeople('recruit'); props.onGo?.('db') }} /></>
+        : <>{canRecruit && <SphereSwitch value={sToday} onChange={setSToday} />}<Today ctx={ctx} onGo={props.onGo} /></>)}
       {props.tab === 'cards' && (props.readOnly
         ? <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />
         : <Together me={props.me} cad={cadInfo(data.cards)}
             renderCad={(back, feed) => <CardADay ctx={ctx} onProfileChange={props.onProfileChange} onBack={back} extra={feed} />}
             renderLog={(kinds, close) => <ChallengeLog ctx={ctx} kinds={kinds} onClose={close} />} />)}
       {props.tab === 'activity' && <Progress ctx={ctx} onProfileChange={props.onProfileChange} />}
-      {props.tab === 'db' && <People ctx={ctx} onProfileChange={props.onProfileChange} />}
+      {props.tab === 'db' && (canRecruit && sPeople === 'recruit'
+        ? <><SphereSwitch value={sPeople} onChange={setSPeople} /><RecruitBoard rc={rc} /></>
+        : <>{canRecruit && <SphereSwitch value={sPeople} onChange={setSPeople} />}<People ctx={ctx} onProfileChange={props.onProfileChange} /></>)}
       {props.tab === 'stool' && <StoolPage agent={agent} data={data} onBack={() => props.onGo?.('week')} />}
       {own && <GoalWizardHost me={props.me} agent={props.agent} contacts={data.contacts} onSaved={props.onProfileChange} />}
     </>
@@ -1102,6 +1112,7 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
   const [info, setInfo] = useState<Touch | null>(null)
   const [fu, setFu] = useState(false)
   const [bdPick, setBdPick] = useState<Occasion | null>(null)
+  const [toRecruit, setToRecruit] = useState(false)
   // The phone keeps about a year. Older touches with this person load from the server when you open them.
   const [older, setOlder] = useState<{ touches: Touch[]; cards: Card[] }>({ touches: [], cards: [] })
   useEffect(() => {
@@ -1237,6 +1248,17 @@ function PersonSheet({ ctx, c, onClose, onEdit }: { ctx: Ctx; c: Contact; onClos
         {!ctx.readOnly && <button className="btn primary" style={{ flex: 1 }} onClick={onEdit}>Edit details</button>}
         <button className="btn" style={{ flex: 1 }} onClick={onClose}>Close</button>
       </div>
+      {!ctx.readOnly && ctx.me.role === 'broker' && ctx.agent.id === ctx.me.id && (
+        <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setToRecruit(true)}>Move to Recruiting</button>
+      )}
+      {toRecruit && (
+        <Sheet label="Move to Recruiting" onClose={() => setToRecruit(false)}>
+          <h3>Move {live.first_name || fullName(live)} to Recruiting?</h3>
+          <p className="note">They'll leave your client People, Today and counts, and start in your pipeline at Cold, on Watch. Their history and notes come along. You can move them back any time.</p>
+          <button className="btn primary lg block" style={{ marginTop: 12 }} onClick={async () => { try { await api.moveSphere(live, 'recruit'); await ctx.reload(); toast(`${live.first_name} moved to Recruiting.`); onClose() } catch (e) { toast((e as Error).message) } }}>Move to Recruiting</button>
+          <button className="btn ghost block" style={{ marginTop: 6 }} onClick={() => setToRecruit(false)}>Cancel</button>
+        </Sheet>
+      )}
       {noteOn && <NoteSheet ctx={ctx} t={noteOn.t} c={live} onClose={() => setNoteOn(null)} onUndo={noteOn.fresh ? () => undo(noteOn.t) : undefined} />}
       {fu && <FollowUpSheet ctx={ctx} c={live} onClose={() => setFu(false)} />}
       {delT && (
@@ -1467,7 +1489,7 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 /** Month and day, with the year optional (birthdays and wedding anniversaries). No year saves as 1904-MM-DD. */
-function MonthDayField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
+export function MonthDayField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
   const [y0, m0, d0] = value ? value.split('-') : ['', '', '']
   const [year, setYear] = useState(value && hasYear(value) ? y0 : '')
   const [mon, setMon] = useState(value ? String(Number(m0)) : '')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
 import { addDays, monthStart, today, weekStart, ymd } from './dates'
 import type { BirthdayPlan, Brokerage, Card, Contact, Occasion, Profile, Tally, Tier, Touch, TouchKind } from './model'
@@ -135,7 +135,67 @@ export function useAgentData(agentIds: string[]) {
     window.addEventListener('rs-synced', again)
     return () => window.removeEventListener('rs-synced', again)
   }, [reload])
-  return { data, error, reload }
+  // Two spheres, kept apart: everything client-side only ever sees clients and their touches.
+  const split = useMemo(() => (data ? splitSpheres(data) : null), [data])
+  return { data: split?.client ?? null, recruits: split?.recruit ?? null, error, reload }
+}
+
+/** Recruits and their touches, kept out of every client list, queue and count. */
+export interface RecruitData { contacts: Contact[]; touches: Touch[] }
+export function splitSpheres(d: AgentData): { client: AgentData; recruit: RecruitData } {
+  const rec = d.contacts.filter((c) => c.sphere === 'recruit')
+  if (!rec.length) return { client: d, recruit: { contacts: [], touches: [] } }
+  const ids = new Set(rec.map((c) => c.id))
+  return {
+    client: { ...d, contacts: d.contacts.filter((c) => c.sphere !== 'recruit'), touches: d.touches.filter((t) => !t.contact_id || !ids.has(t.contact_id)) },
+    recruit: { contacts: rec, touches: d.touches.filter((t) => t.contact_id && ids.has(t.contact_id)) },
+  }
+}
+
+// ---------- Recruiting ----------
+const recruitErr = (m: string) => (/sphere|stage|temperature|kind_check|joined_on|meeting_on/.test(m) ? 'Recruiting needs the 0016 SQL run in Supabase first.' : m)
+/** Add or change a recruit. */
+export async function saveRecruit(me: Profile, input: ContactInput, id?: string) {
+  needOnline()
+  if (id) {
+    const r = await supabase.from('contacts').update({ ...input, updated_at: new Date().toISOString() }).eq('id', id)
+    if (r.error) throw new Error(recruitErr(r.error.message))
+    return id
+  }
+  const newId = uuid()
+  const r = await supabase.from('contacts').insert({
+    id: newId, added_on: ymd(today()), tier: 'U', prior_touches: 0, stage: 'cold', temperature: 'B', stage_on: ymd(today()),
+    ...input, sphere: 'recruit', agent_id: me.id, brokerage_id: me.brokerage_id,
+  })
+  if (r.error) throw new Error(recruitErr(r.error.message))
+  return newId
+}
+/** Move a recruit to a new stage, and log it in their history (from → to). */
+export async function setStage(me: Profile, c: Contact, stage: NonNullable<Contact['stage']>, extra: Partial<Contact> = {}, label?: string) {
+  needOnline()
+  const t = ymd(today())
+  const r = await supabase.from('contacts').update({ stage, stage_on: t, ...extra, updated_at: new Date().toISOString() }).eq('id', c.id)
+  if (r.error) throw new Error(recruitErr(r.error.message))
+  const note = label ?? `${c.stage ?? 'cold'} → ${stage}`
+  const r2 = await supabase.from('touches').insert({ id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, kind: 'stage', is_group: false, note, occurred_on: t })
+  if (r2.error) throw new Error(recruitErr(r2.error.message))
+}
+/** Move someone between My Sphere and Recruiting. Everything they have comes along. */
+export async function moveSphere(c: Contact, to: 'client' | 'recruit') {
+  needOnline()
+  const fields: Partial<Contact> = to === 'recruit'
+    ? { sphere: 'recruit', stage: 'cold', temperature: 'watch', stage_on: ymd(today()) }
+    : { sphere: 'client', tier: c.tier === 'U' || !c.tier ? 'U' : c.tier }
+  const r = await supabase.from('contacts').update(fields).eq('id', c.id)
+  if (r.error) throw new Error(recruitErr(r.error.message))
+}
+/** Log a recruiting touch (online, so it lands in the right sphere right away). */
+export async function logRecruitTouch(me: Profile, c: Contact, kind: TouchKind, note = '') {
+  needOnline()
+  const row = { id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, contact_id: c.id, kind, is_group: false, note: note || null, occurred_on: ymd(today()) }
+  const r = await supabase.from('touches').insert(row)
+  if (r.error) throw new Error(recruitErr(r.error.message))
+  return row as Touch
 }
 
 function needOnline() {

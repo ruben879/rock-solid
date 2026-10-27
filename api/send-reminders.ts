@@ -85,7 +85,8 @@ export default async function handler(req: Req, res: Res) {
     const { data: contacts, error: cErr } = await db.from('contacts').select('*').in('agent_id', users)
     if (cErr) throw new Error(cErr.message)
     const byAgent = new Map<string, Contact[]>()
-    for (const c of (contacts ?? []) as Contact[]) {
+    // Recruits live in the broker's Recruiting views only; their dates stay out of client reminders.
+    for (const c of ((contacts ?? []) as (Contact & { sphere?: string })[]).filter((x) => x.sphere !== 'recruit')) {
       if (!byAgent.has(c.agent_id)) byAgent.set(c.agent_id, [])
       byAgent.get(c.agent_id)!.push(c)
     }

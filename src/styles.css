@@ -928,3 +928,49 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .bdopts .bdagain { margin-top: 0; }
 .bdagain.skip { border-style: solid; border-color: var(--line); color: var(--muted); }
 .person.bd .why { white-space: normal; }
+
+/* ======================================================================
+   Recruit mode
+   ====================================================================== */
+.sphereswitch { margin: 6px 0 4px; }
+.seg4.x3 { grid-template-columns: repeat(3, 1fr); }
+.rhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
+.rhead h2 small { font-size: 15px; color: var(--muted); font-weight: 500; margin-left: 8px; }
+.rcool { margin-top: 10px; background: color-mix(in srgb, var(--ok) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); border-radius: 12px; padding: 10px 14px; font-size: 14.5px; }
+.rnone { padding: 6px 2px; }
+.rchips { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.rstage { font: 600 12px var(--font); padding: 3px 9px; border-radius: 99px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); white-space: nowrap; }
+.rstage.s-talking { background: #1e3a6e; color: #fff; border-color: #1e3a6e; }
+.rstage.s-meeting { background: #2f6bd8; color: #fff; border-color: #2f6bd8; }
+.rstage.s-warm { background: #fbf1dc; color: #7a5a12; border-color: #ecd9a8; }
+.rstage.s-joined { background: #e3f4ef; color: #13806a; border-color: #b8e2d5; }
+.rstage.s-nofit { color: var(--muted); }
+.rtemp { font: 700 11px var(--font); padding: 2px 7px; border-radius: 6px; background: var(--navy); color: #fff; }
+.rtemp.t-B { background: color-mix(in srgb, var(--navy) 55%, #9aa6bd); }
+.rtemp.t-watch { background: transparent; color: var(--muted); border: 1px dashed var(--muted); font-weight: 600; }
+.rrow .head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.rdue { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+.rdue.late { color: var(--urgent); font-weight: 600; }
+.person.ret { border-left: 4px solid #13806a; }
+.fubadge.retbadge { background: #13806a; }
+.rkinds { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
+.rkinds button { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: 500 14.5px var(--font); text-align: left; cursor: pointer; }
+.rkinds button[aria-pressed="true"] { border-color: var(--navy); background: color-mix(in srgb, var(--navy) 8%, var(--surface)); }
+.rkinds span { font-size: 18px; }
+.rstats { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
+.rboard { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 14px -16px 0; padding: 0 16px 10px; -webkit-overflow-scrolling: touch; }
+.rcol { flex: 0 0 78%; max-width: 300px; scroll-snap-align: start; background: color-mix(in srgb, var(--bg) 60%, var(--line)); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rcolh { display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
+.rcolh span { font: 600 13px var(--font); background: var(--surface); border-radius: 99px; padding: 1px 9px; color: var(--muted); }
+.rcolhint { font-size: 12.5px; color: var(--muted); margin: -4px 0 2px; }
+.rempty { padding: 10px 4px; }
+.rcard { display: grid; gap: 3px; text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; color: var(--ink); cursor: pointer; }
+.rcard .rcn { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.rcard b { font-weight: 600; font-size: 15px; }
+.rcard small { color: var(--muted); font-size: 13px; }
+.rdays { font-size: 12.5px; color: var(--muted); }
+.rdays.late { color: var(--urgent); font-weight: 600; }
+.rstages { display: flex; flex-wrap: wrap; gap: 6px; }
+.rstages button { font: 500 13.5px var(--font); padding: 7px 11px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.rstages button[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.rstagerow b { color: var(--muted); font-weight: 500; }

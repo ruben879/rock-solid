@@ -3,6 +3,7 @@ import { addDays, daysBetween, parse, today, weekStart, ymd } from './dates'
 export type Role = 'agent' | 'coach' | 'broker'
 export type Tier = 'A' | 'B' | 'C' | 'D' | 'U'
 export type TouchKind = 'call' | 'text' | 'card' | 'popby' | 'facetoface' | 'email' | 'newsletter' | 'event'
+  | 'coffee' | 'intel' | 'congrats' | 'invite' | 'social' | 'checkin' | 'capchat' | 'win' | 'oneonone' | 'stage'
 
 export interface Brokerage {
   id: string
@@ -58,6 +59,16 @@ export interface Contact {
   birthday_plan?: BirthdayPlan | null
   home_plan?: BirthdayPlan | null
   wedding_plan?: BirthdayPlan | null
+  /** Recruit mode: 'recruit' people live only in the broker's Recruiting views. */
+  sphere?: 'client' | 'recruit'
+  current_brokerage?: string | null
+  years_licensed?: number | null
+  production_note?: string | null
+  temperature?: 'A' | 'B' | 'watch' | null
+  stage?: 'cold' | 'warm' | 'talking' | 'meeting' | 'joined' | 'nofit' | null
+  stage_on?: string | null
+  meeting_on?: string | null
+  joined_on?: string | null
   source: string | null
 }
 
@@ -114,6 +125,16 @@ export const KIND_LABEL: Record<TouchKind, string> = {
   email: 'Email',
   newsletter: 'Newsletter',
   event: 'Event',
+  coffee: 'Coffee or meal',
+  intel: 'Market intel sent',
+  congrats: 'Closing congrats',
+  invite: 'Event invite',
+  social: 'Social touch',
+  checkin: 'Check-in',
+  capchat: 'Cap progress chat',
+  win: 'Win celebrated',
+  oneonone: 'One-on-one',
+  stage: 'Stage change',
 }
 
 export const fullName = (c: Pick<Contact, 'first_name' | 'last_name'>) => `${c.first_name} ${c.last_name}`.trim()
@@ -462,4 +483,79 @@ export function birthdaysToday(contacts: Contact[], touches: Touch[]): BdayEntry
   }
   // Today's first, then the nearest cards.
   return out.sort((a, b) => (a.kind === b.kind ? a.on.localeCompare(b.on) : a.kind === 'day' ? -1 : 1))
+}
+
+// ---------- Recruiting: a second sphere, on its own rhythm ----------
+export type Stage = NonNullable<Contact['stage']>
+export type Temp = NonNullable<Contact['temperature']>
+export const STAGES: Stage[] = ['cold', 'warm', 'talking', 'meeting', 'joined', 'nofit']
+export const STAGE_NAME: Record<Stage, string> = { cold: 'Cold', warm: 'Warm', talking: 'In conversation', meeting: 'Meeting set', joined: 'Joined', nofit: 'Not a fit' }
+export const STAGE_HINT: Record<Stage, string> = {
+  cold: 'Met once, no real conversation yet',
+  warm: 'A real conversation has happened',
+  talking: 'Active back-and-forth about their business',
+  meeting: 'Coffee, lunch or a call is on the calendar',
+  joined: "They're on the team",
+  nofit: 'Kept on file, no touches scheduled',
+}
+export const TEMP_NAME: Record<Temp, string> = { A: 'Target A', B: 'Target B', watch: 'Watch' }
+/** Days between touches for each stage. Watch is every 60 days no matter the stage. */
+export const STAGE_DAYS: Partial<Record<Stage, number>> = { talking: 7, warm: 21, cold: 45, meeting: 7 }
+/** Pipeline touch types, and the lighter set for agents who've joined. */
+export const RECRUIT_KINDS: TouchKind[] = ['call', 'text', 'coffee', 'intel', 'congrats', 'invite', 'card', 'social']
+export const RETAIN_KINDS: TouchKind[] = ['checkin', 'capchat', 'win', 'oneonone', 'call', 'text', 'coffee', 'card']
+/** Sort order on Recruiting Today: the warmest conversations first. */
+const HEAT: Record<Stage, number> = { talking: 0, meeting: 1, warm: 2, cold: 3, joined: 4, nofit: 9 }
+
+/** The last real touch (stage changes don't count). */
+export function lastRecruitTouch(c: Contact, touches: Touch[]) {
+  let last = ''
+  for (const t of touches) if (t.contact_id === c.id && t.kind !== 'stage' && !t.is_group && t.occurred_on > last) last = t.occurred_on
+  return last || null
+}
+
+/** When this recruit (or joined agent) is next due, or null when nothing is scheduled. */
+export function recruitDue(c: Contact, touches: Touch[]): { due: string; retention: boolean } | null {
+  const stage = c.stage ?? 'cold'
+  if (stage === 'nofit') return null
+  const last = lastRecruitTouch(c, touches)
+  const latest = (...ds: (string | null | undefined)[]) => ds.filter(Boolean).sort().at(-1) as string
+  if (stage === 'joined') {
+    const j = c.joined_on ?? c.stage_on ?? c.added_on
+    const base = latest(last, j)
+    // A check-in every 30 days for the first 90 days on the team, then every 60.
+    const early = daysBetween(parse(j), parse(base)) < 90
+    return { due: ymd(addDays(parse(base), early ? 30 : 60)), retention: true }
+  }
+  const base = latest(last, c.stage_on, c.added_on)
+  if (c.temperature === 'watch') return { due: ymd(addDays(parse(base), 60)), retention: false }
+  if (stage === 'meeting' && c.meeting_on) {
+    // Follow up within 2 days of the meeting (unless they've been reached since).
+    const after = ymd(addDays(parse(c.meeting_on), 2))
+    return { due: last && last >= c.meeting_on ? ymd(addDays(parse(last), 7)) : after, retention: false }
+  }
+  return { due: ymd(addDays(parse(base), STAGE_DAYS[stage] ?? 45)), retention: false }
+}
+
+/** Who's due on Recruiting Today: pipeline first (by heat, then most overdue), retention separately. */
+export function recruitQueue(recruits: Contact[], touches: Touch[]) {
+  const t = ymd(today())
+  const rows = recruits
+    .map((c) => ({ c, d: recruitDue(c, touches) }))
+    .filter((x) => x.d && x.d.due <= t) as { c: Contact; d: { due: string; retention: boolean } }[]
+  const byHeat = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
+    HEAT[a.c.stage ?? 'cold'] - HEAT[b.c.stage ?? 'cold'] || a.d.due.localeCompare(b.d.due)
+  return {
+    pipeline: rows.filter((x) => !x.d.retention).sort(byHeat),
+    retention: rows.filter((x) => x.d.retention).sort((a, b) => a.d.due.localeCompare(b.d.due)),
+  }
+}
+
+/** Join anniversaries today (the year is real, so it counts the years). */
+export function joinAnniversaries(recruits: Contact[]) {
+  const md = ymd(today()).slice(5)
+  const y = today().getFullYear()
+  return recruits
+    .filter((c) => c.stage === 'joined' && c.joined_on && c.joined_on.slice(5) === md && Number(c.joined_on.slice(0, 4)) < y)
+    .map((c) => ({ c, years: y - Number(c.joined_on!.slice(0, 4)) }))
 }
