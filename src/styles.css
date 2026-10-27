@@ -974,3 +974,6 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .rstages button { font: 500 13.5px var(--font); padding: 7px 11px; border-radius: 99px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
 .rstages button[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
 .rstagerow b { color: var(--muted); font-weight: 500; }
+.person.lic { border-left: 4px solid #6b4fb3; }
+.fubadge.licbadge { background: #6b4fb3; }
+.person.lic .why { white-space: normal; }

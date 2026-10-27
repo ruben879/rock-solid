@@ -65,6 +65,8 @@ export interface Contact {
   sphere?: 'client' | 'recruit'
   current_brokerage?: string | null
   years_licensed?: number | null
+  /** Agents view: the day they got their license (a congratulations card every year). */
+  licensed_on?: string | null
   production_note?: string | null
   temperature?: 'A' | 'B' | 'watch' | null
   stage?: 'cold' | 'warm' | 'talking' | 'meeting' | 'joined' | 'nofit' | null
@@ -564,3 +566,26 @@ export function joinAnniversaries(recruits: Contact[]) {
 
 /** The Agents view (recruiting and retention) is for brokers and anyone the broker turns it on for. */
 export const canRecruit = (me: Profile, b: Brokerage | null) => me.role === 'broker' || !!b?.settings?.recruiters?.includes(me.id)
+
+/**
+ * License anniversaries to celebrate with a card: from 5 days before until 14 days after,
+ * until a card is logged. Year 0 is someone newly licensed.
+ */
+export function licenseCards(recruits: Contact[], touches: Touch[]) {
+  const now = today()
+  const out: { c: Contact; on: string; years: number; left: number }[] = []
+  for (const c of recruits) {
+    if (!c.licensed_on || c.stage === 'nofit') continue
+    const d = nextOccasion(c.licensed_on, now)
+    if (!d) continue
+    const left = daysBetween(now, d)
+    if (left > CARD_EARLY.from || left < -14) continue
+    const on = ymd(d)
+    const years = d.getFullYear() - Number(c.licensed_on.slice(0, 4))
+    if (years < 0) continue
+    const since = ymd(addDays(d, -10))
+    if (touches.some((t) => t.contact_id === c.id && t.kind === 'card' && !t.is_group && t.occurred_on >= since)) continue
+    out.push({ c, on, years, left })
+  }
+  return out.sort((a, b) => a.on.localeCompare(b.on))
+}

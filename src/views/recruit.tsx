@@ -2,14 +2,14 @@ import { useMemo, useState, type FormEvent } from 'react'
 import type { Contact, Profile, Stage, Temp, Touch, TouchKind } from '../lib/model'
 import {
   KIND_LABEL, RECRUIT_KINDS, RETAIN_KINDS, STAGES, STAGE_HINT, STAGE_NAME, TEMP_NAME,
-  fullName, joinAnniversaries, lastRecruitTouch, recruitDue, recruitQueue, telOf,
+  fullName, joinAnniversaries, lastRecruitTouch, licenseCards, recruitDue, recruitQueue, telOf,
 } from '../lib/model'
 import { daysBetween, fmt, parse, today, ymd } from '../lib/dates'
 import * as api from '../lib/data'
 import type { RecruitData } from '../lib/data'
 import { Celebrate, Sheet, store, useToast } from '../ui'
 import { ICheck, IPhone, IPlus, ISearch, IText } from '../icons'
-import { MonthDayField } from './agent'
+import { DateField, MonthDayField } from './agent'
 
 /*
   Recruit mode: the broker's second sphere. Same people cards and touch logging, its own queue and rhythm.
@@ -67,6 +67,7 @@ export function RecruitToday({ rc, onBoard }: { rc: RCtx; onBoard: () => void })
   const { recruits } = rc
   const q = useMemo(() => recruitQueue(recruits.contacts, recruits.touches), [recruits])
   const anniv = useMemo(() => joinAnniversaries(recruits.contacts), [recruits])
+  const lic = useMemo(() => licenseCards(recruits.contacts, recruits.touches), [recruits])
   const [open, setOpen] = useState<Contact | null>(null)
   const [adding, setAdding] = useState(false)
   const t = ymd(today())
@@ -88,6 +89,16 @@ export function RecruitToday({ rc, onBoard }: { rc: RCtx; onBoard: () => void })
         </div>
       ) : (
         <>
+          {lic.length > 0 && (
+            <>
+              <div className="grp" style={{ marginTop: 18 }}>Congratulate <span className="note" style={{ fontWeight: 400 }}>license anniversaries</span></div>
+              <div className="people">
+                {lic.map(({ c, on, years, left }) => (
+                  <LicenseRow key={`l-${c.id}`} rc={rc} c={c} on={on} years={years} left={left} onOpen={() => setOpen(c)} />
+                ))}
+              </div>
+            </>
+          )}
           <div className="grp" style={{ marginTop: 18 }}>Pipeline <span className="note" style={{ fontWeight: 400 }}>{q.pipeline.length} due</span></div>
           {q.pipeline.length === 0
             ? <p className="note rnone">Nobody due today. <button className="link" onClick={onBoard}>See the pipeline</button></p>
@@ -153,6 +164,33 @@ function RecruitRow({ rc, c, due, badge, onOpen }: { rc: RCtx; c: Contact; due?:
         </div>
       )}
       {logging && <LogSheet rc={rc} c={c} onClose={() => setLogging(false)} />}
+    </article>
+  )
+}
+
+/** A license anniversary (or someone newly licensed): a card to congratulate them. */
+function LicenseRow({ rc, c, on, years, left, onOpen }: { rc: RCtx; c: Contact; on: string; years: number; left: number; onOpen: () => void }) {
+  const toast = useToast()
+  const name = c.first_name || fullName(c)
+  const what = years === 0 ? `Newly licensed ${fmt(on)}` : `${years} ${years === 1 ? 'year' : 'years'} licensed ${left === 0 ? 'today' : fmt(on)}`
+  async function sent() {
+    try {
+      await api.logRecruitTouch(rc.me, c, 'card', years === 0 ? 'Congrats on getting licensed card' : `${years}-year license anniversary card`)
+      await rc.reload()
+      toast(`Card logged for ${name}.`)
+    } catch (e) { toast((e as Error).message) }
+  }
+  return (
+    <article className="person rrow lic">
+      <span className="fubadge licbadge">🎓 {what}</span>
+      <div className="head">
+        <div style={{ minWidth: 0 }}>
+          <h3><button className="namebtn" onClick={onOpen}>{fullName(c)}</button></h3>
+          <p className="why">{left > 0 ? 'Mail a congratulations card so it lands in time.' : left === 0 ? 'A card that shows up a little late still means a lot.' : 'A belated congratulations card still says you noticed.'}</p>
+        </div>
+        <Chips c={c} />
+      </div>
+      <button className="go k-card" onClick={sent}>✉️ I sent {name} a card</button>
     </article>
   )
 }
@@ -272,7 +310,8 @@ function RecruitSheet({ rc, c, onClose }: { rc: RCtx; c: Contact; onClose: () =>
     try { await api.logRecruitTouch(rc.me, c, kind); await rc.reload(); toast(`${KIND_LABEL[kind]} logged for ${name}.`) } catch (e) { toast((e as Error).message) }
   }
   const facts: [string, string | null | undefined][] = [
-    ['Current brokerage', c.current_brokerage], ['Years licensed', c.years_licensed != null ? String(c.years_licensed) : null],
+    ['Current brokerage', c.current_brokerage], ['Licensed', c.licensed_on ? `${fmt(c.licensed_on)}, ${c.licensed_on.slice(0, 4)} (${Math.max(0, today().getFullYear() - Number(c.licensed_on.slice(0, 4)) - (ymd(today()).slice(5) < c.licensed_on.slice(5) ? 1 : 0))} years)` : null],
+    ['Years licensed', !c.licensed_on && c.years_licensed != null ? String(c.years_licensed) : null],
     ['Production', c.production_note], ['How we met', c.source], ['Phone', c.phone], ['Email', c.email],
     ['Birthday', c.birthday ? parse(c.birthday).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : null],
     ['Meeting', st === 'meeting' && c.meeting_on ? fmt(c.meeting_on) : null], ['Joined', c.joined_on ? fmt(c.joined_on) : null], ['Notes', c.notes],
@@ -399,7 +438,7 @@ function RecruitEdit({ rc, c, onClose }: { rc: RCtx; c: Contact | null; onClose:
   const toast = useToast()
   const [f, setF] = useState({
     first_name: c?.first_name ?? '', last_name: c?.last_name ?? '', phone: c?.phone ?? '', email: c?.email ?? '',
-    current_brokerage: c?.current_brokerage ?? '', years_licensed: c?.years_licensed != null ? String(c.years_licensed) : '',
+    current_brokerage: c?.current_brokerage ?? '', licensed_on: c?.licensed_on ?? '', years_licensed: c?.years_licensed != null ? String(c.years_licensed) : '',
     production_note: c?.production_note ?? '', source: c?.source ?? '', temperature: (c?.temperature ?? 'B') as Temp,
     stage: (c?.stage ?? 'cold') as Stage, birthday: c?.birthday ?? '', notes: c?.notes ?? '',
   })
@@ -412,7 +451,7 @@ function RecruitEdit({ rc, c, onClose }: { rc: RCtx; c: Contact | null; onClose:
     try {
       const input: api.ContactInput = {
         first_name: f.first_name.trim(), last_name: f.last_name.trim(), phone: f.phone || null, email: f.email || null,
-        current_brokerage: f.current_brokerage.trim() || null, years_licensed: f.years_licensed ? Number(f.years_licensed) : null,
+        current_brokerage: f.current_brokerage.trim() || null, licensed_on: f.licensed_on || null, years_licensed: f.years_licensed ? Number(f.years_licensed) : null,
         production_note: f.production_note.trim() || null, source: f.source || null, temperature: f.temperature,
         birthday: f.birthday || null, notes: f.notes.trim() || null,
         ...(c ? {} : { stage: f.stage === 'joined' || f.stage === 'meeting' ? 'cold' : f.stage }),
@@ -434,7 +473,9 @@ function RecruitEdit({ rc, c, onClose }: { rc: RCtx; c: Contact | null; onClose:
           <label className="field full"><span>Phone</span><input inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
           <label className="field full"><span>Email</span><input type="email" value={f.email} onChange={set('email')} /></label>
           <label className="field full"><span>Current brokerage</span><input value={f.current_brokerage} onChange={set('current_brokerage')} placeholder="Keller Williams Lubbock" /></label>
-          <label className="field"><span>Years licensed</span><input inputMode="numeric" value={f.years_licensed} onChange={(e) => setF({ ...f, years_licensed: e.target.value.replace(/\D/g, '').slice(0, 2) })} /></label>
+          <div className="field full"><DateField label="Date licensed" ro={false} value={f.licensed_on} onChange={(v) => setF({ ...f, licensed_on: v })} />
+            <small className="note">Rock Solid brings up a congratulations card every year around this date.</small></div>
+          {!f.licensed_on && <label className="field"><span>Years licensed</span><input inputMode="numeric" value={f.years_licensed} onChange={(e) => setF({ ...f, years_licensed: e.target.value.replace(/\D/g, '').slice(0, 2) })} /></label>}
           <label className="field full"><span>Production</span><input value={f.production_note} onChange={set('production_note')} placeholder="~12 deals a year, mostly listings" /></label>
         </div>
         <div className="field"><span>How you met</span>

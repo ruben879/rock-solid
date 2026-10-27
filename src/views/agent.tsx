@@ -1521,7 +1521,7 @@ export function MonthDayField({ label, value, onChange, ro }: { label: string; v
   )
 }
 
-function DateField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
+export function DateField({ label, value, onChange, ro }: { label: string; value: string; onChange: (v: string) => void; ro: boolean }) {
   const [asking, setAsking] = useState(false)
   return (
     // Not a <label>: tapping Clear inside a label would open the date picker instead of clearing.
