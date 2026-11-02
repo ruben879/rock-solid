@@ -2756,10 +2756,12 @@ function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
 }
 
 // Re-exported helpers for coach and broker views
-export function agentSummary(d: api.AgentData, agentId: string, goal: number, tierDaysMap?: Profile['tier_days']) {
-  const ms = ymd(monthStart())
+export function agentSummary(d: api.AgentData, agentId: string, goal: number, tierDaysMap?: Profile['tier_days'], monthOff = 0) {
+  const base = monthStart()
+  const ms = ymd(new Date(base.getFullYear(), base.getMonth() + monthOff, 1, 12))
+  const me2 = ymd(new Date(base.getFullYear(), base.getMonth() + monthOff + 1, 1, 12))
   const mine = d.touches.filter((t) => t.agent_id === agentId)
-  const month = mine.filter((t) => !t.is_group && t.occurred_on >= ms)
+  const month = mine.filter((t) => !t.is_group && t.occurred_on >= ms && t.occurred_on < me2)
   const contacts = d.contacts.filter((c) => c.agent_id === agentId)
   const byContact = touchCounts(mine)
   const h = { hot: 0, warm: 0, cold: 0, new: 0 }
@@ -2770,6 +2772,8 @@ export function agentSummary(d: api.AgentData, agentId: string, goal: number, ti
     calls: month.filter((t) => t.kind === 'call').length,
     texts: month.filter((t) => t.kind === 'text').length,
     cards: month.filter((t) => t.kind === 'card').length,
+    popbys: month.filter((t) => t.kind === 'popby').length,
+    faces: month.filter((t) => t.kind === 'facetoface').length,
     monthTouches: month.length,
     contacts: contacts.length,
     heat: [Math.round((h.hot / n) * 100), Math.round((h.warm / n) * 100), Math.round(((h.cold + h.new) / n) * 100)] as [number, number, number],

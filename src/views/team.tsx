@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as api from '../lib/data'
-import { monthStart, monthName, ymd } from '../lib/dates'
+import { monthStart, monthName, today, ymd } from '../lib/dates'
 import type { Brokerage, Profile } from '../lib/model'
 import { HeatStack, useToast } from '../ui'
 import { agentSummary } from './agent'
@@ -13,6 +13,9 @@ const nameOf = (p: Profile) => p.full_name || p.email
 export function AgentsOverview({ me, team, brokerage, onOpen, onCheer }: { me: Profile; team: Profile[]; brokerage: Brokerage | null; onOpen: (p: Profile) => void; onCheer?: (p: Profile) => void }) {
   const isBroker = me.role === 'broker'
   const [coachFilter, setCoachFilter] = useState('')
+  // This month, or last month (awards happen the month after).
+  const [monthOff, setMonthOff] = useState(0)
+  const mLabel = new Date(today().getFullYear(), today().getMonth() + monthOff, 1, 12).toLocaleDateString('en-US', { month: 'long' })
   const coaches = team.filter((p) => p.role === 'coach' || p.role === 'broker')
   const visible = team.filter((p) => (isBroker ? true : p.coach_id === me.id)).filter((p) => !coachFilter || p.coach_id === coachFilter)
   const ids = useMemo(() => visible.map((p) => p.id), [visible.map((p) => p.id).join()]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -24,6 +27,10 @@ export function AgentsOverview({ me, team, brokerage, onOpen, onCheer }: { me: P
     <section>
       <h2>{isBroker ? 'All agents' : 'My agents'}</h2>
       <p className="sub">{isBroker ? 'Everyone across every coach.' : 'The agents you coach.'} A flag means it's time for a check-in.</p>
+      <div className="seg4 x2" role="group" aria-label="Which month" style={{ margin: '4px 0 10px' }}>
+        <button type="button" aria-pressed={monthOff === 0} onClick={() => setMonthOff(0)}>This month</button>
+        <button type="button" aria-pressed={monthOff === -1} onClick={() => setMonthOff(-1)}>Last month</button>
+      </div>
       {isBroker && (
         <div className="toolbar">
           <select aria-label="Filter by coach" value={coachFilter} onChange={(e) => setCoachFilter(e.target.value)}>
@@ -39,8 +46,11 @@ export function AgentsOverview({ me, team, brokerage, onOpen, onCheer }: { me: P
         <div className="card empty">{isBroker ? 'No agents have signed in yet. Add invites on the Team tab.' : 'No agents are assigned to you yet.'}</div>
       ) : (
         <div className="agentcards">
-          {visible.map((p) => {
-            const s = agentSummary(data, p.id, goal, p.tier_days)
+          {(() => {
+            // Last month: most active first, so it's easy to celebrate the leaders.
+            const rows = visible.map((p) => ({ p, s: agentSummary(data, p.id, goal, p.tier_days, monthOff) }))
+            return monthOff === 0 ? rows : [...rows].sort((a, b) => b.s.monthTouches - a.s.monthTouches)
+          })().map(({ p, s }, rank) => {
             const pct = Math.round((s.monthTouches / monthly) * 100)
             const cls = pct >= 75 ? 'ok' : pct >= 45 ? 'mid' : 'low'
             const coach = team.find((c) => c.id === p.coach_id)
@@ -51,10 +61,12 @@ export function AgentsOverview({ me, team, brokerage, onOpen, onCheer }: { me: P
               : { t: 'On rhythm.', c: 'var(--muted)' }
             return (
               <div key={p.id} className="ac">
-                <div className="top"><b>{nameOf(p)}</b><span className={`pill ${cls}`}>{pct}% of month</span></div>
+                <div className="top"><b>{monthOff !== 0 && s.monthTouches > 0 && rank < 3 ? ['🥇 ', '🥈 ', '🥉 '][rank] : ''}{nameOf(p)}</b><span className={`pill ${monthOff === 0 ? cls : 'ok'}`}>{monthOff === 0 ? `${pct}% of month` : `${s.monthTouches} touches in ${mLabel}`}</span></div>
                 <div className="note">Coach: {coach ? nameOf(coach) : 'None'} · Last log {s.lastLogDays === null ? 'never' : s.lastLogDays === 0 ? 'today' : s.lastLogDays === 1 ? 'yesterday' : `${s.lastLogDays} days ago`}</div>
                 <div className="nums">
-                  <span>Calls <b>{s.calls}</b></span><span>Texts <b>{s.texts}</b></span><span>Cards <b>{s.cards}</b></span><span>Database <b>{s.contacts}</b></span>
+                  <span>Calls <b>{s.calls}</b></span><span>Texts <b>{s.texts}</b></span><span>Cards <b>{s.cards}</b></span>
+                  {s.popbys > 0 && <span>Pop-bys <b>{s.popbys}</b></span>}{s.faces > 0 && <span>Face to face <b>{s.faces}</b></span>}
+                  {monthOff === 0 ? <span>Database <b>{s.contacts}</b></span> : <span>Total <b>{s.monthTouches}</b></span>}
                 </div>
                 {s.contacts > 0 && <HeatStack parts={s.heat} />}
                 <span className="note" style={{ color: flag.c }}>{flag.t}</span>
@@ -235,7 +247,10 @@ export function TeamAdmin({ me, team, brokerage, onChange }: { me: Profile; team
 export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profile[]; brokerage: Brokerage | null }) {
   const toast = useToast()
   const prizes = brokerage?.settings?.prizes ?? [25, 15, 10]
-  const month = ymd(monthStart())
+  // Awards happen the month after, so the drawing opens on last month.
+  const [monthOff, setMonthOff] = useState(-1)
+  const mFirst = new Date(monthStart().getFullYear(), monthStart().getMonth() + monthOff, 1, 12)
+  const month = ymd(mFirst)
   const [entries, setEntries] = useState<{ agent_id: string; entries: number }[] | null>(null)
   const [draws, setDraws] = useState<api.Drawing[]>([])
   const [spinning, setSpinning] = useState(false)
@@ -344,8 +359,12 @@ export function DrawingView({ me, team, brokerage }: { me: Profile; team: Profil
   const n = draws.length
   return (
     <section>
-      <h2>{monthName()} drawing</h2>
-      <p className="sub">Every individual touch logged this month is one entry, and so is every extra (social post, giveaway, newsletter and so on). No minimum. Spin for each prize in order; once someone wins, they're out of the later spins.</p>
+      <h2>{monthName(mFirst)} drawing</h2>
+      <div className="seg4 x2" role="group" aria-label="Which month" style={{ margin: '4px 0 10px', maxWidth: 360 }}>
+        <button type="button" aria-pressed={monthOff === -1} disabled={spinning} onClick={() => setMonthOff(-1)}>Last month</button>
+        <button type="button" aria-pressed={monthOff === 0} disabled={spinning} onClick={() => setMonthOff(0)}>This month</button>
+      </div>
+      <p className="sub">Every individual touch logged in {mFirst.toLocaleDateString('en-US', { month: 'long' })} is one entry, and so is every extra (social post, giveaway, newsletter and so on). No minimum. Spin for each prize in order; once someone wins, they're out of the later spins.</p>
       <div className="draw">
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
           <canvas ref={canvas} width={560} height={560} style={{ width: '100%', maxWidth: 340, aspectRatio: '1', height: 'auto' }} aria-label="Prize wheel" />
