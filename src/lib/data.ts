@@ -3,7 +3,8 @@ import { supabase } from '../supabase'
 import { addDays, monthStart, today, weekStart, ymd } from './dates'
 import type { BirthdayPlan, Brokerage, Card, Contact, Occasion, Profile, Tally, Tier, Touch, TouchKind } from './model'
 import { OCCASION_META, cardWithin12Months, fullName } from './model'
-import type { EntryPlan } from './importer'
+import type { CheckItem, Existing, MatchField, MatchPlan } from './importer'
+import { compareRow } from './importer'
 import { exec, flush, getCached, isNetworkError, isOnline, pendingCount, setCached, subscribe, uuid, type AgentData } from './offline'
 export type { AgentData } from './offline'
 
@@ -314,45 +315,68 @@ export async function setTiers(ids: string[], tier: Tier) {
   for (let i = 0; i < ids.length; i += 200) check(await supabase.from('contacts').update({ tier }).in('id', ids.slice(i, i + 200)))
 }
 
-// ---------- Entry form imports ----------
-export interface ImportRecord { id: string; agent_id: string; source_label: string; imported: number; duplicates: number; errors: number; details: { errorRows?: number[]; duplicates?: string[] }; created_at: string }
-const importErr = (m: string) => (/import_batch_id|imports/.test(m) ? 'Entry form imports need the 0020 SQL run in Supabase first.' : m)
+// ---------- Imports (entry forms and contact lists), with matching ----------
+export interface ImportRecord {
+  id: string; agent_id: string; source_label: string; imported: number; duplicates: number; errors: number
+  details: { errorRows?: number[]; duplicates?: string[]; updated?: { name: string; fields: string[] }[]; checks?: number }
+  created_at: string
+}
+const importErr = (m: string) => (/import_checks|import_gap_fill/.test(m) ? 'Import matching needs the 0021 SQL run in Supabase first.' : /import_batch_id|imports/.test(m) ? 'Imports need the 0020 SQL run in Supabase first.' : m)
 
-/** Emails and phones the Owning agent already has (any sphere), fresh from the server, for the Duplicate check. */
+/** The Owning agent's people (any sphere), fresh from the server, for matching. */
 export async function ownerContactKeys(agentId: string) {
   needOnline()
-  return fetchAll<{ email: string | null; phone: string | null }>((a, b) => supabase.from('contacts').select('email, phone').eq('agent_id', agentId).range(a, b))
+  return fetchAll<Existing>((a, b) => supabase.from('contacts').select('id, first_name, last_name, email, phone, address, city, state, zip').eq('agent_id', agentId).range(a, b))
 }
 
 /**
- * Runs one import: records it (Import label, Owning agent, the three counts), then creates the New people.
- * New people are ordinary client contacts at tier U, tagged with the label, and linked to this import until Kept.
+ * Runs one import: records it (label, Owning agent, the counts, what was filled), fills blank fields on matched
+ * contacts, creates the new people, and saves a Check item for every conflict or ambiguous match.
+ * Entry form rows become New people (tier U, linked to the import, held out of Today until Kept).
+ * Contact list rows are added straight to the sphere, as before (newRow builds them).
  */
-export async function runEntryImport(me: Profile, ownerId: string, label: string, plan: EntryPlan): Promise<ImportRecord> {
+export async function runImport(
+  me: Profile, ownerId: string, label: string,
+  plan: { create: { row: number }[]; updates: MatchPlan<{ row: number; first_name: string; last_name: string }>['updates']; duplicates: { key: string }[]; checks: CheckItem[]; errors?: number[] },
+  newRow: (r: never, importId: string) => Record<string, unknown>,
+): Promise<ImportRecord> {
   needOnline()
   const rec = {
     id: uuid(), brokerage_id: me.brokerage_id, agent_id: ownerId, imported_by: me.id, source_label: label,
-    imported: plan.rows.length, duplicates: plan.duplicates.length, errors: plan.errors.length,
-    details: { errorRows: plan.errors, duplicates: plan.duplicates.map((d) => d.key) },
+    imported: plan.create.length, duplicates: plan.duplicates.length, errors: plan.errors?.length ?? 0,
+    details: {
+      errorRows: plan.errors ?? [], duplicates: plan.duplicates.map((d) => d.key),
+      updated: plan.updates.map((u) => ({ name: u.name, fields: Object.keys(u.fields) })), checks: plan.checks.length,
+    },
   }
   const r = await supabase.from('imports').insert(rec)
   if (r.error) throw new Error(importErr(r.error.message))
-  const t = ymd(today())
-  const rows = plan.rows.map((x) => ({
-    id: uuid(), agent_id: ownerId, brokerage_id: me.brokerage_id, first_name: x.first_name, last_name: x.last_name,
-    email: x.email, phone: x.phone, address: x.address, city: x.city, state: x.state, zip: x.zip,
-    tier: 'U', sphere: 'client', source: label, added_on: t, prior_touches: 0, import_batch_id: rec.id,
-  }))
+  const undo = async (m: string) => {
+    // All or nothing for new people: take back any that already landed.
+    await supabase.from('contacts').delete().eq('import_batch_id', rec.id)
+    await supabase.from('imports').delete().eq('id', rec.id)
+    throw new Error(importErr(m))
+  }
+  const rows = plan.create.map((x) => newRow(x as never, rec.id))
   for (let i = 0; i < rows.length; i += 500) {
     const ins = await supabase.from('contacts').insert(rows.slice(i, i + 500))
-    if (ins.error) {
-      // All or nothing: undo any part of this import that already landed.
-      await supabase.from('contacts').delete().eq('import_batch_id', rec.id)
-      await supabase.from('imports').delete().eq('id', rec.id)
-      throw new Error(importErr(ins.error.message))
-    }
+    if (ins.error) await undo(ins.error.message)
+  }
+  for (const u of plan.updates) {
+    const g = await supabase.rpc('import_gap_fill', { p_import: rec.id, p_contact: u.contactId, p_fields: u.fields })
+    if (g.error) throw new Error(importErr(g.error.message))
+  }
+  if (plan.checks.length) {
+    const ins = await supabase.from('import_checks').insert(plan.checks.map((c) => checkRow(rec.id, me.brokerage_id, ownerId, c)))
+    if (ins.error) throw new Error(importErr(ins.error.message))
   }
   return { ...rec, created_at: new Date().toISOString() }
+}
+
+function checkRow(importId: string, brokerageId: string, agentId: string, c: CheckItem) {
+  return c.kind === 'field'
+    ? { id: uuid(), status: 'pending', import_id: importId, brokerage_id: brokerageId, agent_id: agentId, contact_id: c.contactId, field: c.field, existing_value: c.existing, entry_value: c.entry, entry_snapshot: c.snapshot }
+    : { id: uuid(), status: 'pending', import_id: importId, brokerage_id: brokerageId, agent_id: agentId, contact_id: c.emailContactId, contact_id_2: c.phoneContactId, field: null, entry_snapshot: c.snapshot }
 }
 
 export async function loadImport(id: string) {
@@ -376,6 +400,77 @@ export async function removeNewPerson(id: string) {
   if (r.error) throw new Error(importErr(r.error.message))
 }
 
+// ---------- Updates to check ----------
+export interface ImportCheck {
+  id: string; import_id: string; agent_id: string; contact_id: string | null; contact_id_2: string | null
+  field: MatchField | null; existing_value: string | null; entry_value: string | null; entry_snapshot: Record<string, string | null>
+  status: string; label?: string; names?: Record<string, string>
+}
+/** Pending Check items for one agent (optionally one import), with each import's label and the people's names. */
+export async function loadChecks(agentId: string, importId?: string): Promise<ImportCheck[]> {
+  let q = supabase.from('import_checks').select('id, import_id, agent_id, contact_id, contact_id_2, field, existing_value, entry_value, entry_snapshot, status').eq('agent_id', agentId).eq('status', 'pending').order('created_at')
+  if (importId) q = q.eq('import_id', importId)
+  const { data, error } = await q
+  if (error) { if (/import_checks/.test(error.message)) return []; throw new Error(error.message) }
+  const list = (data ?? []) as ImportCheck[]
+  if (!list.length) return list
+  const imps = [...new Set(list.map((c) => c.import_id))]
+  const ids = [...new Set(list.flatMap((c) => [c.contact_id, c.contact_id_2]).filter(Boolean) as string[])]
+  const [li, pe] = await Promise.all([
+    supabase.from('imports').select('id, source_label').in('id', imps),
+    supabase.from('contacts').select('id, first_name, last_name').in('id', ids),
+  ])
+  const labels = new Map(((li.data ?? []) as { id: string; source_label: string }[]).map((x) => [x.id, x.source_label]))
+  const names = Object.fromEntries(((pe.data ?? []) as { id: string; first_name: string; last_name: string }[]).map((x) => [x.id, `${x.first_name} ${x.last_name}`.trim()]))
+  return list.map((c) => ({ ...c, label: labels.get(c.import_id) ?? 'Import', names }))
+}
+const resolve = async (id: string, status: string, extra: Record<string, unknown> = {}) => {
+  const r = await supabase.from('import_checks').update({ status, resolved_at: new Date().toISOString(), ...extra }).eq('id', id)
+  if (r.error) throw new Error(importErr(r.error.message))
+}
+/** Keep mine: the entry's value is dropped; the contact isn't touched. */
+export async function keepMine(c: ImportCheck) { needOnline(); await resolve(c.id, 'kept_mine') }
+/** Use entry's: writes that one field on the contact, nothing else. */
+export async function useEntry(c: ImportCheck) {
+  needOnline()
+  if (!c.contact_id || !c.field) return
+  const r = await supabase.from('contacts').update({ [c.field]: c.entry_value, updated_at: new Date().toISOString() }).eq('id', c.contact_id)
+  if (r.error) throw new Error(r.error.message)
+  await resolve(c.id, 'used_entry')
+}
+/**
+ * An ambiguous match, settled: Belongs to one of the two people (gap-fill and conflict rules run against that person
+ * only), or Treat as new (a New person in that import's batch).
+ */
+export async function settleAmbiguous(me: Profile, c: ImportCheck, pick: string | 'new') {
+  needOnline()
+  const row = c.entry_snapshot
+  if (pick === 'new') {
+    const t = ymd(today())
+    const label = c.label ?? 'Import'
+    const ins = await supabase.from('contacts').insert({
+      id: uuid(), agent_id: me.id, brokerage_id: me.brokerage_id, first_name: row.first_name ?? '', last_name: row.last_name ?? '',
+      email: row.email ?? null, phone: row.phone ?? null, address: row.address ?? null, city: row.city ?? null, state: row.state ?? null, zip: row.zip ?? null,
+      tier: 'U', sphere: 'client', source: label, added_on: t, prior_touches: 0, import_batch_id: c.import_id,
+    })
+    if (ins.error) throw new Error(importErr(ins.error.message))
+    await resolve(c.id, 'created_new')
+    return
+  }
+  const { data, error } = await supabase.from('contacts').select('id, first_name, last_name, email, phone, address, city, state, zip').eq('id', pick).single()
+  if (error) throw new Error(error.message)
+  const { fills, conflicts } = compareRow(row, data as Existing)
+  if (Object.keys(fills).length) {
+    const g = await supabase.rpc('import_gap_fill', { p_import: c.import_id, p_contact: pick, p_fields: fills })
+    if (g.error) throw new Error(importErr(g.error.message))
+  }
+  if (conflicts.length) {
+    const ins = await supabase.from('import_checks').insert(conflicts.map((x) => checkRow(c.import_id, me.brokerage_id, me.id, { kind: 'field', row: 0, contactId: pick, field: x.field, existing: x.existing, entry: x.entry, snapshot: row })))
+    if (ins.error) throw new Error(importErr(ins.error.message))
+  }
+  await resolve(c.id, 'assigned', { contact_id: pick })
+}
+
 export async function importContacts(me: Profile, rows: ContactInput[]) {
   needOnline()
   const t = ymd(today())
@@ -383,14 +478,6 @@ export async function importContacts(me: Profile, rows: ContactInput[]) {
   for (let i = 0; i < payload.length; i += 500) check(await supabase.from('contacts').insert(payload.slice(i, i + 500)))
 }
 
-export async function updateContacts(list: { id: string; fields: Partial<Contact> }[]) {
-  needOnline()
-  const stamp = new Date().toISOString()
-  for (let i = 0; i < list.length; i += 10) {
-    const res = await Promise.all(list.slice(i, i + 10).map((u) => supabase.from('contacts').update({ ...u.fields, updated_at: stamp }).eq('id', u.id)))
-    for (const r of res) check(r)
-  }
-}
 
 export async function logCard(me: Profile, cards: Card[], contacts: Contact[], input: { name: string; relationship: string; occasion: string; note: string; contactId?: string; alsoIds?: string[] }) {
   const repeat = me.card_rule && !!cardWithin12Months(cards, input.name)

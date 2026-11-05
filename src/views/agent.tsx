@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode, type RefObject } from 'react'
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
@@ -6,7 +6,7 @@ import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
   planNumbers, canRecruit, coupleName, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
-import { formatPhone, planEntryImport, planImport, readContacts } from '../lib/importer'
+import { formatPhone, matchRows, planEntryImport, readContacts, type EntryRow } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { GoalWizardHost, openGoalWizard } from './goals'
@@ -2367,6 +2367,19 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [exporting, setExporting] = useState(false)
   // New people from entry form imports, waiting for Keep or Remove (one line per import).
   const [reviewing, setReviewing] = useState<string | null>(null)
+  // Updates to check (conflicts and ambiguous matches from imports), one line per import.
+  const [checkingImport, setCheckingImport] = useState<string | null>(null)
+  const [pendingChecks, setPendingChecks] = useState<{ id: string; label: string; n: number }[]>([])
+  const loadPendingChecks = useCallback(() => {
+    if (readOnly || !navigator.onLine) return
+    api.loadChecks(agent.id).then((list) => {
+      const m = new Map<string, { id: string; label: string; n: number }>()
+      for (const c of list) { const g = m.get(c.import_id) ?? { id: c.import_id, label: c.label ?? 'Import', n: 0 }; g.n++; m.set(c.import_id, g) }
+      setPendingChecks([...m.values()])
+    }).catch(() => {})
+  }, [agent.id, readOnly])
+  useEffect(() => { loadPendingChecks() }, [loadPendingChecks, data.contacts.length])
+  useEffect(() => { window.addEventListener('rs-checks', loadPendingChecks); return () => window.removeEventListener('rs-checks', loadPendingChecks) }, [loadPendingChecks])
   const pendingBatches = useMemo(() => {
     const m = new Map<string, { id: string; label: string; n: number }>()
     for (const c of data.contacts) if (c.import_batch_id) {
@@ -2443,6 +2456,11 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         )}
       </div>
 
+      {!readOnly && pendingChecks.map((b) => (
+        <button key={`c-${b.id}`} className="newbanner" onClick={() => setCheckingImport(b.id)}>
+          <span><b>{b.n} {b.n === 1 ? 'update' : 'updates'} to check</b> from {b.label}</span><span className="link">Review</span>
+        </button>
+      ))}
       {!readOnly && pendingBatches.map((b) => (
         <button key={b.id} className="newbanner" onClick={() => setReviewing(b.id)}>
           <span><b>{b.n} New {b.n === 1 ? 'person' : 'people'}</b> from {b.label}</span><span className="link">Review</span>
@@ -2586,7 +2604,8 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       {addName !== null && <EditSheet ctx={ctx} c={null} prefill={{ name: addName }} onClose={() => setAddName(null)} />}
       {view && <PersonSheet ctx={ctx} c={view} onClose={() => setView(null)} onEdit={() => { const c = view; setView(null); setEdit(c) }} />}
       {group && <GroupSheet ctx={ctx} onClose={() => setGroup(false)} />}
-      {importing && <ImportSheet ctx={ctx} onClose={() => setImporting(false)} onReview={(id) => { setImporting(false); setReviewing(id) }} />}
+      {importing && <ImportSheet ctx={ctx} onClose={() => { setImporting(false); loadPendingChecks() }} onReview={(id) => { setImporting(false); setReviewing(id) }} onChecks={(id) => { setImporting(false); setCheckingImport(id) }} />}
+      {checkingImport && <ChecksSheet ctx={ctx} importId={checkingImport} onClose={() => { setCheckingImport(null); loadPendingChecks() }} />}
       {reviewing && <NewPeopleSheet ctx={ctx} batchId={reviewing} onClose={() => setReviewing(null)} />}
     </section>
   )
@@ -2715,11 +2734,11 @@ function exportCsv(contacts: Contact[], byContact: Map<string, string[]>, agent:
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-function ImportSheet({ ctx, onClose, onReview }: { ctx: Ctx; onClose: () => void; onReview: (batchId: string, ownerId: string) => void }) {
+function ImportSheet({ ctx, onClose, onReview, onChecks }: { ctx: Ctx; onClose: () => void; onReview: (batchId: string, ownerId: string) => void; onChecks: (importId: string) => void }) {
   // One import screen, two kinds of file: your own contact list, or an entry form (giveaways and the like).
   const [kind, setKind] = useState<'list' | 'form'>('list')
-  if (kind === 'form') return <EntryImportSheet ctx={ctx} onClose={onClose} onReview={onReview} onList={() => setKind('list')} />
-  return <ListImportSheet ctx={ctx} onClose={onClose} onForm={() => setKind('form')} />
+  if (kind === 'form') return <EntryImportSheet ctx={ctx} onClose={onClose} onReview={onReview} onChecks={onChecks} onList={() => setKind('list')} />
+  return <ListImportSheet ctx={ctx} onClose={onClose} onChecks={onChecks} onForm={() => setKind('form')} />
 }
 
 function ImportKindSwitch({ value, onPick }: { value: 'list' | 'form'; onPick: () => void }) {
@@ -2735,7 +2754,7 @@ function ImportKindSwitch({ value, onPick }: { value: 'list' | 'form'; onPick: (
  * Entry form import: people who filled in a form (a giveaway, the lights map, pie day) become New people in the
  * Owning agent's sphere, tagged with the Import label, held out of Today until the agent Keeps or Removes them.
  */
-function EntryImportSheet({ ctx, onClose, onReview, onList }: { ctx: Ctx; onClose: () => void; onReview: (batchId: string, ownerId: string) => void; onList: () => void }) {
+function EntryImportSheet({ ctx, onClose, onReview, onChecks, onList }: { ctx: Ctx; onClose: () => void; onReview: (batchId: string, ownerId: string) => void; onChecks: (importId: string) => void; onList: () => void }) {
   const toast = useToast()
   const isAdmin = ctx.me.role === 'broker'
   const [text, setText] = useState<string | null>(null)
@@ -2764,31 +2783,20 @@ function EntryImportSheet({ ctx, onClose, onReview, onList }: { ctx: Ctx; onClos
         setMsg(`This file is missing the ${plan.missing.join(' and ')} column. Nothing was imported. The header row needs Full name, Email and Phone.`)
         setBusy(false); return
       }
-      const rec = await api.runEntryImport(ctx.me, owner, label.trim(), plan)
+      const t = ymd(today())
+      const rec = await api.runImport(ctx.me, owner, label.trim(), plan, ((x: EntryRow, importId: string) => ({
+        id: crypto.randomUUID(), agent_id: owner, brokerage_id: ctx.me.brokerage_id, first_name: x.first_name, last_name: x.last_name,
+        email: x.email, phone: x.phone, address: x.address, city: x.city, state: x.state, zip: x.zip,
+        tier: 'U', sphere: 'client', source: label.trim(), added_on: t, prior_touches: 0, import_batch_id: importId,
+      })) as never)
       if (owner === ctx.me.id) await ctx.reload()
       setDone(rec)
     } catch (e) { setMsg((e as Error).message) }
     setBusy(false)
   }
   if (done) {
-    const ownerName = owner === ctx.me.id ? null : agents.find((a) => a.id === owner)?.full_name
-    return (
-      <Sheet label="Import summary" onClose={onClose}>
-        <h3>Import summary</h3>
-        <p className="note">{done.source_label}{ownerName ? ` · into ${ownerName}'s sphere` : ''}</p>
-        <div className="stats" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', marginTop: 12 }}>
-          <div className="stat"><div className="n">{done.imported}</div><div className="l">Imported</div></div>
-          <div className="stat"><div className="n">{done.duplicates}</div><div className="l">Duplicates skipped</div></div>
-          <div className="stat"><div className="n">{done.errors}</div><div className="l">Error rows skipped</div></div>
-        </div>
-        {(done.details.errorRows?.length ?? 0) > 0 && <p className="note" style={{ marginTop: 10 }}>Error rows (no name, or no email and no phone): {done.details.errorRows!.join(', ')}</p>}
-        {(done.details.duplicates?.length ?? 0) > 0 && <p className="note" style={{ marginTop: 6 }}>Duplicates: {done.details.duplicates!.join(', ')}</p>}
-        {done.imported > 0 && (owner === ctx.me.id
-          ? <button className="btn primary lg block" style={{ marginTop: 14 }} onClick={() => onReview(done.id, owner)}>Review the new people</button>
-          : <p className="note" style={{ marginTop: 14 }}>They're waiting in {ownerName ?? 'that agent'}'s New people list to Keep or Remove.</p>)}
-        <button className="btn ghost block" style={{ marginTop: 6 }} onClick={onClose}>Close</button>
-      </Sheet>
-    )
+    const ownerName = owner === ctx.me.id ? null : agents.find((a) => a.id === owner)?.full_name ?? 'that agent'
+    return <ImportSummary rec={done} ownerName={ownerName} onReview={() => onReview(done.id, owner)} onChecks={() => onChecks(done.id)} onClose={onClose} />
   }
   return (
     <Sheet label="Import contacts" onClose={onClose}>
@@ -2813,6 +2821,92 @@ function EntryImportSheet({ ctx, onClose, onReview, onList }: { ctx: Ctx; onClos
         <button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn gold" disabled={!text || busy} onClick={go}>{busy ? 'Importing…' : 'Import'}</button>
       </div>
+    </Sheet>
+  )
+}
+
+/** The import's record: Imported, Updated with missing details, Duplicates skipped, Error rows skipped, and Updates to check. */
+function ImportSummary({ rec, ownerName, onReview, onChecks, onClose }: { rec: api.ImportRecord; ownerName: string | null; onReview?: () => void; onChecks: () => void; onClose: () => void }) {
+  const updated = rec.details.updated ?? []
+  const checks = rec.details.checks ?? 0
+  const NAMES: Record<string, string> = { email: 'email', phone: 'phone', address: 'address', city: 'city', state: 'state', zip: 'ZIP' }
+  return (
+    <Sheet label="Import summary" onClose={onClose}>
+      <h3>Import summary</h3>
+      <p className="note">{rec.source_label}{ownerName ? ` · into ${ownerName}'s sphere` : ''}</p>
+      <div className="impcounts">
+        <div><b>{rec.imported}</b><span>Imported</span></div>
+        <div><b>{updated.length}</b><span>Updated with missing details</span></div>
+        <div><b>{rec.duplicates}</b><span>Duplicates skipped</span></div>
+        <div><b>{rec.errors}</b><span>Error rows skipped</span></div>
+      </div>
+      {checks > 0 && <p className="impchecks">Updates to check: <b>{checks}</b></p>}
+      {updated.length > 0 && <p className="note" style={{ marginTop: 8 }}>Updated: {updated.map((u) => `${u.name} (${u.fields.map((f) => NAMES[f] ?? f).join(', ')})`).join('; ')}</p>}
+      {(rec.details.errorRows?.length ?? 0) > 0 && <p className="note" style={{ marginTop: 6 }}>Error rows (no name, or no email and no phone): {rec.details.errorRows!.join(', ')}</p>}
+      {(rec.details.duplicates?.length ?? 0) > 0 && <p className="note" style={{ marginTop: 6 }}>Duplicates: {rec.details.duplicates!.join(', ')}</p>}
+      {ownerName ? (
+        (rec.imported > 0 || checks > 0) && <p className="note" style={{ marginTop: 14 }}>{[rec.imported > 0 && 'New people', checks > 0 && 'Updates to check'].filter(Boolean).join(' and ')} wait in {ownerName}'s lists for them to review.</p>
+      ) : (
+        <>
+          {rec.imported > 0 && onReview && <button className="btn primary lg block" style={{ marginTop: 14 }} onClick={onReview}>Review the new people</button>}
+          {checks > 0 && <button className="btn lg block" style={{ marginTop: 8 }} onClick={onChecks}>Review updates</button>}
+        </>
+      )}
+      <button className="btn ghost block" style={{ marginTop: 6 }} onClick={onClose}>Close</button>
+    </Sheet>
+  )
+}
+
+/** Updates to check: one question per conflict or ambiguous match. Every change is a deliberate tap; there's no "all" button. */
+function ChecksSheet({ ctx, importId, onClose }: { ctx: Ctx; importId: string; onClose: () => void }) {
+  const toast = useToast()
+  const [items, setItems] = useState<api.ImportCheck[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = useCallback(() => api.loadChecks(ctx.me.id, importId).then(setItems).catch((e) => toast((e as Error).message)), [ctx.me.id, importId, toast])
+  useEffect(() => { load() }, [load])
+  const FIELD: Record<string, string> = { email: 'Email', phone: 'Phone', address: 'Address', city: 'City', state: 'State', zip: 'ZIP' }
+  async function act(fn: () => Promise<void>) {
+    setBusy(true)
+    try { await fn(); await ctx.reload(); await load(); window.dispatchEvent(new Event('rs-checks')) } catch (e) { toast((e as Error).message) }
+    setBusy(false)
+  }
+  const label = items?.[0]?.label ?? ''
+  return (
+    <Sheet label="Updates to check" onClose={onClose}>
+      <h3>Updates to check</h3>
+      <p className="note">{label}{items ? ` · ${items.length} to check` : ''}</p>
+      {items === null ? <p className="muted">Loading…</p> : items.length === 0 ? (
+        <div className="card empty" style={{ marginTop: 12 }}><p>All checked.</p></div>
+      ) : (
+        <div className="newlist">
+          {items.map((c) => {
+            const n = (id: string | null) => (id && c.names?.[id]) || 'Someone'
+            const snap = c.entry_snapshot
+            return c.field ? (
+              <div key={c.id} className="checkrow">
+                <b>{n(c.contact_id)} · {FIELD[c.field] ?? c.field}</b>
+                <div className="cmp"><span>Yours: <b>{c.existing_value}</b></span><span>Entry: <b>{c.entry_value}</b></span></div>
+                <div className="newacts">
+                  <button className="btn" disabled={busy} onClick={() => act(() => api.keepMine(c))}>Keep mine</button>
+                  <button className="btn primary" disabled={busy} onClick={() => act(() => api.useEntry(c))}>Use entry's</button>
+                </div>
+              </div>
+            ) : (
+              <div key={c.id} className="checkrow">
+                <b>{[snap.first_name, snap.last_name].filter(Boolean).join(' ')}</b>
+                <small>{[snap.email, snap.phone].filter(Boolean).join(' · ')}</small>
+                <p className="note" style={{ margin: '4px 0 6px' }}>The email matches {n(c.contact_id)} and the phone matches {n(c.contact_id_2)}.</p>
+                <div className="newacts wrap">
+                  <button className="btn" disabled={busy} onClick={() => act(() => api.settleAmbiguous(ctx.me, c, c.contact_id!))}>Belongs to {n(c.contact_id)}</button>
+                  <button className="btn" disabled={busy} onClick={() => act(() => api.settleAmbiguous(ctx.me, c, c.contact_id_2!))}>Belongs to {n(c.contact_id_2)}</button>
+                  <button className="btn ghost" disabled={busy} onClick={() => act(() => api.settleAmbiguous(ctx.me, c, 'new'))}>Treat as new</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <button className="btn ghost block" style={{ marginTop: 10 }} onClick={onClose}>Close</button>
     </Sheet>
   )
 }
@@ -2871,16 +2965,23 @@ function NewPeopleSheet({ ctx, batchId, onClose }: { ctx: Ctx; batchId: string; 
   )
 }
 
-function ListImportSheet({ ctx, onClose, onForm }: { ctx: Ctx; onClose: () => void; onForm: () => void }) {
+function ListImportSheet({ ctx, onClose, onForm, onChecks }: { ctx: Ctx; onClose: () => void; onForm: () => void; onChecks: (importId: string) => void }) {
   const toast = useToast()
-  const [plan, setPlan] = useState<ReturnType<typeof planImport> | null>(null)
+  type ListRow = ReturnType<typeof readContacts>[number] & { row: number }
+  const [plan, setPlan] = useState<ReturnType<typeof matchRows<ListRow>> | null>(null)
   const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState<api.ImportRecord | null>(null)
   function read(file: File) {
     const r = new FileReader()
-    r.onload = () => {
-      const rows = readContacts(String(r.result))
+    r.onload = async () => {
+      const rows = readContacts(String(r.result)).map((x, i) => ({ ...x, row: i + 2 }))
       if (!rows.length) return toast("That file doesn't have any names to bring in.")
-      setPlan(planImport(rows, ctx.data.contacts))
+      try {
+        // The same matching as entry forms: fill blanks, ask about conflicts. A row with no email or phone match
+        // but the same full name as someone you have is skipped rather than added twice.
+        const existing = await api.ownerContactKeys(ctx.me.id)
+        setPlan(matchRows(rows, existing, { nameFallback: true }))
+      } catch (e) { toast((e as Error).message) }
     }
     r.readAsText(file)
   }
@@ -2888,39 +2989,33 @@ function ListImportSheet({ ctx, onClose, onForm }: { ctx: Ctx; onClose: () => vo
     if (!plan) return
     setBusy(true)
     try {
-      if (plan.fresh.length) await api.importContacts(ctx.me, plan.fresh.map((r) => ({ ...r, tier: r.tier ?? 'U', source: 'CSV import' })))
-      if (plan.updates.length) await api.updateContacts(plan.updates)
+      const t = ymd(today())
+      const label = `My contact list · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      const rec = await api.runImport(ctx.me, ctx.me.id, label, plan, ((x: ListRow) => {
+        const { row: _row, ...rest } = x
+        return { ...rest, id: crypto.randomUUID(), agent_id: ctx.me.id, brokerage_id: ctx.me.brokerage_id, tier: x.tier ?? 'U', source: 'CSV import', added_on: t, prior_touches: 0 }
+      }) as never)
       await ctx.reload()
-      toast([plan.fresh.length && `${plan.fresh.length} added`, plan.updates.length && `${plan.updates.length} updated`].filter(Boolean).join(', ') + '.')
-      onClose()
+      setDone(rec)
     } catch (e) {
       toast(`Couldn't import: ${(e as Error).message}`)
-      setBusy(false)
     }
+    setBusy(false)
   }
-  const nothing = plan && !plan.fresh.length && !plan.updates.length
+  if (done) return <ImportSummary rec={done} ownerName={null} onChecks={() => onChecks(done.id)} onClose={onClose} />
+  const nothing = plan && !plan.create.length && !plan.updates.length && !plan.checks.length
   return (
     <Sheet label="Import contacts" onClose={onClose}>
       <h3>Bring in a spreadsheet</h3>
       <ImportKindSwitch value="list" onPick={onForm} />
-      <p className="note" style={{ margin: '4px 0 12px' }}>A CSV file, like a BoldTrail export. It reads names, phone, email, address, birthday, closing date, wedding anniversary and tier. Anyone already here gets their info updated instead of added twice.</p>
+      <p className="note" style={{ margin: '4px 0 12px' }}>A CSV file, like a BoldTrail export. It reads names, phone, email, address, birthday, closing date, wedding anniversary and tier. People you already have get their blank contact details filled in; anything that disagrees comes to you as an update to check. Nothing is overwritten.</p>
       <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
       {plan && (
         <div className="card stack" style={{ marginTop: 14, background: 'var(--bg)', boxShadow: 'none' }}>
-          <p><b>{plan.fresh.length}</b> new {plan.fresh.length === 1 ? 'person' : 'people'} to add</p>
-          <p><b>{plan.updates.length}</b> already here with new info to update{plan.same ? ` (${plan.same} already up to date)` : ''}</p>
-          {plan.updates.length > 0 && (
-            <details className="more" style={{ marginTop: 0 }}>
-              <summary>See what changes</summary>
-              <div style={{ fontSize: 14 }}>
-                {plan.updates.slice(0, 50).map((u) => (
-                  <p key={u.id} style={{ padding: '4px 0', borderBottom: '1px solid var(--line)' }}><b style={{ fontWeight: 500 }}>{u.name}</b>: {Object.keys(u.fields).map((k) => k.replace('_', ' ').replace('home anniversary', 'closing date')).join(', ')}</p>
-                ))}
-                {plan.updates.length > 50 && <p className="note">and {plan.updates.length - 50} more</p>}
-              </div>
-            </details>
-          )}
-          <p className="note">Updates only fill in or change info. Nothing gets erased, and tiers you set in the app stay as they are.</p>
+          <p><b>{plan.create.length}</b> new {plan.create.length === 1 ? 'person' : 'people'} to add</p>
+          <p><b>{plan.updates.length}</b> already here with missing details to fill in</p>
+          {plan.checks.length > 0 && <p><b>{plan.checks.length}</b> {plan.checks.length === 1 ? 'update' : 'updates'} to check after the import</p>}
+          <p><b>{plan.duplicates.length}</b> already here, skipped</p>
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>

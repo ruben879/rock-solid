@@ -998,3 +998,17 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .newrow .nm small { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .newacts { display: flex; gap: 6px; flex: none; }
 .newacts .btn { min-height: 38px; padding: 6px 12px; }
+
+/* Import matching: the summary counts and Updates to check */
+.impcounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.impcounts div { background: var(--bg); border-radius: 12px; padding: 10px 12px; display: grid; }
+.impcounts b { font-size: 24px; font-weight: 600; }
+.impcounts span { font-size: 13px; color: var(--muted); }
+.impchecks { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--behind) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--behind) 35%, transparent); }
+.checkrow { padding: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+.checkrow:last-child { border-bottom: 0; }
+.checkrow > b { font-weight: 600; }
+.checkrow small { color: var(--muted); }
+.checkrow .cmp { display: grid; gap: 2px; font-size: 14.5px; color: var(--muted); margin: 2px 0 6px; }
+.checkrow .cmp b { color: var(--ink); font-weight: 500; }
+.newacts.wrap { flex-wrap: wrap; }
