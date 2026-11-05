@@ -986,3 +986,15 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .calnav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .calnav > span { flex: 1; text-align: center; }
 .calnav .iconbtn:disabled { opacity: .3; }
+
+/* Entry form imports: New people waiting for Keep or Remove */
+.newbanner { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; margin: 10px 0 0; padding: 12px 14px; border-radius: 12px; border: 1.5px solid color-mix(in srgb, var(--ok) 35%, var(--line)); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); color: var(--ink); font: 400 14.5px var(--font); text-align: left; cursor: pointer; }
+.newbanner b { font-weight: 600; }
+.newlist { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.newrow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.newrow:last-child { border-bottom: 0; }
+.newrow .nm { flex: 1; min-width: 0; display: grid; }
+.newrow .nm b { font-weight: 600; font-size: 15px; }
+.newrow .nm small { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.newacts { display: flex; gap: 6px; flex: none; }
+.newacts .btn { min-height: 38px; padding: 6px 12px; }

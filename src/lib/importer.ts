@@ -6,6 +6,29 @@ export type ImportRow = {
   tier: Tier | null; birthday: string | null; home_anniversary: string | null; wedding_anniversary?: string
 }
 
+/** Every record in the file, blank rows included, so row numbers match the spreadsheet. */
+export function csvRecords(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++ }
+      else if (ch === '"') quoted = false
+      else cell += ch
+    } else if (ch === '"') quoted = true
+    else if (ch === ',') { row.push(cell); cell = '' }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      row.push(cell); rows.push(row); row = []; cell = ''
+    } else cell += ch
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row) }
+  return rows
+}
+
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = []
   let row: string[] = []
@@ -153,4 +176,73 @@ export function planImport(rows: ImportRow[], existing: Contact[]) {
     else same++
   }
   return { fresh, updates, same }
+}
+
+// ---------- Entry form imports (giveaway forms and the like) ----------
+// The CSV contract: these headers (case-insensitive, trimmed), with the Google Form titles as aliases. Other columns are ignored.
+const ENTRY_COLS = {
+  name: ['full_name', 'full name'],
+  email: ['email'],
+  phone: ['phone'],
+  street: ['street', 'mailing street address'],
+  city: ['city'],
+  state: ['state'],
+  zip: ['zip'],
+} as const
+
+export type EntryRow = {
+  row: number; first_name: string; last_name: string; email: string | null; phone: string | null
+  address: string | null; city: string | null; state: string | null; zip: string | null
+}
+export type EntryPlan = {
+  /** Required columns missing entirely (name, email or phone). Nothing imports when any are missing. */
+  missing: string[]
+  rows: EntryRow[]
+  duplicates: { row: number; key: string }[]
+  errors: number[]
+}
+
+/** Email match key: trimmed, lowercase. Phone match key: digits only, last 10. */
+export const emailKey = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
+export const phoneKey = (s: string | null | undefined) => digits(s ?? '').slice(-10)
+
+/**
+ * Reads an entry form CSV and sorts every row into Imported, Duplicate or Error row.
+ * Row numbers count the header as row 1. A Duplicate matches a contact the Owning agent already has,
+ * or an earlier row in the same file, by email or phone.
+ */
+export function planEntryImport(text: string, existing: { email: string | null; phone: string | null }[]): EntryPlan {
+  const records = csvRecords(text.replace(/^\uFEFF/, ""))
+  const head = (records[0] ?? []).map((h) => h.trim().toLowerCase())
+  const idx = (names: readonly string[]) => head.findIndex((h) => names.includes(h))
+  const at = { name: idx(ENTRY_COLS.name), email: idx(ENTRY_COLS.email), phone: idx(ENTRY_COLS.phone), street: idx(ENTRY_COLS.street), city: idx(ENTRY_COLS.city), state: idx(ENTRY_COLS.state), zip: idx(ENTRY_COLS.zip) }
+  const missing = (['name', 'email', 'phone'] as const).filter((k) => at[k] < 0)
+  const plan: EntryPlan = { missing: [...missing], rows: [], duplicates: [], errors: [] }
+  if (missing.length) return plan
+  const emails = new Set(existing.map((c) => emailKey(c.email)).filter(Boolean))
+  const phones = new Set(existing.map((c) => phoneKey(c.phone)).filter(Boolean))
+  for (const [n, r] of records.slice(1).entries()) {
+    const rowNo = n + 2 // spreadsheet row number: the header is row 1
+    if (!r.some((c) => c.trim())) continue // a completely blank row isn't an entry
+    const get = (i: number) => (i >= 0 ? (r[i] ?? '').trim() : '')
+    const name = get(at.name)
+    const email = get(at.email)
+    const phone = get(at.phone)
+    if (!name || (!email && !phoneKey(phone))) { plan.errors.push(rowNo); continue }
+    const ek = emailKey(email)
+    const pk = phoneKey(phone)
+    if ((ek && emails.has(ek)) || (pk && phones.has(pk))) {
+      plan.duplicates.push({ row: rowNo, key: ek && emails.has(ek) ? email : phone })
+      continue
+    }
+    if (ek) emails.add(ek)
+    if (pk) phones.add(pk)
+    const parts = name.split(/\s+/)
+    plan.rows.push({
+      row: rowNo, first_name: parts[0], last_name: parts.slice(1).join(' '),
+      email: email || null, phone: phone || null,
+      address: get(at.street) || null, city: get(at.city) || null, state: get(at.state) || null, zip: get(at.zip) || null,
+    })
+  }
+  return plan
 }

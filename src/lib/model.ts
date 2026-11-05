@@ -61,6 +61,8 @@ export interface Contact {
   birthday_plan?: BirthdayPlan | null
   home_plan?: BirthdayPlan | null
   wedding_plan?: BirthdayPlan | null
+  /** Set while someone from an entry form import is a New person (not yet Kept). */
+  import_batch_id?: string | null
   /** Spouse or partner (linked both ways). One card addressed to both counts for both. */
   partner_id?: string | null
   /** Recruit mode: 'recruit' people live only in the broker's Recruiting views. */

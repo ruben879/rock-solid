@@ -6,7 +6,7 @@ import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
   planNumbers, canRecruit, coupleName, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
-import { formatPhone, planImport, readContacts } from '../lib/importer'
+import { formatPhone, planEntryImport, planImport, readContacts } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
 import { GettingStarted } from './start'
 import { GoalWizardHost, openGoalWizard } from './goals'
@@ -44,7 +44,10 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
   const agentsDue = useMemo(() => (recruits ? agentsDueCount(recruits.contacts, recruits.touches) : 0), [recruits])
   // The daily goal follows the people you actually have (unless you've set your own number).
   const auto = props.agent.plan?.auto_goals !== 0
-  const fromPeople = data ? dailyFromPeople(data.contacts, props.agent) : 0
+  // New people from an entry form import stay out of Today, the rocks and the daily goal until they're Kept.
+  // (Keyed on the import link, not on tier: tier U people already come up in Today every 30 days.)
+  const todayData = useMemo(() => (data && data.contacts.some((c) => c.import_batch_id) ? { ...data, contacts: data.contacts.filter((c) => !c.import_batch_id) } : data), [data])
+  const fromPeople = todayData ? dailyFromPeople(todayData.contacts, props.agent) : 0
   const own = !props.readOnly && props.agent.id === props.me.id
   useEffect(() => {
     // Keep the saved goal in step, so Team views and the morning nudge use the same number.
@@ -77,7 +80,7 @@ export function AgentWorkspace(props: { me: Profile; agent: Profile; brokerage: 
     <>
       {props.tab === 'week' && (canRec && sToday === 'recruit'
         ? <><SphereSwitch value={sToday} onChange={setSToday} counts={counts} badge /><RecruitToday rc={rc} onBoard={() => { setSPeople('recruit'); props.onGo?.('db') }} /></>
-        : <>{canRec && <SphereSwitch value={sToday} onChange={setSToday} counts={counts} badge />}<Today ctx={ctx} onGo={props.onGo} /></>)}
+        : <>{canRec && <SphereSwitch value={sToday} onChange={setSToday} counts={counts} badge />}<Today ctx={{ ...ctx, data: todayData ?? data }} onGo={props.onGo} /></>)}
       {props.tab === 'cards' && (props.readOnly
         ? <CardADay ctx={ctx} onProfileChange={props.onProfileChange} />
         : <Together me={props.me} cad={cadInfo(data.cards)}
@@ -2362,6 +2365,16 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [sorting, setSorting] = useState(false)
   const [tools, setTools] = useState(false)
   const [exporting, setExporting] = useState(false)
+  // New people from entry form imports, waiting for Keep or Remove (one line per import).
+  const [reviewing, setReviewing] = useState<string | null>(null)
+  const pendingBatches = useMemo(() => {
+    const m = new Map<string, { id: string; label: string; n: number }>()
+    for (const c of data.contacts) if (c.import_batch_id) {
+      const b = m.get(c.import_batch_id) ?? { id: c.import_batch_id, label: c.source ?? 'Import', n: 0 }
+      b.n++; m.set(c.import_batch_id, b)
+    }
+    return [...m.values()]
+  }, [data.contacts])
   // Select mode: tap people to pick several, then tag or delete them together.
   const [sel, setSel] = useState<Set<string> | null>(null)
   const [confirmDel, setConfirmDel] = useState<'some' | 'all' | null>(null)
@@ -2394,14 +2407,14 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
 
   const lastOf = (c: Contact) => (personal.get(c.id) ?? []).reduce((m, d) => (d > m ? d : m), '')
   const barsOf = new Map(data.contacts.map((c) => [c.id, signal(c, personal, agent.tier_days)]))
-  const untagged = data.contacts.filter((c) => c.tier === 'U').length
+  const untagged = data.contacts.filter((c) => c.tier === 'U' && !c.import_batch_id).length
   const term = q.trim().toLowerCase()
   const searching = !!term
   const byName = (a: Contact, b: Contact) => fullName(a).localeCompare(fullName(b))
   const list = data.contacts
     .filter((c) => (searching
       ? fullName(c).toLowerCase().includes(term) || (c.phone ?? '').replace(/\D/g, '').includes(term.replace(/\D/g, '') || '~')
-      : tier === 'all' || tierOf(c) === tier))
+      : tier === 'all' || (tierOf(c) === tier && !(tier === 'U' && c.import_batch_id))))
     .sort((a, b) => {
       if (searching || sort === 'az') return byName(a, b)
       if (sort === 'new') return (b.added_on ?? '').localeCompare(a.added_on ?? '') || byName(a, b)
@@ -2430,6 +2443,11 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
         )}
       </div>
 
+      {!readOnly && pendingBatches.map((b) => (
+        <button key={b.id} className="newbanner" onClick={() => setReviewing(b.id)}>
+          <span><b>{b.n} New {b.n === 1 ? 'person' : 'people'}</b> from {b.label}</span><span className="link">Review</span>
+        </button>
+      ))}
       <div className="search"><ISearch size={20} /><input type="search" placeholder="Find someone" aria-label="Find someone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
       {sel && (
         <div className="selbar">
@@ -2478,7 +2496,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
                     : <span className={`pav t-${t}`}>{t === 'U' ? '?' : initialsOf(c)}</span>}
                   <span className="nm">
                     <b>{fullName(c)}</b>
-                    <small>{t === 'U' ? 'Needs a tag' : talked(lastOf(c) || undefined)}</small>
+                    <small>{c.import_batch_id ? `New · ${c.source ?? 'Import'}` : t === 'U' ? 'Needs a tag' : talked(lastOf(c) || undefined)}</small>
                   </span>
                   <Signal bars={barsOf.get(c.id) ?? 0} tone />
                 </button>
@@ -2568,7 +2586,8 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       {addName !== null && <EditSheet ctx={ctx} c={null} prefill={{ name: addName }} onClose={() => setAddName(null)} />}
       {view && <PersonSheet ctx={ctx} c={view} onClose={() => setView(null)} onEdit={() => { const c = view; setView(null); setEdit(c) }} />}
       {group && <GroupSheet ctx={ctx} onClose={() => setGroup(false)} />}
-      {importing && <ImportSheet ctx={ctx} onClose={() => setImporting(false)} />}
+      {importing && <ImportSheet ctx={ctx} onClose={() => setImporting(false)} onReview={(id) => { setImporting(false); setReviewing(id) }} />}
+      {reviewing && <NewPeopleSheet ctx={ctx} batchId={reviewing} onClose={() => setReviewing(null)} />}
     </section>
   )
 }
@@ -2696,7 +2715,163 @@ function exportCsv(contacts: Contact[], byContact: Map<string, string[]>, agent:
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
+function ImportSheet({ ctx, onClose, onReview }: { ctx: Ctx; onClose: () => void; onReview: (batchId: string, ownerId: string) => void }) {
+  // One import screen, two kinds of file: your own contact list, or an entry form (giveaways and the like).
+  const [kind, setKind] = useState<'list' | 'form'>('list')
+  if (kind === 'form') return <EntryImportSheet ctx={ctx} onClose={onClose} onReview={onReview} onList={() => setKind('list')} />
+  return <ListImportSheet ctx={ctx} onClose={onClose} onForm={() => setKind('form')} />
+}
+
+function ImportKindSwitch({ value, onPick }: { value: 'list' | 'form'; onPick: () => void }) {
+  return (
+    <div className="seg4 x2" role="group" aria-label="What are you importing?" style={{ margin: '4px 0 12px' }}>
+      <button type="button" aria-pressed={value === 'list'} onClick={value === 'list' ? undefined : onPick}>My contact list</button>
+      <button type="button" aria-pressed={value === 'form'} onClick={value === 'form' ? undefined : onPick}>Entry form</button>
+    </div>
+  )
+}
+
+/**
+ * Entry form import: people who filled in a form (a giveaway, the lights map, pie day) become New people in the
+ * Owning agent's sphere, tagged with the Import label, held out of Today until the agent Keeps or Removes them.
+ */
+function EntryImportSheet({ ctx, onClose, onReview, onList }: { ctx: Ctx; onClose: () => void; onReview: (batchId: string, ownerId: string) => void; onList: () => void }) {
+  const toast = useToast()
+  const isAdmin = ctx.me.role === 'broker'
+  const [text, setText] = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+  const [label, setLabel] = useState('')
+  const [owner, setOwner] = useState(ctx.me.id)
+  const [agents, setAgents] = useState<Profile[]>([])
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [done, setDone] = useState<api.ImportRecord | null>(null)
+  useEffect(() => { if (isAdmin) api.loadTeam(ctx.me.brokerage_id).then(setAgents).catch(() => {}) }, [isAdmin, ctx.me.brokerage_id])
+  function read(file: File) {
+    setMsg(''); setFileName(file.name)
+    const r = new FileReader()
+    r.onload = () => setText(String(r.result))
+    r.readAsText(file)
+  }
+  async function go() {
+    if (!text) return
+    if (!label.trim()) { setMsg('Type an Import label first, like "Foundation Giveaway Nov 2026". It goes on every person this import creates.'); return }
+    setBusy(true); setMsg('')
+    try {
+      const existing = await api.ownerContactKeys(owner)
+      const plan = planEntryImport(text, existing)
+      if (plan.missing.length) {
+        setMsg(`This file is missing the ${plan.missing.join(' and ')} column. Nothing was imported. The header row needs Full name, Email and Phone.`)
+        setBusy(false); return
+      }
+      const rec = await api.runEntryImport(ctx.me, owner, label.trim(), plan)
+      if (owner === ctx.me.id) await ctx.reload()
+      setDone(rec)
+    } catch (e) { setMsg((e as Error).message) }
+    setBusy(false)
+  }
+  if (done) {
+    const ownerName = owner === ctx.me.id ? null : agents.find((a) => a.id === owner)?.full_name
+    return (
+      <Sheet label="Import summary" onClose={onClose}>
+        <h3>Import summary</h3>
+        <p className="note">{done.source_label}{ownerName ? ` · into ${ownerName}'s sphere` : ''}</p>
+        <div className="stats" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', marginTop: 12 }}>
+          <div className="stat"><div className="n">{done.imported}</div><div className="l">Imported</div></div>
+          <div className="stat"><div className="n">{done.duplicates}</div><div className="l">Duplicates skipped</div></div>
+          <div className="stat"><div className="n">{done.errors}</div><div className="l">Error rows skipped</div></div>
+        </div>
+        {(done.details.errorRows?.length ?? 0) > 0 && <p className="note" style={{ marginTop: 10 }}>Error rows (no name, or no email and no phone): {done.details.errorRows!.join(', ')}</p>}
+        {(done.details.duplicates?.length ?? 0) > 0 && <p className="note" style={{ marginTop: 6 }}>Duplicates: {done.details.duplicates!.join(', ')}</p>}
+        {done.imported > 0 && (owner === ctx.me.id
+          ? <button className="btn primary lg block" style={{ marginTop: 14 }} onClick={() => onReview(done.id, owner)}>Review the new people</button>
+          : <p className="note" style={{ marginTop: 14 }}>They're waiting in {ownerName ?? 'that agent'}'s New people list to Keep or Remove.</p>)}
+        <button className="btn ghost block" style={{ marginTop: 6 }} onClick={onClose}>Close</button>
+      </Sheet>
+    )
+  }
+  return (
+    <Sheet label="Import contacts" onClose={onClose}>
+      <h3>Bring in a spreadsheet</h3>
+      <ImportKindSwitch value="form" onPick={onList} />
+      <p className="note" style={{ margin: '0 0 12px' }}>A CSV from an entry form, like a Google Form export. It reads Full name, Email, Phone, Mailing street address, City, State and ZIP. Everyone lands as a New person to Keep or Remove. Anyone already in the sphere is skipped, never changed.</p>
+      <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
+      {fileName && <p className="note" style={{ marginTop: 4 }}>{fileName}</p>}
+      <label className="field" style={{ marginTop: 12 }}><span>Import label</span>
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Foundation Giveaway Nov 2026" />
+      </label>
+      <label className="field" style={{ marginTop: 10 }}><span>Owning agent</span>
+        {isAdmin ? (
+          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+            <option value={ctx.me.id}>Me ({ctx.me.full_name || ctx.me.email})</option>
+            {agents.filter((a) => a.id !== ctx.me.id).map((a) => <option key={a.id} value={a.id}>{a.full_name || a.email}</option>)}
+          </select>
+        ) : <input value={ctx.me.full_name || ctx.me.email} disabled />}
+      </label>
+      {msg && <div className="warn" style={{ marginTop: 10 }}>{msg}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+        <button className="btn ghost" onClick={onClose}>Cancel</button>
+        <button className="btn gold" disabled={!text || busy} onClick={go}>{busy ? 'Importing…' : 'Import'}</button>
+      </div>
+    </Sheet>
+  )
+}
+
+/** New people from one import: Keep (A or B) or Remove each one. The list empties as you work it. */
+function NewPeopleSheet({ ctx, batchId, onClose }: { ctx: Ctx; batchId: string; onClose: () => void }) {
+  const toast = useToast()
+  const [rec, setRec] = useState<api.ImportRecord | null>(null)
+  const [asking, setAsking] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { api.loadImport(batchId).then(setRec).catch(() => {}) }, [batchId])
+  const people = ctx.data.contacts.filter((c) => c.import_batch_id === batchId).sort((a, b) => fullName(a).localeCompare(fullName(b)))
+  const label = rec?.source_label ?? people[0]?.source ?? 'Import'
+  async function keep(ids: string[], tier: 'A' | 'B') {
+    setBusy(true)
+    try { await api.keepNewPeople(ids, tier); await ctx.reload(); setAsking(null); if (ids.length > 1) toast(`${ids.length} kept as ${tier}.`) } catch (e) { toast((e as Error).message) }
+    setBusy(false)
+  }
+  async function remove(c: Contact) {
+    setBusy(true)
+    try { await api.removeNewPerson(c.id); await ctx.reload(); toast(`${fullName(c)} removed.`) } catch (e) { toast((e as Error).message) }
+    setBusy(false)
+  }
+  return (
+    <Sheet label="New people" onClose={onClose}>
+      <h3>New people</h3>
+      <p className="note">{label} · {people.length} to review</p>
+      {people.length === 0 ? (
+        <div className="card empty" style={{ marginTop: 12 }}><p>All reviewed. Everyone you kept is in your sphere now.</p></div>
+      ) : (
+        <>
+          <button className="btn block" style={{ marginTop: 12 }} disabled={busy} onClick={() => keep(people.map((c) => c.id), 'B')}>Keep all as B</button>
+          <div className="newlist">
+            {people.map((c) => (
+              <div key={c.id} className="newrow">
+                <div className="nm"><b>{fullName(c)}</b><small>{[c.email || c.phone, c.city].filter(Boolean).join(' · ')}</small></div>
+                {asking === c.id ? (
+                  <div className="newacts">
+                    <button className="btn primary" disabled={busy} onClick={() => keep([c.id], 'A')}>A</button>
+                    <button className="btn primary" disabled={busy} onClick={() => keep([c.id], 'B')}>B</button>
+                    <button className="btn ghost" onClick={() => setAsking(null)}>×</button>
+                  </div>
+                ) : (
+                  <div className="newacts">
+                    <button className="btn" disabled={busy} onClick={() => setAsking(c.id)}>Keep</button>
+                    <button className="btn ghost" disabled={busy} onClick={() => remove(c)}>Remove</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <button className="btn ghost block" style={{ marginTop: 10 }} onClick={onClose}>Close</button>
+    </Sheet>
+  )
+}
+
+function ListImportSheet({ ctx, onClose, onForm }: { ctx: Ctx; onClose: () => void; onForm: () => void }) {
   const toast = useToast()
   const [plan, setPlan] = useState<ReturnType<typeof planImport> | null>(null)
   const [busy, setBusy] = useState(false)
@@ -2727,6 +2902,7 @@ function ImportSheet({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   return (
     <Sheet label="Import contacts" onClose={onClose}>
       <h3>Bring in a spreadsheet</h3>
+      <ImportKindSwitch value="list" onPick={onForm} />
       <p className="note" style={{ margin: '4px 0 12px' }}>A CSV file, like a BoldTrail export. It reads names, phone, email, address, birthday, closing date, wedding anniversary and tier. Anyone already here gets their info updated instead of added twice.</p>
       <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
       {plan && (

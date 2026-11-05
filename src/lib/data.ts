@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { addDays, monthStart, today, weekStart, ymd } from './dates'
 import type { BirthdayPlan, Brokerage, Card, Contact, Occasion, Profile, Tally, Tier, Touch, TouchKind } from './model'
 import { OCCASION_META, cardWithin12Months, fullName } from './model'
+import type { EntryPlan } from './importer'
 import { exec, flush, getCached, isNetworkError, isOnline, pendingCount, setCached, subscribe, uuid, type AgentData } from './offline'
 export type { AgentData } from './offline'
 
@@ -311,6 +312,68 @@ export async function deleteContacts(ids: string[]) {
 export async function setTiers(ids: string[], tier: Tier) {
   needOnline()
   for (let i = 0; i < ids.length; i += 200) check(await supabase.from('contacts').update({ tier }).in('id', ids.slice(i, i + 200)))
+}
+
+// ---------- Entry form imports ----------
+export interface ImportRecord { id: string; agent_id: string; source_label: string; imported: number; duplicates: number; errors: number; details: { errorRows?: number[]; duplicates?: string[] }; created_at: string }
+const importErr = (m: string) => (/import_batch_id|imports/.test(m) ? 'Entry form imports need the 0020 SQL run in Supabase first.' : m)
+
+/** Emails and phones the Owning agent already has (any sphere), fresh from the server, for the Duplicate check. */
+export async function ownerContactKeys(agentId: string) {
+  needOnline()
+  return fetchAll<{ email: string | null; phone: string | null }>((a, b) => supabase.from('contacts').select('email, phone').eq('agent_id', agentId).range(a, b))
+}
+
+/**
+ * Runs one import: records it (Import label, Owning agent, the three counts), then creates the New people.
+ * New people are ordinary client contacts at tier U, tagged with the label, and linked to this import until Kept.
+ */
+export async function runEntryImport(me: Profile, ownerId: string, label: string, plan: EntryPlan): Promise<ImportRecord> {
+  needOnline()
+  const rec = {
+    id: uuid(), brokerage_id: me.brokerage_id, agent_id: ownerId, imported_by: me.id, source_label: label,
+    imported: plan.rows.length, duplicates: plan.duplicates.length, errors: plan.errors.length,
+    details: { errorRows: plan.errors, duplicates: plan.duplicates.map((d) => d.key) },
+  }
+  const r = await supabase.from('imports').insert(rec)
+  if (r.error) throw new Error(importErr(r.error.message))
+  const t = ymd(today())
+  const rows = plan.rows.map((x) => ({
+    id: uuid(), agent_id: ownerId, brokerage_id: me.brokerage_id, first_name: x.first_name, last_name: x.last_name,
+    email: x.email, phone: x.phone, address: x.address, city: x.city, state: x.state, zip: x.zip,
+    tier: 'U', sphere: 'client', source: label, added_on: t, prior_touches: 0, import_batch_id: rec.id,
+  }))
+  for (let i = 0; i < rows.length; i += 500) {
+    const ins = await supabase.from('contacts').insert(rows.slice(i, i + 500))
+    if (ins.error) {
+      // All or nothing: undo any part of this import that already landed.
+      await supabase.from('contacts').delete().eq('import_batch_id', rec.id)
+      await supabase.from('imports').delete().eq('id', rec.id)
+      throw new Error(importErr(ins.error.message))
+    }
+  }
+  return { ...rec, created_at: new Date().toISOString() }
+}
+
+export async function loadImport(id: string) {
+  const { data, error } = await supabase.from('imports').select('id, agent_id, source_label, imported, duplicates, errors, details, created_at').eq('id', id).maybeSingle()
+  if (error) throw new Error(importErr(error.message))
+  return data as ImportRecord | null
+}
+
+/** Keep: pick A or B, and they join normal rotation (the batch link comes off). */
+export async function keepNewPeople(ids: string[], tier: 'A' | 'B') {
+  needOnline()
+  for (let i = 0; i < ids.length; i += 200) {
+    const r = await supabase.from('contacts').update({ tier, import_batch_id: null, updated_at: new Date().toISOString() }).in('id', ids.slice(i, i + 200))
+    if (r.error) throw new Error(importErr(r.error.message))
+  }
+}
+/** Remove: deletes a New person (junk or fake entry). Only ever called from the New people review list. */
+export async function removeNewPerson(id: string) {
+  needOnline()
+  const r = await supabase.from('contacts').delete().eq('id', id).not('import_batch_id', 'is', null)
+  if (r.error) throw new Error(importErr(r.error.message))
 }
 
 export async function importContacts(me: Profile, rows: ContactInput[]) {
