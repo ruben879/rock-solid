@@ -2365,6 +2365,7 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
   const [sorting, setSorting] = useState(false)
   const [tools, setTools] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [entryOpen, setEntryOpen] = useState(false)
   // New people from entry form imports, waiting for Keep or Remove (one line per import).
   const [reviewing, setReviewing] = useState<string | null>(null)
   // Updates to check (conflicts and ambiguous matches from imports), one line per import.
@@ -2582,6 +2583,11 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
               <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setImporting(true) }}>Import CSV</button>
             </div>
             <div className="card stack">
+              <h3>Your entry page</h3>
+              <p className="note">A link people fill in for a giveaway or drawing. Entries come into New people for you to review.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => { setTools(false); setEntryOpen(true) }}>Open entry page</button>
+            </div>
+            <div className="card stack">
               <h3>Start over</h3>
               <p className="note">Delete all {data.contacts.length} people and their touch history, then bring in a fresh list. Download a copy first if you might want it.</p>
               <button className="btn danger" style={{ alignSelf: 'flex-start' }} disabled={!data.contacts.length} onClick={() => { setTools(false); setConfirmDel('all') }}>Delete everyone</button>
@@ -2607,6 +2613,8 @@ function People({ ctx, onProfileChange }: { ctx: Ctx; onProfileChange?: () => vo
       {importing && <ImportSheet ctx={ctx} onClose={() => { setImporting(false); loadPendingChecks() }} onReview={(id) => { setImporting(false); setReviewing(id) }} onChecks={(id) => { setImporting(false); setCheckingImport(id) }} />}
       {checkingImport && <ChecksSheet ctx={ctx} importId={checkingImport} onClose={() => { setCheckingImport(null); loadPendingChecks() }} />}
       {reviewing && <NewPeopleSheet ctx={ctx} batchId={reviewing} onClose={() => setReviewing(null)} />}
+      {entryOpen && <EntryPageSheet ctx={ctx} pendingBatches={pendingBatches} pendingChecks={pendingChecks} onClose={() => setEntryOpen(false)}
+        onReview={(id) => { setEntryOpen(false); setReviewing(id) }} onChecks={(id) => { setEntryOpen(false); setCheckingImport(id) }} />}
     </section>
   )
 }
@@ -2907,6 +2915,108 @@ function ChecksSheet({ ctx, importId, onClose }: { ctx: Ctx; importId: string; o
         </div>
       )}
       <button className="btn ghost block" style={{ marginTop: 10 }} onClick={onClose}>Close</button>
+    </Sheet>
+  )
+}
+
+/**
+ * The agent's public entry page: the link to share, the label people see as the heading, and what's waiting from it.
+ * Brokers can look at any agent's link and label; only the agent changes theirs or reviews the entries.
+ */
+function EntryPageSheet({ ctx, pendingBatches, pendingChecks, onClose, onReview, onChecks }: {
+  ctx: Ctx; pendingBatches: { id: string; label: string; n: number }[]; pendingChecks: { id: string; label: string; n: number }[]
+  onClose: () => void; onReview: (batchId: string) => void; onChecks: (importId: string) => void
+}) {
+  const toast = useToast()
+  const isBroker = ctx.me.role === 'broker'
+  const [whose, setWhose] = useState(ctx.me.id)
+  const [agents, setAgents] = useState<Profile[]>([])
+  const [page, setPage] = useState<api.EntryPageInfo | null>(null)
+  const [label, setLabel] = useState('')
+  const [batches, setBatches] = useState<string[]>([])
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [confirmNew, setConfirmNew] = useState(false)
+  const mine = whose === ctx.me.id
+  useEffect(() => { if (isBroker) api.loadTeam(ctx.me.brokerage_id).then(setAgents).catch(() => {}) }, [isBroker, ctx.me.brokerage_id])
+  useEffect(() => {
+    let live = true
+    setPage(null); setMsg(null); setConfirmNew(false)
+    api.entryPageFor(whose).then((p) => { if (live) { setPage(p); setLabel(p.label) } }).catch((e) => live && setMsg((e as Error).message))
+    if (whose === ctx.me.id) api.entryBatches(whose).then((b) => live && setBatches(b.map((x) => x.id))).catch(() => {})
+    return () => { live = false }
+  }, [whose, ctx.me.id])
+  const url = page ? `${location.origin}/enter/${page.token}` : ''
+  const newHere = pendingBatches.filter((b) => batches.includes(b.id))
+  const checksHere = pendingChecks.filter((b) => batches.includes(b.id))
+  const nNew = newHere.reduce((t, b) => t + b.n, 0), nChecks = checksHere.reduce((t, b) => t + b.n, 0)
+
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); toast('Link copied.') }
+    catch { toast('Press and hold the link to copy it.') }
+  }
+  async function save() {
+    if (!page || !label.trim() || label.trim() === page.label) return
+    setBusy(true)
+    try { await api.saveEntryLabel(page.agent_id, label); setPage({ ...page, label: label.trim() }); toast('Saved. New entries start a new batch.') }
+    catch (e) { toast((e as Error).message) }
+    setBusy(false)
+  }
+  async function regenerate() {
+    setBusy(true)
+    try { const p = await api.regenerateEntryLink(); setPage(p); setConfirmNew(false); toast('New link ready. The old one no longer works.') }
+    catch (e) { toast((e as Error).message) }
+    setBusy(false)
+  }
+
+  return (
+    <Sheet label="Entry page" onClose={onClose}>
+      <h3>Entry page</h3>
+      {isBroker && (
+        <label className="field" style={{ marginTop: 10 }}><span>Whose page</span>
+          <select value={whose} onChange={(e) => setWhose(e.target.value)}>
+            <option value={ctx.me.id}>Mine</option>
+            {agents.filter((a) => a.id !== ctx.me.id).map((a) => <option key={a.id} value={a.id}>{a.full_name || a.email}</option>)}
+          </select>
+        </label>
+      )}
+      {msg && <div className="warn" style={{ marginTop: 10 }}>{msg}</div>}
+      {!page && !msg && <p className="muted" style={{ marginTop: 10 }}>Loading…</p>}
+      {page && (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <p className="note">{mine ? 'Share this link anywhere: a post, a text, a sign at an event. Entries come into New people for you to review.' : 'Their link and label. Only they can change these or review the entries.'}</p>
+          <div className="entry-link" aria-label="Entry page link">{url}</div>
+          <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn primary" onClick={copy}>Copy link</button>
+            <a className="btn" href={url} target="_blank" rel="noreferrer">Preview</a>
+          </span>
+          <label className="field"><span>Entry label</span>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} disabled={!mine} placeholder="Foundation Giveaway Nov 2026" />
+          </label>
+          {mine && (
+            <>
+              <p className="note">The heading people see on the page. Saving a new label starts a new batch.</p>
+              <button className="btn" style={{ alignSelf: 'flex-start' }} disabled={busy || !label.trim() || label.trim() === page.label} onClick={save}>Save</button>
+              <div className="card stack" style={{ background: 'var(--bg)' }}>
+                <b>{nNew} new {nNew === 1 ? 'person' : 'people'} waiting · {nChecks} {nChecks === 1 ? 'update' : 'updates'} to check</b>
+                {newHere.map((b) => <button key={b.id} className="newbanner" onClick={() => onReview(b.id)}><span><b>{b.n} New {b.n === 1 ? 'person' : 'people'}</b> from {b.label}</span><span className="link">Review</span></button>)}
+                {checksHere.map((b) => <button key={`c-${b.id}`} className="newbanner" onClick={() => onChecks(b.id)}><span><b>{b.n} {b.n === 1 ? 'update' : 'updates'} to check</b> from {b.label}</span><span className="link">Review</span></button>)}
+              </div>
+              {!confirmNew ? (
+                <button className="link" style={{ alignSelf: 'flex-start' }} onClick={() => setConfirmNew(true)}>Regenerate link</button>
+              ) : (
+                <div className="warn stack">
+                  <span>The old link stops working right away. Anyone who opens it will see "This entry link is no longer active."</span>
+                  <span style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn danger" disabled={busy} onClick={regenerate}>Make a new link</button>
+                    <button className="btn ghost" onClick={() => setConfirmNew(false)}>Cancel</button>
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </Sheet>
   )
 }

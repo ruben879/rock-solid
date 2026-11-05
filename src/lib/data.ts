@@ -652,3 +652,35 @@ export async function saveDrawing(me: Profile, d: Omit<Drawing, 'id'>) {
 export async function clearDrawings(month: string) {
   check(await supabase.from('drawings').delete().eq('month', month))
 }
+
+// ---------- Hosted entry page ----------
+export type EntryPageInfo = { agent_id: string; token: string; label: string }
+const entryErr = (m: string) => (/entry_page|entry_submissions|via|closed/.test(m) ? 'The entry page needs the 0022 SQL run in Supabase first.' : m)
+/** The agent's entry page (made the first time it's opened). Brokers can open any agent's in their brokerage. */
+export async function entryPageFor(agentId: string): Promise<EntryPageInfo> {
+  needOnline()
+  const { data, error } = await supabase.rpc('entry_page_for', { p_agent: agentId })
+  if (error) throw new Error(entryErr(error.message))
+  const r = (Array.isArray(data) ? data[0] : data) as EntryPageInfo
+  return { agent_id: r.agent_id, token: r.token, label: r.label }
+}
+/** A new label. The server closes the open batch, so the next entry starts a new one. */
+export async function saveEntryLabel(agentId: string, label: string) {
+  needOnline()
+  const { error } = await supabase.from('entry_pages').update({ label: label.trim() }).eq('agent_id', agentId)
+  if (error) throw new Error(entryErr(error.message))
+}
+/** A new link for my page. The old one stops working right away. */
+export async function regenerateEntryLink(): Promise<EntryPageInfo> {
+  needOnline()
+  const { data, error } = await supabase.rpc('entry_page_regenerate')
+  if (error) throw new Error(entryErr(error.message))
+  const r = (Array.isArray(data) ? data[0] : data) as EntryPageInfo
+  return { agent_id: r.agent_id, token: r.token, label: r.label }
+}
+/** The batches entries from the page went into (newest first), so the screen can count what's waiting from them. */
+export async function entryBatches(agentId: string) {
+  const { data, error } = await supabase.from('imports').select('id, source_label').eq('agent_id', agentId).eq('via', 'entry_page').order('created_at', { ascending: false })
+  if (error) throw new Error(entryErr(error.message))
+  return (data ?? []) as { id: string; source_label: string }[]
+}

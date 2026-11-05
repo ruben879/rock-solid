@@ -1012,3 +1012,19 @@ html[data-skin="clean"] .pc-top { border-radius: 16px 16px 0 0; background: var(
 .checkrow .cmp { display: grid; gap: 2px; font-size: 14.5px; color: var(--muted); margin: 2px 0 6px; }
 .checkrow .cmp b { color: var(--ink); font-weight: 500; }
 .newacts.wrap { flex-wrap: wrap; }
+
+/* Public entry page (/enter/<token>) */
+.enter { max-width: 480px; padding-block: calc(28px + env(safe-area-inset-top, 0px)) 40px; }
+.enter-head { text-align: center; margin-bottom: 18px; }
+.enter-brand { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--navy); }
+.enter-logo { max-height: 48px; max-width: 220px; object-fit: contain; }
+.enter-h { font-size: 26px; font-weight: 600; line-height: 1.2; margin: 10px 0 4px; text-wrap: balance; }
+.enter-card { display: flex; flex-direction: column; gap: 14px; }
+.enter-card .btn { width: 100%; justify-content: center; }
+.enter-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px 96px; gap: 10px; }
+.enter-consent { line-height: 1.45; }
+.enter-done { text-align: center; font-size: 18px; font-weight: 500; padding: 26px 18px; }
+.enter-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.field small.error { font-size: 14px; }
+@media (max-width: 360px) { .enter-row { grid-template-columns: 1fr 1fr; } .enter-city { grid-column: 1 / -1; } }
+.entry-link { font: 500 15px var(--font); background: var(--bg); border: 1.5px solid var(--line); border-radius: 12px; padding: 11px 12px; overflow-wrap: anywhere; user-select: all; }
