@@ -1,7 +1,8 @@
 {
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
   "crons": [
-    { "path": "/api/send-reminders", "schedule": "0 13 * * *" },
+    { "path": "/api/send-reminders?run=14", "schedule": "0 14 * * *" },
+    { "path": "/api/send-reminders?run=15", "schedule": "0 15 * * *" },
     { "path": "/api/morning-nudge?run=12", "schedule": "0 12 * * 1-5" },
     { "path": "/api/morning-nudge?run=13", "schedule": "0 13 * * 1-5" },
     { "path": "/api/morning-nudge?run=14", "schedule": "0 14 * * 1-5" },

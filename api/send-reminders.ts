@@ -6,8 +6,9 @@ import { admin, vapid } from './_push.js'
   birthdays, home anniversaries and wedding anniversaries today, plus a heads-up 5 days out for the ones set to get a card
   (the same day the card shows up on Today). Each person's Text / Card / Both / Off choice is followed.
 
-  Runs every morning from the Vercel schedule in vercel.json. It is safe to call more than once a day:
-  each phone gets at most one reminder per day.
+  Sends at 9 a.m. Lubbock time. Vercel runs it at 14:00 and 15:00 UTC every day (see vercel.json), which is 9 a.m.
+  in Lubbock on one side of daylight saving time or the other; the run that isn't 9 a.m. there sends nothing.
+  It is safe to call more than once a day: each phone gets at most one reminder per day.
   With ?test=1 and a signed-in user's token, it sends that person a test notification right away.
 */
 
@@ -15,6 +16,11 @@ type Req = { query?: Record<string, string | string[]>; headers: Record<string, 
 type Res = { status: (n: number) => { json: (b: unknown) => void } }
 
 const TZ = 'America/Chicago'
+export const SEND_HOUR = 9
+/** The hour it is in Lubbock right now (0 to 23). */
+export function localHour(at = new Date()) {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(at))
+}
 export function todayParts(offsetDays = 0) {
   const d = new Date(Date.now() + offsetDays * 86_400_000)
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' }).formatToParts(d).map((x) => [x.type, x.value]))
@@ -59,11 +65,12 @@ export const join = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs
 
 export default async function handler(req: Req, res: Res) {
   try {
+    const test = String(req.query?.test ?? '') === '1'
+    if (!test && localHour() !== SEND_HOUR) return res.status(200).json({ sent: 0, note: 'Not 9 a.m. in Lubbock.' })
     const db = admin()
     const keys = await vapid(db)
     webpush.setVapidDetails('mailto:ruben@clearrockrealty.com', keys.public_key, keys.private_key)
 
-    const test = String(req.query?.test ?? '') === '1'
     let onlyUser: string | null = null
     if (test) {
       const token = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '')
