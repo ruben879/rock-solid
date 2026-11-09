@@ -245,9 +245,17 @@ function useBatch(ctx: Ctx) {
   }
   // From set 2 on, entries finished in an earlier set stay off the list (they're in Done this week).
   const skip = new Set(result.round > 1 ? saved.skip ?? [] : [])
+  // A set 2 (or later) loaded before this rule existed has no skip list yet: it gets one once, from what's already done.
+  const needsSkip = !readOnly && result.round > 1 && saved.skip === undefined
+  const adoptSkip = (doneTop: string[]) => {
+    const top = new Set([...bdIds, ...fuShown])
+    const v = { ...saved, skip: doneTop.filter((id) => top.has(id)) }
+    store.set(key, v)
+    setSaved(v)
+  }
   return {
     ...result, fuIds: fuShown.filter((id) => !skip.has(id)), bdays: bdays.filter((e) => !skip.has(e.id)), bdMore,
-    touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday,
+    touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday, needsSkip, adoptSkip,
   }
 }
 
@@ -462,6 +470,9 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   })
   const todo = rows.filter((c) => !isDone(c))
   const done = rows.filter((c) => isDone(c)).length
+  // Fix up a later set saved before finished entries were left out of it (one time, on this phone).
+  const needsSkip = b.needsSkip
+  useEffect(() => { if (needsSkip) b.adoptSkip(rows.filter(isDone).map((c) => c.id)) }, [needsSkip]) // eslint-disable-line react-hooks/exhaustive-deps
   // Done this week: everyone reached one-on-one since Monday, from any set or from Record a touch. Newest first.
   const weekStartYmd = ymd(weekStart())
   const weekDone = (() => {
