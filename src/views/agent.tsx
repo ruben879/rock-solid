@@ -126,7 +126,8 @@ function useBatch(ctx: Ctx) {
     () => new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on >= ws).map((t) => t.contact_id as string)),
     [data.touches, ws],
   )
-  const [saved, setSaved] = useState<{ ids: string[]; round: number; stopped?: boolean }>(() => store.get(key, { ids: [], round: 0 }))
+  // skip: birthday and follow-up entries already finished before this set loaded. A new set starts at 0 done, so they stay out of it.
+  const [saved, setSaved] = useState<{ ids: string[]; round: number; stopped?: boolean; skip?: string[] }>(() => store.get(key, { ids: [], round: 0 }))
   const [justCleared, setJustCleared] = useState(false)
 
   // Follow-ups due today (or earlier) join the top of today's list and stay there for the day.
@@ -200,10 +201,12 @@ function useBatch(ctx: Ctx) {
   }, [saved, data.contacts, data.touches, agent, touchedThisWeek, size, full, day, lastKey, fuShown.join(), bdIds.join()]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Finished the list: load another round for today (asked, never automatic). */
-  const loadMore = () => {
+  const loadMore = (doneTop: string[] = []) => {
     const next = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, ...bdIds, ...fuShown]), full, agent.id).map((c) => c.id)
     if (!next.length) return
-    const v = { ids: next, round: result.round + 1 }
+    const top = new Set([...bdIds, ...fuShown])
+    const skip = [...new Set([...(saved.skip ?? []), ...doneTop.filter((id) => top.has(id))])]
+    const v = { ids: next, round: result.round + 1, skip }
     if (!readOnly) {
       store.set(key, v)
       store.set(lastKey, { day, ids: next })
@@ -211,14 +214,14 @@ function useBatch(ctx: Ctx) {
     setSaved(v)
   }
   const stopForToday = () => {
-    const v = { ids: result.ids, round: result.round, stopped: true }
+    const v = { ids: result.ids, round: result.round, stopped: true, skip: saved.skip }
     if (!readOnly) store.set(key, v)
     setSaved(v)
   }
 
   useEffect(() => {
     if (result.ids.join() !== saved.ids.join() || result.round !== saved.round) {
-      const v = { ids: result.ids, round: result.round }
+      const v = { ids: result.ids, round: result.round, skip: result.round > 1 ? saved.skip : undefined }
       if (!readOnly) {
         store.set(key, v)
         store.set(lastKey, { day, ids: result.ids })
@@ -232,7 +235,7 @@ function useBatch(ctx: Ctx) {
     const pool = rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...result.ids, id, ...bdIds, ...fuShown]), 1, agent.id)
     const ids = result.ids.filter((x) => x !== id)
     if (pool[0]) ids.push(pool[0].id)
-    const v = { ids, round: result.round }
+    const v = { ids, round: result.round, skip: saved.skip }
     if (!readOnly) {
       store.set(key, v)
       store.set(lastKey, { day, ids })
@@ -240,7 +243,12 @@ function useBatch(ctx: Ctx) {
     setSaved(v)
     return pool[0]
   }
-  return { ...result, fuIds: fuShown, bdays, bdMore, touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday }
+  // From set 2 on, entries finished in an earlier set stay off the list (they're in Done this week).
+  const skip = new Set(result.round > 1 ? saved.skip ?? [] : [])
+  return {
+    ...result, fuIds: fuShown.filter((id) => !skip.has(id)), bdays: bdays.filter((e) => !skip.has(e.id)), bdMore,
+    touchedThisWeek, justCleared, setJustCleared, replace, loadMore, stopForToday,
+  }
 }
 
 function goalState(ctx: Ctx) {
@@ -453,8 +461,18 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     return !reachedSince(c, e.on)
   })
   const todo = rows.filter((c) => !isDone(c))
-  const doneRows = rows.filter((c) => isDone(c))
-  const done = doneRows.length
+  const done = rows.filter((c) => isDone(c)).length
+  // Done this week: everyone reached one-on-one since Monday, from any set or from Record a touch. Newest first.
+  const weekStartYmd = ymd(weekStart())
+  const weekDone = (() => {
+    const latest = new Map<string, Touch>()
+    for (const t of data.touches) {
+      if (t.is_group || !t.contact_id || t.occurred_on < weekStartYmd || !byId.has(t.contact_id)) continue
+      const cur = latest.get(t.contact_id)
+      if (!cur || t.occurred_on >= cur.occurred_on) latest.set(t.contact_id, t)
+    }
+    return [...latest.entries()].sort((a, b) => b[1].occurred_on.localeCompare(a[1].occurred_on)).map(([id, t]) => ({ c: byId.get(id)!, t }))
+  })()
   // Position in the list decides ties, so each day's list mixes calls, texts and cards.
   const sug = (c: Contact): 'call' | 'text' | 'card' => {
     const bd = bdOf(c)
@@ -583,13 +601,13 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
         b.stopped ? (
           <div className="banner" style={{ marginTop: 16 }}>
             <p><b>Done for today.</b> Nice work. Your next ones will be here tomorrow.</p>
-            <button className="btn ghost" onClick={b.loadMore}>Load {Math.min(b.size, b.waiting)} more</button>
+            <button className="btn ghost" onClick={() => b.loadMore(rows.filter(isDone).map((c) => c.id))}>Load {Math.min(b.size, b.waiting)} more</button>
           </div>
         ) : (
           <div className="banner" style={{ marginTop: 16, flexDirection: 'column', alignItems: 'stretch' }}>
             <p><b>You finished all {rows.length}!</b> Want to load another round of {Math.min(b.size, b.waiting)} for today?</p>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn primary" style={{ flex: 1 }} onClick={b.loadMore}>Yes, load {Math.min(b.size, b.waiting)} more</button>
+              <button className="btn primary" style={{ flex: 1 }} onClick={() => b.loadMore(rows.filter(isDone).map((c) => c.id))}>Yes, load {Math.min(b.size, b.waiting)} more</button>
               <button className="btn" style={{ flex: 1 }} onClick={b.stopForToday}>I'm done for today</button>
             </div>
           </div>
@@ -748,12 +766,11 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
           {moreOpen.map((e, i) => { const c = byId.get(e.id); return c ? <span key={e.id}>{i ? ', ' : ''}<button className="link" onClick={() => setViewFor(c)}>{fullName(c)}</button>{e.occ && e.occ !== 'birthday' ? ` ${OCCASION_META[e.occ].icon}` : ''}{e.kind === 'card' ? ` (card, ${fmt(e.on)})` : ''}</span> : null })}
         </p>
       )}
-      {doneRows.length > 0 && (
+      {weekDone.length > 0 && (
         <details className="donelist">
-          <summary>Done this week ({doneRows.length})</summary>
+          <summary>Done this week ({weekDone.length})</summary>
           <div className="card" style={{ padding: '4px 16px' }}>
-            {doneRows.map((c) => {
-              const l = lastOf(c)
+            {weekDone.map(({ c, t: l }) => {
               return (
                 <button key={c.id} className="donerow" disabled={readOnly} onClick={() => setDoneFor(c)}>
                   <span className="tick"><ICheck size={16} /></span>
