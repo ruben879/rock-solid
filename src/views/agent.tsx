@@ -4,7 +4,7 @@ import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } f
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
-  planNumbers, canRecruit, coupleName, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
+  planNumbers, canRecruit, coupleName, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, NEW_DATE_PLAN, newDatePlans, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
 } from '../lib/model'
 import { formatPhone, matchRows, planEntryImport, readContacts, type EntryRow } from '../lib/importer'
 import { Celebrate, HeatTag, Rock, Sheet, Signal, store, SwipeRow, useSwipeBack, useToast } from '../ui'
@@ -1373,7 +1373,11 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
   const [partner, setPartnerSel] = useState<Contact | null>(() => (c?.partner_id ? ctx.data.contacts.find((x) => x.id === c.partner_id) ?? null : null))
   const [pq, setPq] = useState('')
   const pMatches = pq.trim() ? ctx.data.contacts.filter((x) => x.id !== c?.id && fullName(x).toLowerCase().includes(pq.trim().toLowerCase())).slice(0, 5) : []
-  const [plans, setPlans] = useState<Record<Occasion, BirthdayPlan>>(() => ({ birthday: c ? planOf(c, 'birthday') : 'text', home: c ? planOf(c, 'home') : 'text', wedding: c ? planOf(c, 'wedding') : 'text' }))
+  // A date they already have keeps its setting. A date that's new here starts as Both (still changeable before saving).
+  const hasDate = (o: Occasion) => !!c?.[OCCASION_META[o].field]
+  const [plans, setPlans] = useState<Record<Occasion, BirthdayPlan>>(() => ({
+    birthday: hasDate('birthday') ? planOf(c!, 'birthday') : NEW_DATE_PLAN, home: hasDate('home') ? planOf(c!, 'home') : NEW_DATE_PLAN, wedding: hasDate('wedding') ? planOf(c!, 'wedding') : NEW_DATE_PLAN,
+  }))
   // New people: let the phone offer to fill in from its contacts (iPhone AutoFill Contact). Existing people: no autofill.
   const ac = (v: string) => (c ? 'off' : v)
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
@@ -1396,7 +1400,9 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
       const id = await api.saveContact(ctx.me, input, c?.id)
       // Birthday and anniversary choices save on their own, so the rest saves even before that SQL is run.
       for (const o of OCCASION_LIST) {
-        const was = c ? planOf(c, o) : 'text'
+        if (!f[OCCASION_META[o].field]) continue // no date, nothing to show on Today
+        // A date that's new here always saves its setting; an existing date only when it changed.
+        const was = hasDate(o) ? planOf(c!, o) : null
         if (plans[o] !== was) await api.setOccasionPlan({ ...(c ?? {}), id } as Contact, o, plans[o]).catch((e) => toast((e as Error).message))
       }
       if ((partner?.id ?? null) !== (c?.partner_id ?? null)) {
@@ -3103,7 +3109,7 @@ function ListImportSheet({ ctx, onClose, onForm, onChecks }: { ctx: Ctx; onClose
       const label = `My contact list · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
       const rec = await api.runImport(ctx.me, ctx.me.id, label, plan, ((x: ListRow) => {
         const { row: _row, ...rest } = x
-        return { ...rest, id: crypto.randomUUID(), agent_id: ctx.me.id, brokerage_id: ctx.me.brokerage_id, tier: x.tier ?? 'U', source: 'CSV import', added_on: t, prior_touches: 0 }
+        return { ...newDatePlans(rest), ...rest, id: crypto.randomUUID(), agent_id: ctx.me.id, brokerage_id: ctx.me.brokerage_id, tier: x.tier ?? 'U', source: 'CSV import', added_on: t, prior_touches: 0 }
       }) as never)
       await ctx.reload()
       setDone(rec)

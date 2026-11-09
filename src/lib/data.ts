@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabase'
 import { addDays, monthStart, today, weekStart, ymd } from './dates'
 import type { BirthdayPlan, Brokerage, Card, Contact, Occasion, Profile, Tally, Tier, Touch, TouchKind } from './model'
-import { OCCASION_META, cardWithin12Months, fullName } from './model'
+import { OCCASION_META, cardWithin12Months, fullName, newDatePlans } from './model'
 import type { CheckItem, Existing, MatchField, MatchPlan } from './importer'
 import { compareRow } from './importer'
 import { exec, flush, getCached, isNetworkError, isOnline, pendingCount, setCached, subscribe, uuid, type AgentData } from './offline'
@@ -474,7 +474,7 @@ export async function settleAmbiguous(me: Profile, c: ImportCheck, pick: string 
 export async function importContacts(me: Profile, rows: ContactInput[]) {
   needOnline()
   const t = ymd(today())
-  const payload = rows.map((r) => ({ ...r, tier: (r.tier ?? 'U') as Tier, agent_id: me.id, brokerage_id: me.brokerage_id, added_on: t }))
+  const payload = rows.map((r) => ({ ...newDatePlans(r), ...r, tier: (r.tier ?? 'U') as Tier, agent_id: me.id, brokerage_id: me.brokerage_id, added_on: t }))
   for (let i = 0; i < payload.length; i += 500) check(await supabase.from('contacts').insert(payload.slice(i, i + 500)))
 }
 

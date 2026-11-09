@@ -415,6 +415,17 @@ export const OCCASION_LIST: Occasion[] = ['birthday', 'home', 'wedding']
 /** Card prompts show this many days before the day, until a card is logged. */
 export const CARD_EARLY = { from: 5, to: 3 }
 export const planOf = (c: Contact, o: Occasion): BirthdayPlan => (c[OCCASION_META[o].plan] as BirthdayPlan | null | undefined) ?? 'text'
+/**
+ * What a newly added birthday or anniversary starts as on Today. Existing dates keep whatever they have
+ * (a blank plan on an existing date still means 'text', see planOf), so this is only written when a date is new.
+ */
+export const NEW_DATE_PLAN: BirthdayPlan = 'both'
+/** Plan fields for the dates in a brand-new contact row (import), set to NEW_DATE_PLAN for each date it has. */
+export function newDatePlans(row: { birthday?: string | null; home_anniversary?: string | null; wedding_anniversary?: string | null }) {
+  const out: Partial<Record<'birthday_plan' | 'home_plan' | 'wedding_plan', BirthdayPlan>> = {}
+  for (const o of Object.values(OCCASION_META)) if (row[o.field]) out[o.plan] = NEW_DATE_PLAN
+  return out
+}
 export const birthdayPlanOf = (c: Contact) => planOf(c, 'birthday')
 
 /** This year's date (or next year's if it already passed more than a week ago), at noon. */
