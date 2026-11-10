@@ -82,10 +82,13 @@ export function toDate(v: string): string | null {
  * Each field has a list of column names in priority order; exact header matches win,
  * and for each person the first non-empty column is used (so an empty Work Phone falls through to Cell Phone 1).
  */
+/** How a header is compared: lowercase, trimmed, underscores read as spaces ("First_Name" → "first name"). */
+export const normHeader = (h: string) => h.toLowerCase().replace(/_/g, ' ').trim()
+
 export function readContacts(text: string): ImportRow[] {
   const all = parseCsv(text.replace(/^﻿/, ''))
   if (all.length < 2) return []
-  const head = all[0].map((h) => h.toLowerCase().trim())
+  const head = all[0].map(normHeader)
   const cols = (...names: string[]) => {
     const out: number[] = []
     for (const n of names) head.forEach((h, i) => { if (h === n && !out.includes(i)) out.push(i) })
@@ -136,9 +139,12 @@ export function readContacts(text: string): ImportRow[] {
 }
 
 // ---------- Entry form imports (giveaway forms and the like) ----------
-// The CSV contract: these headers (case-insensitive, trimmed), with the Google Form titles as aliases. Other columns are ignored.
+// The CSV contract: these headers (case-insensitive, trimmed, underscores read as spaces), with the Google Form titles
+// as aliases. The name can be one Full name column or separate First name and Last name columns. Other columns are ignored.
 const ENTRY_COLS = {
-  name: ['full_name', 'full name'],
+  name: ['full name'],
+  first: ['first name', 'first', 'firstname', 'given name'],
+  last: ['last name', 'last', 'lastname', 'surname', 'family name'],
   email: ['email'],
   phone: ['phone'],
   street: ['street', 'mailing street address'],
@@ -161,19 +167,22 @@ export type EntryPlan = MatchPlan<EntryRow> & {
  */
 export function planEntryImport(text: string, existing: Existing[]): EntryPlan {
   const records = csvRecords(text.replace(/^\uFEFF/, ''))
-  const head = (records[0] ?? []).map((h) => h.trim().toLowerCase())
+  const head = (records[0] ?? []).map(normHeader)
   const idx = (names: readonly string[]) => head.findIndex((h) => names.includes(h))
-  const at = { name: idx(ENTRY_COLS.name), email: idx(ENTRY_COLS.email), phone: idx(ENTRY_COLS.phone), street: idx(ENTRY_COLS.street), city: idx(ENTRY_COLS.city), state: idx(ENTRY_COLS.state), zip: idx(ENTRY_COLS.zip) }
-  const missing = (['name', 'email', 'phone'] as const).filter((k) => at[k] < 0)
+  const at = { name: idx(ENTRY_COLS.name), first: idx(ENTRY_COLS.first), last: idx(ENTRY_COLS.last), email: idx(ENTRY_COLS.email), phone: idx(ENTRY_COLS.phone), street: idx(ENTRY_COLS.street), city: idx(ENTRY_COLS.city), state: idx(ENTRY_COLS.state), zip: idx(ENTRY_COLS.zip) }
+  const hasName = at.name >= 0 || at.first >= 0 || at.last >= 0
+  const missing = [...(hasName ? [] : ['name']), ...(['email', 'phone'] as const).filter((k) => at[k] < 0)]
   const empty = { create: [], updates: [], duplicates: [], checks: [], rows: [], errors: [] }
-  if (missing.length) return { ...empty, missing: [...missing] }
+  if (missing.length) return { ...empty, missing }
   const errors: number[] = []
   const good: EntryRow[] = []
   for (const [n, r] of records.slice(1).entries()) {
     const rowNo = n + 2 // spreadsheet row number: the header is row 1
     if (!r.some((c) => c.trim())) continue // a completely blank row isn't an entry
     const get = (i: number) => (i >= 0 ? (r[i] ?? '').trim() : '')
-    const e = toEntryRow(rowNo, { name: get(at.name), email: get(at.email), phone: get(at.phone), street: get(at.street), city: get(at.city), state: get(at.state), zip: get(at.zip) })
+    // A Full name cell wins; otherwise First and Last together (either one alone is still a name).
+    const name = get(at.name) || [get(at.first), get(at.last)].filter(Boolean).join(' ')
+    const e = toEntryRow(rowNo, { name, email: get(at.email), phone: get(at.phone), street: get(at.street), city: get(at.city), state: get(at.state), zip: get(at.zip) })
     if (!e) errors.push(rowNo)
     else good.push(e)
   }

@@ -2822,7 +2822,7 @@ function EntryImportSheet({ ctx, onClose, onReview, onChecks, onList }: { ctx: C
       const existing = await api.ownerContactKeys(owner)
       const plan = planEntryImport(text, existing)
       if (plan.missing.length) {
-        setMsg(`This file is missing the ${plan.missing.join(' and ')} column. Nothing was imported. The header row needs Full name, Email and Phone.`)
+        setMsg(`This file is missing the ${plan.missing.join(' and ')} column. Nothing was imported. The header row needs Full name (or First name and Last name), Email and Phone.`)
         setBusy(false); return
       }
       const t = ymd(today())
@@ -2844,7 +2844,7 @@ function EntryImportSheet({ ctx, onClose, onReview, onChecks, onList }: { ctx: C
     <Sheet label="Import contacts" onClose={onClose}>
       <h3>Bring in a spreadsheet</h3>
       <ImportKindSwitch value="form" onPick={onList} />
-      <p className="note" style={{ margin: '0 0 12px' }}>A CSV from an entry form, like a Google Form export. It reads Full name, Email, Phone, Mailing street address, City, State and ZIP. Everyone lands as a New person to Keep or Remove. Anyone already in the sphere is skipped, never changed.</p>
+      <p className="note" style={{ margin: '0 0 12px' }}>A CSV from an entry form, like a Google Form export. It reads Full name (or First name and Last name), Email, Phone, Mailing street address, City, State and ZIP. Everyone lands as a New person to Keep or Remove. Anyone already in the sphere is skipped, never changed.</p>
       <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && read(e.target.files[0])} />
       {fileName && <p className="note" style={{ marginTop: 4 }}>{fileName}</p>}
       <label className="field" style={{ marginTop: 12 }}><span>Import label</span>
