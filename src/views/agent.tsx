@@ -1545,10 +1545,13 @@ function EditSheet({ ctx, c, onClose, prefill, onSaved, saveLabel }: {
           <button type="button" className="btn block" onClick={onClose}>Close</button>
         ) : (
           <>
-            <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : saveLabel ?? (c ? 'Save' : 'Add person')}</button>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               {c ? <button type="button" className="btn ghost" onClick={() => setConfirmDel(true)}>Remove</button> : <span />}
               <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            </div>
+            {/* Pinned to the bottom of the sheet: the fields scroll under it, so Save is in reach from any field. */}
+            <div className="sheet-foot">
+              <button className="btn primary lg block" disabled={busy}>{busy ? 'Saving…' : saveLabel ?? (c ? 'Save' : 'Add person')}</button>
             </div>
           </>
         )}
