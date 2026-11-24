@@ -1,4 +1,4 @@
-import { addDays, daysBetween, parse, today, weekStart, ymd } from './dates'
+import { addDays, daysBetween, parse, today, weekStart, ymd } from './dates.js'
 
 export type Role = 'agent' | 'coach' | 'broker'
 export type Tier = 'A' | 'B' | 'C' | 'D' | 'U'

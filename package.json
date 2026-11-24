@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --import ./tests/ts-resolve.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

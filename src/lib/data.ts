@@ -32,14 +32,9 @@ function stash<T>(k: string, v?: T): T | null {
 }
 
 /** Someone who hasn't set goals yet gets goals sized for 100 people: 100 x 16 one-on-one touches a year, over 52 weeks of 5 days. */
-export const STARTER_DAILY_GOAL = Math.ceil((100 * 16) / 52 / 5)
-const DB_DEFAULT_DAILY = 5
-function withGoals(p: Profile): Profile {
-  const untouched = p.plan?.income === undefined
-  const daily = untouched && p.daily_goal === DB_DEFAULT_DAILY ? STARTER_DAILY_GOAL : p.daily_goal
-  // A week is 5 workdays: the weekly goal is always the daily goal times 5.
-  return { ...p, daily_goal: daily, weekly_goal: daily * 5 }
-}
+// A never-set goal becomes the starter goal, and a week is 5 workdays (shared with the morning nudge).
+import { STARTER_DAILY_GOAL, withGoals } from './todayQueue'
+export { STARTER_DAILY_GOAL }
 
 /** Your profile and brokerage. Falls back to the copy saved on the phone when offline. */
 export async function loadMe(userId: string): Promise<{ profile: Profile | null; brokerage: Brokerage | null }> {
@@ -683,4 +678,14 @@ export async function entryBatches(agentId: string) {
   const { data, error } = await supabase.from('imports').select('id, source_label').eq('agent_id', agentId).eq('via', 'entry_page').order('created_at', { ascending: false })
   if (error) throw new Error(entryErr(error.message))
   return (data ?? []) as { id: string; source_label: string }[]
+}
+
+// ---------- Today's list, shared with the morning nudge ----------
+/**
+ * Saves the order of today's list (the people still waiting, and the current set) so the morning nudge can name
+ * people from it. Best effort: offline or before the 0023 SQL is run, it quietly does nothing.
+ */
+export async function shareTodayQueue(me: Profile, day: string, ids: string[], queue: string[]) {
+  if (!isOnline()) return
+  await supabase.from('today_queues').upsert({ agent_id: me.id, day, ids, queue, updated_at: new Date().toISOString() })
 }

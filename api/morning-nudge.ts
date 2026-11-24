@@ -1,10 +1,18 @@
 import webpush from 'web-push'
 import { admin, vapid } from './_push.js'
+import { queueBody } from '../src/lib/todayQueue.js'
+import type { Contact } from '../src/lib/model.js'
+import { queueFor } from './_queue.js'
+
+// Today's list is worked out in Lubbock days, the same as on the phone.
+process.env.TZ = 'America/Chicago'
 
 /*
   The morning nudge: "Let's get to stacking those rocks."
   Goes to each phone with the nudge on, at the hour its owner picked (7, 8, 9 or 10 a.m. Lubbock time, 9 by default),
   if they haven't logged anything yet today (no touch, no card), Monday to Friday.
+  The words name two people from that person's own Today list ("Maria Lopez, James Carter and 3 others are waiting
+  to hear from you."), two places further along the list each day. An empty list keeps the usual words.
 
   Vercel runs this every hour from 12:00 to 16:00 UTC on weekdays (see vercel.json), which covers 7 to 10 a.m.
   in Lubbock on both sides of daylight saving time. Each run only sends to phones whose hour it is.
@@ -79,11 +87,13 @@ export default async function handler(req: Req, res: Res) {
     )
 
     let sent = 0
+    const queues = new Map<string, Contact[]>()
     for (const s of subs) {
       const uid = s.user_id as string
       if (!test && (active.has(uid) || !hasPeople.has(uid))) continue
       const n = goal.get(uid)
-      const body = n ? `Your ${n} for today are ready. One call gets it rolling.` : 'Your people for today are ready. One call gets it rolling.'
+      if (!queues.has(uid)) queues.set(uid, await queueFor(db, uid, t.ymd).catch(() => []))
+      const body = queueBody(queues.get(uid)!, t.ymd) ?? (n ? `Your ${n} for today are ready. One call gets it rolling.` : 'Your people for today are ready. One call gets it rolling.')
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

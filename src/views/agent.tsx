@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import * as api from '../lib/data'
 import { addDays, daysBetween, fmt, monthStart, parse, today, weekStart, ymd } from '../lib/dates'
 import type { BdayEntry, BirthdayPlan, Occasion, Brokerage, Card, Contact, Heat, Profile, Tier, Touch, TouchKind } from '../lib/model'
+import { doneOnToday, newDayIds } from '../lib/todayQueue'
 import {
   HEAT_NAME, KIND_LABEL, TIERS, TIER_NAMES, cardCoverage, cardWithin12Months, rotation, shuffled, dailyFromPeople, dailyForPeople, fullName, heat, score, signal, suggestKind, telOf, tierDays, touchCounts,
   planNumbers, canRecruit, coupleName, birthdaysToday, entryStillValid, SKIP_CARD_NOTE, planOf, NEW_DATE_PLAN, newDatePlans, yearsOn, OCCASION_META, OCCASION_LIST, hasYear, NO_YEAR,
@@ -175,22 +176,10 @@ function useBatch(ctx: Ctx) {
     }
     const poolExcluding = (ex: string[], want = size) => rotation(data.contacts, agent, data.touches, touchedThisWeek, new Set([...ex, ...top]), want, agent.id)
     if (ids.length === 0) {
-      // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal.
+      // New day: bring forward whoever wasn't reached on the last list, then fill up to the daily goal
+      // (shared with the morning nudge, so its names match this list).
       const last = store.get<{ day: string; ids: string[] } | null>(lastKey, null)
-      let carry: string[] = []
-      if (last && last.day < day) {
-        const reached = new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on >= last.day).map((t) => t.contact_id as string))
-        carry = last.ids.filter((id) => {
-          const c = byId.get(id)
-          return c && !reached.has(id) && (!c.skip_until || c.skip_until <= day)
-        }).filter((id) => !top.includes(id)).slice(0, size)
-      }
-      // People already reached today count toward today's list, so the stones show today's real progress.
-      const doneToday = [...new Set(data.touches.filter((t) => !t.is_group && t.contact_id && t.occurred_on === day && byId.has(t.contact_id)).map((t) => t.contact_id as string))].filter((id) => !top.includes(id)).slice(0, size)
-      carry = carry.filter((id) => !doneToday.includes(id)).slice(0, size - doneToday.length)
-      const start = [...doneToday, ...carry]
-      // Mixed order (not alphabetical), the same all day.
-      ids = shuffled([...start, ...poolExcluding(start, size - start.length).map((c) => c.id)], `${agent.id}|${day}`)
+      ids = newDayIds({ contacts: data.contacts, touches: data.touches, agent, touchedThisWeek, top, size, day, last })
       round = ids.length ? 1 : 0
     }
     // A birthday came off the list (date changed or removed): fill its spot so the day stays full.
@@ -379,11 +368,8 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
   }
   // Reached on or after the day itself (only counts once the day has come).
   const reachedSince = (c: Contact, on: string) => on <= tk && data.touches.some((t) => t.contact_id === c.id && !t.is_group && t.occurred_on >= on)
-  const isDone = (c: Contact) => {
-    const bd = bdOf(c)
-    if (bd) return bd.kind === 'card' ? cardSent(c, bd.on) || reachedSince(c, bd.on) : touchedToday.has(c.id)
-    return isFu(c) ? touchedToday.has(c.id) : b.touchedThisWeek.has(c.id)
-  }
+  // Same rule as cardSent / reachedSince above, shared with the morning nudge.
+  const isDone = (c: Contact) => doneOnToday(c, bdOf(c), isFu(c), data.touches, tk, b.touchedThisWeek, touchedToday)
   const rows = [...b.bdays.map((e) => e.id), ...b.fuIds, ...b.ids].map((id) => byId.get(id)).filter(Boolean) as Contact[]
   // Birthday or anniversary wording for each entry.
   const occWord = (bd: BdayEntry) => {
@@ -469,6 +455,14 @@ function Today({ ctx, onGo }: { ctx: Ctx; onGo?: (t: AgentTab) => void }) {
     return !reachedSince(c, e.on)
   })
   const todo = rows.filter((c) => !isDone(c))
+  // Share today's list with the server, so the morning nudge names people from it (only your own list, never a broker's view).
+  const shareKey = JSON.stringify([tk, b.ids, todo.map((c) => c.id)])
+  useEffect(() => {
+    if (ctx.readOnly || ctx.agent.id !== ctx.me.id || store.get<string>(`rs-shared-${ctx.me.id}`, '') === shareKey) return
+    const [day, ids, queue] = JSON.parse(shareKey) as [string, string[], string[]]
+    const t = setTimeout(() => api.shareTodayQueue(ctx.me, day, ids, queue).then(() => store.set(`rs-shared-${ctx.me.id}`, shareKey)).catch(() => {}), 1500)
+    return () => clearTimeout(t)
+  }, [shareKey, ctx.readOnly, ctx.agent.id, ctx.me])
   const done = rows.filter((c) => isDone(c)).length
   // Fix up a later set saved before finished entries were left out of it (one time, on this phone).
   const needsSkip = b.needsSkip
